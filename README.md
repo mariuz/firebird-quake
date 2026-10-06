@@ -14,6 +14,8 @@
 
 ![E1M4, the Grisly Grotto: the carved gate](docs/arch-e1m4-0.png) ![knights across the lake](docs/lake-e1m4-0.png) ![the super nailgun in its chamber](docs/tunnel-e1m4-0.png) ![the secret exit's ledge, from the water](docs/ledge-e1m4-0.png)
 
+![E1M5, Gloom Keep: under the water of the flooded moat](docs/flooded-e1m5-0.png) ![the moat courtyard](docs/moat-e1m5-0.png) ![the stained-glass hall](docs/glass-e1m5-0.png) ![a knight on the checkered floor](docs/knight-e1m5-0.png) ![an ogre at the wooden gate](docs/goldkey-e1m5-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
 bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
@@ -22,8 +24,10 @@ channel and then sunk, four seconds after the player steps onto the bank, the go
 demon torches, and grunts in the beamed hall; the Necropolis' pit zombies four seconds after the trap
 springs, two more in the arched hall, and one shambling down a corridor; the Grisly Grotto's carved gate,
 knights across its lake, the super nailgun in its chamber, and the ledge with the secret slipgate to
-Ziggurat Vertigo seen from the water, where the E1M4 test surfaces. Every frame is the result of a query,
-painted headlessly by `scripts/screenshot.mjs`.
+Ziggurat Vertigo seen from the water, where the E1M4 test surfaces; Gloom Keep's flooded moat from under
+the water, where the E1M5 test holds its breath, the moat's courtyard with its round window, the
+stained-glass hall, a knight on the checkered floor, and an ogre at the wooden gate. Every frame is the
+result of a query, painted headlessly by `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -237,6 +241,11 @@ node scripts/screenshot.mjs e1m4 docs/arch     --at=-472,2080,1230,45 --tics=8 -
 node scripts/screenshot.mjs e1m4 docs/lake     --at=1088,-784,846,135 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m4 docs/tunnel   --at=704,1408,542,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m4 docs/ledge    --at=1288,1350,845,90 --tics=4 --single --fast
+node scripts/screenshot.mjs e1m5 docs/flooded  --at=-312,314,-12,0 --tics=4 --single --fast
+node scripts/screenshot.mjs e1m5 docs/moat     --at=-792,1608,158,315 --tics=2 --single --fast
+node scripts/screenshot.mjs e1m5 docs/glass    --at=128,1840,-18,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m5 docs/knight   --at=-1128,1344,162,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m5 docs/goldkey  --at=-760,2248,330,315 --tics=2 --single --fast
 node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
