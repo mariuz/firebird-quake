@@ -63,6 +63,10 @@ jobs:
       - name: Crucified zombies and the flooded moat
         run: npm run test:e1m5
 
+      # Castle of the Damned: the drawbridge slab sinks into the moat and the player wades across
+      - name: The drawbridge
+        run: npm run test:e1m2
+
       - name: Headless screenshots
         run: npm run screenshots
 
