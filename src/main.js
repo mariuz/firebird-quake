@@ -424,7 +424,8 @@ async function usePak(buffer, label) {
 async function boot() {
   try {
     db = await openDatabase();
-    window.quake = { db, audio, sql: (q, p) => db.query(q, p).then((r) => r.rows) };
+    // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last
+    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
     setStatus('Downloading pak0.pak…');
     const resp = await fetch(new URL('./pak/pak0.pak', location.href));
     if (!resp.ok) throw new Error(`could not fetch pak0.pak (${resp.status}); pick a PAK file instead`);
