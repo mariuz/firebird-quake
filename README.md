@@ -1,5 +1,7 @@
 # Firebird Quake
 
+![the start map: the hall of the skill doors](docs/skills-start-0.png) ![the crucified zombies over the lava](docs/crucified-start-0.png) ![the slipgate to episode 1](docs/episode1-start-0.png) ![the slipgate to episode 3](docs/episode3-start-0.png) ![the slipgate to episode 4](docs/episode4-start-0.png)
+
 ![E1M1, the Slipgate Complex, from the start](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
 
 ![the slime hall, its teleporter and the yellow armour](docs/slime-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![the exit slipgate](docs/slipgate-e1m1-0.png)
@@ -18,8 +20,9 @@
 
 ![E1M6, The Door To Chthon: taking the gold runekey wakes the fiend across the lava](docs/runekey-e1m6-0.png) ![the gold runekey doors, shut](docs/golddoors-e1m6-0.png) ![the doors take the key and slide aside](docs/goldopen-e1m6-0.png) ![a slipgate between its red torches](docs/slipgate-e1m6-0.png) ![the pillared hall](docs/pillars-e1m6-0.png) ![the banner hall](docs/banners-e1m6-0.png)
 
-E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
-bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
+The start map's hall of skill doors, its crucified zombies twitching over the lava (the decoration the
+E1M5 test checks first), and the slipgates to episodes 1, 3 and 4; E1M1 from the start, a grunt, the
+slime hall with its teleporter and armour, two grunts coming over the bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
 since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
 channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
@@ -227,6 +230,11 @@ The screenshot tool can also start from a spot, run SQL first and let the world 
 pictures above were taken:
 
 ```bash
+node scripts/screenshot.mjs start docs/skills    --single --fast
+node scripts/screenshot.mjs start docs/crucified --at=856,840,60,90 --tics=4 --single --fast
+node scripts/screenshot.mjs start docs/episode1  --at=-64,1250,130,90 --tics=4 --single --fast
+node scripts/screenshot.mjs start docs/episode3  --at=1536,2830,255,90 --tics=4 --single --fast
+node scripts/screenshot.mjs start docs/episode4  --at=1700,1728,-200,0 --tics=4 --single --fast
 node scripts/screenshot.mjs e1m1 docs/slime    --at=1392,824,-402,90  --tics=8  --single --fast
 node scripts/screenshot.mjs e1m1 docs/grunts   --at=1150,1030,-250,330 --tics=12 --single --fast
 node scripts/screenshot.mjs e1m1 docs/slipgate --at=1312,800,-240,270 --tics=10 --single --fast
