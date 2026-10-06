@@ -10,13 +10,16 @@
 
 ![E1M2, Castle of the Damned: the drawbridge slab, raised](docs/bridgeup-e1m2-0.png) ![the slab sunk into the moat](docs/bridgedown-e1m2-0.png) ![the gold key room](docs/keyroom-e1m2-0.png) ![grunts in the beamed hall](docs/hall-e1m2-0.png)
 
+![E1M3, the Necropolis: zombies up from the pits](docs/pits-e1m3-0.png) ![zombies in the arched hall](docs/zombies-e1m3-0.png) ![a zombie down the corridor](docs/corridor-e1m3-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
 bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
 since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
 channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
-demon torches, and grunts in the beamed hall. Every frame is the result of a query, painted headlessly by
-`scripts/screenshot.mjs`.
+demon torches, and grunts in the beamed hall; the Necropolis' pit zombies four seconds after the trap
+springs, two more in the arched hall, and one shambling down a corridor. Every frame is the result of a
+query, painted headlessly by `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -223,6 +226,9 @@ node scripts/screenshot.mjs e1m2 docs/bridgeup   --at=1400,-564,229,0 --tics=2  
 node scripts/screenshot.mjs e1m2 docs/bridgedown --at=1400,-564,229,0 --tics=80 --single --fast   # the bank is the trigger
 node scripts/screenshot.mjs e1m2 docs/keyroom    --at=880,-300,470,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m2 docs/hall       --at=536,-1264,438,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m3 docs/pits     --at=-900,-240,-330,90 --sql="UPDATE player SET pitch = 5; EXECUTE PROCEDURE trigger_fire((SELECT id FROM ents WHERE classname = 'trigger_once' AND target = 't83'), (SELECT ent_id FROM player))" --tics=80 --single --fast
+node scripts/screenshot.mjs e1m3 docs/zombies  --at=-128,-824,-322,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m3 docs/corridor --at=1352,120,-130,0 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
