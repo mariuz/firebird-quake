@@ -1,8 +1,14 @@
 # Firebird Quake
 
-![E1M1 rendered from Firebird query results](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
+![E1M1, the Slipgate Complex, from the start](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
+
+![the slime hall, its teleporter and the yellow armour](docs/slime-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![the exit slipgate](docs/slipgate-e1m1-0.png)
 
 ![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png)
+
+E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
+bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava. Every frame is the
+result of a query, painted headlessly by `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -194,11 +200,14 @@ npm run bench          # where a tic and a frame spend their time
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw [--fast] [--compare])
 ```
 
-The screenshot tool can also run SQL first and let the world turn, which is how the pictures above
-were taken; the House of Chthon with its master risen is:
+The screenshot tool can also start from a spot, run SQL first and let the world turn, which is how the
+pictures above were taken:
 
 ```bash
-node scripts/screenshot.mjs e1m7 docs/chthon --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
+node scripts/screenshot.mjs e1m1 docs/slime    --at=1392,824,-402,90  --tics=8  --single --fast
+node scripts/screenshot.mjs e1m1 docs/grunts   --at=1150,1030,-250,330 --tics=12 --single --fast
+node scripts/screenshot.mjs e1m1 docs/slipgate --at=1312,800,-240,270 --tics=10 --single --fast
+node scripts/screenshot.mjs e1m7 docs/chthon   --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
 ```
 
 ## Layout
