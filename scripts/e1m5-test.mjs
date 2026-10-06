@@ -104,7 +104,7 @@ assert((await sounds('player/drown%')) > 0, 'gasping was heard');
 const hpDrowning = s.HEALTH;
 // surfacing: air comes back, the damage stops
 await teleport(wx, wy, surface + 40, 0);
-s = await run(30);
+s = await run(2);                                // he falls back in after a moment: a player sinks
 assert(s.WATERLEVEL < 3 && s.HEALTH === hpDrowning, `with his head out of the water the drowning stops (health ${s.HEALTH}, water level ${s.WATERLEVEL})`);
 assert((await q1('SELECT air_finished a FROM player')).A > s.TIME_ + 10, 'and the lungs refill for 12 s');
 
