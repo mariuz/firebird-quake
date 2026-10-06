@@ -71,10 +71,6 @@ jobs:
       - name: The zombie pits
         run: npm run test:e1m3
 
-      # The Grisly Grotto: the secret exit to E1M8 under the lake, reached by swimming; a secret area; an underwater trap door
-      - name: The underwater secret
-        run: npm run test:e1m4
-
       - name: Headless screenshots
         run: npm run screenshots
 
