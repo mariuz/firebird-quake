@@ -39,6 +39,10 @@ const doorRow = (id) => q1(`SELECT id, mv_state, items, CAST(x AS INTEGER) x, CA
 
 let s = await tic();
 assert(s.LEVEL_MSG === 'The Door To Chthon', `the level is ${s.LEVEL_MSG}`);
+// the ogres beyond the gold doors and the shambler by the exit wander and block at random: this is a
+// test of keys and doors, so only the key's guard stays alive
+const keyTarget = (await q1("SELECT target t FROM ents WHERE classname = 'item_key2'")).T;
+await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE mtype IS NOT NULL AND COALESCE(targetname, '') <> '${keyTarget}'`);
 assert((await q1('SELECT world_type w FROM game')).W === 1, 'a metal level: its keys are runekeys');
 
 // ── the gold doors ──────────────────────────────────────────────────────
@@ -68,6 +72,7 @@ assert((await sounds('misc/runekey.wav')) > 0, 'with the runekey chime');
 assert(!(await q1(`SELECT id FROM ents WHERE id = ${key.ID}`)), 'the key is gone from the floor');
 const woke = await qa(`SELECT id, mtype, st, enemy_id FROM ents WHERE targetname = '${key.TARGET}' AND mtype IS NOT NULL`);
 assert(woke.every((g) => g.ST === 'run' && g.ENEMY_ID === pe), 'taking it wakes the guard, who comes for the player');
+await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE targetname = '${keyTarget}' AND mtype IS NOT NULL`);   // and is seen to; the doors are next
 
 // ── back at the doors: the key opens them, and is spent ─────────────────
 await teleport(front.x, front.y, front.z, 0);
