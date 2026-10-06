@@ -35,6 +35,10 @@
           <option value="high">320×200</option>
           <option value="low">160×100</option>
         </select></label>
+        <label title="How much of the renderer runs in SQL">Renderer <select id="renderer">
+          <option value="fast">SQL picks faces, JS projects (fast)</option>
+          <option value="sql">SQL projects every vertex</option>
+        </select></label>
         <label title="Sound effects volume">Sound <input id="sfxvol" type="range" min="0" max="100" step="5"></label>
         <span id="engine" class="pill">Firebird</span>
         <span id="mapname" class="pill"></span>
@@ -53,6 +57,7 @@
         <button data-sql="SELECT id, classname, mtype, st, anim, health, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z, enemy_id FROM ents WHERE mtype IS NOT NULL ORDER BY st, id">monsters</button>
         <button data-sql="SELECT id, classname, mv_state, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z, targetname, target FROM ents WHERE movetype = 7 ORDER BY classname">movers</button>
         <button data-sql="SELECT classname, COUNT(*) n FROM ents GROUP BY classname ORDER BY n DESC">entities</button>
+        <button data-sql="SELECT FIRST 40 * FROM frame_faces_fast">frame_faces_fast</button>
         <button data-sql="SELECT FIRST 40 * FROM frame_faces">frame_faces</button>
         <button data-sql="SELECT * FROM frame_ents">frame_ents</button>
         <button data-sql="SELECT * FROM view_setup">view_setup</button>

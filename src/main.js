@@ -37,7 +37,7 @@ let lastSoundId = 0;
 let lastFxId = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
-const settings = { map: 'start', detail: 'high', sfx: 70, skill: 1, fov: 90 };
+const settings = { map: 'start', detail: 'high', sfx: 70, skill: 1, fov: 90, renderer: 'fast' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -208,7 +208,7 @@ async function frame() {
     t = performance.now();
     const q = (sql) => db.query(sql, [], arr).then((r) => r.rows);
     const [faces, ents, styles, sounds, fx, bframes] = await Promise.all([
-      q('SELECT * FROM frame_faces'), q('SELECT * FROM frame_ents'), q('SELECT * FROM frame_lightstyles'),
+      q(settings.renderer === 'sql' ? 'SELECT * FROM frame_faces' : 'SELECT * FROM frame_faces_fast'), q('SELECT * FROM frame_ents'), q('SELECT * FROM frame_lightstyles'),
       q(`SELECT id, tic, ent_id, chan, snd, vol, attn, x, y, z FROM sound_events WHERE id > ${lastSoundId} ORDER BY id`),
       q(`SELECT id, kind, x, y, z, x2, y2, z2, n FROM fx_events WHERE id > ${lastFxId} ORDER BY id`),
       q("SELECT e.id, e.frame FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.frame <> 0"),
@@ -434,6 +434,8 @@ $('detail').addEventListener('change', async (e) => {
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
 });
+$('renderer').value = settings.renderer;
+$('renderer').addEventListener('change', (e) => { settings.renderer = e.target.value; saveSettings(); });
 $('skill').value = String(settings.skill);
 $('skill').addEventListener('change', (e) => { settings.skill = Number(e.target.value); saveSettings(); });
 $('sfxvol').value = settings.sfx;

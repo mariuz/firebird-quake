@@ -94,6 +94,13 @@ several times more. Edges that cross the near plane are clipped by the painter i
 `(face, seq)` primary key yields each polygon's vertices in order, so no sort is needed.
 `FRAME_ENTS` lists the alias models and sprites whose leaves are in the PVS.
 
+Two renderer modes are selectable in the page. **SQL picks faces, JS projects** (the default,
+`FRAME_FACES_FAST`): SQL does the visibility work — PVS marking, back faces, frustum — and emits one row
+per visible face; the painter transforms the vertices it already holds from the BSP. **SQL projects every
+vertex** (`FRAME_FACES`): the view transform and projection happen in the select list too, one row per
+polygon vertex. Both paint the same pixels (the headless screenshot tool checks with `--compare`); the
+first costs about a quarter of the second, since a frame is ~400 face rows instead of ~2000 vertex rows.
+
 ### JavaScript only paints (`src/renderer.js`)
 
 An 8-bit framebuffer of palette indices and a z-buffer, like Quake's. Polygons are scan-converted
@@ -109,6 +116,8 @@ direction; explosions and blood are particles. The status bar comes from `gfx.wa
   instead, and the join to the vertices becomes an index walk.
 - **Expressions in the select list are cheap; PSQL statements are not.** Moving the per-vertex
   arithmetic out of the loop body and into the cursor's select list cut the frame query by half.
+- **Rows are the cost.** Emitting ~2000 vertex rows costs ~35 ms; emitting the ~400 face rows they
+  belong to costs ~8 ms. Filter before you join: a predicate on the joined row still walks every vertex.
 - **Keep what does not change.** The PVS marking is kept until the eye enters another leaf; items at
   rest are not relinked.
 - **Bind as text.** The WASM build cannot bind binary parameters, so bulk data goes in as text and is

@@ -7,7 +7,7 @@
 
 import { ANORMS } from './mdl.js';
 
-const SURF_CACHE_MAX = 600;
+const SURF_CACHE_MAX = 2000;
 
 export class Renderer {
   constructor(canvas, { palette, colormap }) {
@@ -193,6 +193,34 @@ export class Renderer {
         if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
       }
     }
+  }
+
+  /**
+   * FRAME_FACES_FAST rows [face, ent_id, ox, oy, oz]: SQL chose the faces,
+   * the vertices come from the BSP held here. Builds the same per-vertex
+   * rows FRAME_FACES would and hands them to drawFaces.
+   */
+  drawFaceList(rows, styles, time, entFrames) {
+    const view = this.view;
+    const [fx, fy, fz] = view.fwd, [rx, ry, rz] = view.right, [ux, uy, uz] = view.up;
+    const near = 4, sc = view.scale, cx = view.cx, cy = view.cy;
+    const out = [];
+    for (const [face, ent, ox, oy, oz] of rows) {
+      const info = this.faceInfo.get(face);
+      if (!info) continue;
+      const { bsp, f, ti } = info;
+      const lx = view.x - ox, ly = view.y - oy, lz = view.z - oz;
+      const verts = f.verts, vs = bsp.vertices;
+      for (let k = 0; k < verts.length; k++) {
+        const vi = verts[k] * 3;
+        const x = vs[vi], y = vs[vi + 1], z = vs[vi + 2];
+        const dx = x - lx, dy = y - ly, dz = z - lz;
+        const vf = dx * fx + dy * fy + dz * fz, vr = dx * rx + dy * ry + dz * rz, vu = dx * ux + dy * uy + dz * uz;
+        out.push([face, k, vf, vr, vu, vf >= near ? cx + (vr * sc) / vf : null, vf >= near ? cy - (vu * sc) / vf : null,
+          x * ti.s[0] + y * ti.s[1] + z * ti.s[2] + ti.soff, x * ti.t[0] + y * ti.t[1] + z * ti.t[2] + ti.toff, ent]);
+      }
+    }
+    this.drawFaces(out, styles, time, entFrames);
   }
 
   /**

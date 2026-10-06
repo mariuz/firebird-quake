@@ -75,36 +75,17 @@ CREATE GLOBAL TEMPORARY TABLE sel_faces (
 
 SET TERM ^ ;
 
-CREATE OR ALTER PROCEDURE frame_faces
-RETURNS (face INTEGER, seq INTEGER, vf DOUBLE PRECISION, vr DOUBLE PRECISION, vu DOUBLE PRECISION,
-         sx DOUBLE PRECISION, sy DOUBLE PRECISION, s DOUBLE PRECISION, t DOUBLE PRECISION, ent_id INTEGER)
+-- mark_faces: R_MarkLeaves. Once per view leaf, every face of every leaf in
+-- the PVS goes into VIS_FACES at origin 0 (kept until the eye moves to
+-- another leaf); every frame, the brush-model entities whose leaves are in
+-- the PVS are added at their own origin.
+CREATE OR ALTER PROCEDURE mark_faces (pvs VARCHAR(2048) CHARACTER SET ASCII, vleaf INTEGER)
 AS
-DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
-DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
-DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION; DECLARE rz DOUBLE PRECISION;
-DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
-DECLARE w INTEGER; DECLARE h INTEGER; DECLARE sc DOUBLE PRECISION; DECLARE nearz DOUBLE PRECISION;
-DECLARE kx DOUBLE PRECISION; DECLARE ky DOUBLE PRECISION; DECLARE pvs VARCHAR(2048) CHARACTER SET ASCII; DECLARE vleaf INTEGER;
-DECLARE hw DOUBLE PRECISION; DECLARE hh DOUBLE PRECISION; DECLARE qx DOUBLE PRECISION; DECLARE qy DOUBLE PRECISION;
-DECLARE world INTEGER;
-DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;   -- the model's origin
-DECLARE lx DOUBLE PRECISION; DECLARE ly DOUBLE PRECISION; DECLARE lz DOUBLE PRECISION;   -- eye in model space
-DECLARE svx DOUBLE PRECISION; DECLARE svy DOUBLE PRECISION; DECLARE svz DOUBLE PRECISION; DECLARE soff DOUBLE PRECISION;
-DECLARE tvx DOUBLE PRECISION; DECLARE tvy DOUBLE PRECISION; DECLARE tvz DOUBLE PRECISION; DECLARE toff DOUBLE PRECISION;
-DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
-DECLARE cf DOUBLE PRECISION; DECLARE cr DOUBLE PRECISION; DECLARE cu DOUBLE PRECISION; DECLARE cs DOUBLE PRECISION; DECLARE ct DOUBLE PRECISION;
-DECLARE pf DOUBLE PRECISION; DECLARE pr DOUBLE PRECISION; DECLARE pu DOUBLE PRECISION; DECLARE ps DOUBLE PRECISION; DECLARE pt DOUBLE PRECISION;
-DECLARE f0 DOUBLE PRECISION; DECLARE r0 DOUBLE PRECISION; DECLARE u0 DOUBLE PRECISION; DECLARE s0 DOUBLE PRECISION; DECLARE t0 DOUBLE PRECISION;
-DECLARE k DOUBLE PRECISION; DECLARE i INTEGER; DECLARE nv INTEGER; DECLARE vseq INTEGER;
-DECLARE eid INTEGER; DECLARE emid INTEGER; DECLARE leafs VARCHAR(200) CHARACTER SET ASCII; DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT;
-DECLARE fid INTEGER; DECLARE cur INTEGER; DECLARE curent INTEGER;
+DECLARE cur INTEGER; DECLARE world INTEGER;
+DECLARE eid INTEGER; DECLARE emid INTEGER; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE leafs VARCHAR(200) CHARACTER SET ASCII; DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT;
 BEGIN
-  EXECUTE PROCEDURE view_setup RETURNING_VALUES ex, ey, ez, fx, fy, fz, rx, ry, rz, ux, uy, uz, w, h, sc, nearz, kx, ky, pvs, vleaf;
-  hw = w / 2e0; hh = h / 2e0;
-  qx = SQRT(1 + kx * kx); qy = SQRT(1 + ky * ky);
   SELECT g.world_model FROM game g WHERE g.id = 1 INTO world;
-
-  -- 1. mark the world: every face of every leaf in the PVS, once per view leaf
   SELECT c.vis_leaf FROM viewcfg c WHERE c.id = 1 INTO cur;
   IF (cur IS DISTINCT FROM vleaf) THEN
   BEGIN
@@ -119,7 +100,6 @@ BEGIN
   END
   ELSE DELETE FROM vis_faces v WHERE v.ent_id <> 0;
 
-  -- 2. mark the brush-model entities whose leaves are in the PVS
   FOR SELECT e.id, e.model_id, e.x, e.y, e.z, e.leafs FROM ents e JOIN models m ON m.id = e.model_id
        WHERE m.kind = 'B' AND e.model_id <> :world INTO eid, emid, ox, oy, oz, leafs
   DO
@@ -140,15 +120,65 @@ BEGIN
     IF (vis = 1) THEN
       INSERT INTO vis_faces (face, ent_id, ox, oy, oz) SELECT f.id, :eid, :ox, :oy, :oz FROM faces f WHERE f.model_id = :emid;
   END
+END^
 
-  -- 3. select the faces that face the eye and whose sphere is in the
-  -- frustum (a pass over the marked faces alone: joining the vertices first
-  -- would walk every vertex of every face in the PVS), then one cursor over
-  -- their vertices. The (face, seq) primary key walks each face's vertices
-  -- in order, so no sort is needed. The view transform and the projection
-  -- are in the select list: evaluated by the engine, they cost a fraction
-  -- of the same arithmetic as PSQL statements. Vertices behind the near
-  -- plane project to NULL; the painter clips those edges in view space.
+-- FRAME_FACES_FAST: the faces to draw, one row each. SQL decides what is
+-- visible (PVS, back faces, frustum); the painter transforms the vertices it
+-- already holds from the BSP. About a tenth of the rows of FRAME_FACES.
+CREATE OR ALTER PROCEDURE frame_faces_fast
+RETURNS (face INTEGER, ent_id INTEGER, ox DOUBLE PRECISION, oy DOUBLE PRECISION, oz DOUBLE PRECISION)
+AS
+DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
+DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION; DECLARE rz DOUBLE PRECISION;
+DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
+DECLARE w INTEGER; DECLARE h INTEGER; DECLARE sc DOUBLE PRECISION; DECLARE nearz DOUBLE PRECISION;
+DECLARE kx DOUBLE PRECISION; DECLARE ky DOUBLE PRECISION; DECLARE pvs VARCHAR(2048) CHARACTER SET ASCII; DECLARE vleaf INTEGER;
+DECLARE qx DOUBLE PRECISION; DECLARE qy DOUBLE PRECISION;
+BEGIN
+  EXECUTE PROCEDURE view_setup RETURNING_VALUES ex, ey, ez, fx, fy, fz, rx, ry, rz, ux, uy, uz, w, h, sc, nearz, kx, ky, pvs, vleaf;
+  qx = SQRT(1 + kx * kx); qy = SQRT(1 + ky * ky);
+  EXECUTE PROCEDURE mark_faces(pvs, vleaf);
+  FOR SELECT v.face, v.ent_id, v.ox, v.oy, v.oz
+        FROM vis_faces v
+        JOIN faces f ON f.id = v.face
+       WHERE f.nx * (:ex - v.ox) + f.ny * (:ey - v.oy) + f.nz * (:ez - v.oz) - f.dist > 0
+         AND (f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz + f.radius >= :nearz
+         AND ABS((f.cx + v.ox - :ex) * :rx + (f.cy + v.oy - :ey) * :ry + (f.cz + v.oz - :ez) * :rz)
+             <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :kx + f.radius * :qx
+         AND ABS((f.cx + v.ox - :ex) * :ux + (f.cy + v.oy - :ey) * :uy + (f.cz + v.oz - :ez) * :uz)
+             <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :ky + f.radius * :qy
+        INTO face, ent_id, ox, oy, oz
+  DO SUSPEND;
+END^
+
+-- FRAME_FACES: the same faces, projected vertex by vertex in SQL.
+CREATE OR ALTER PROCEDURE frame_faces
+RETURNS (face INTEGER, seq INTEGER, vf DOUBLE PRECISION, vr DOUBLE PRECISION, vu DOUBLE PRECISION,
+         sx DOUBLE PRECISION, sy DOUBLE PRECISION, s DOUBLE PRECISION, t DOUBLE PRECISION, ent_id INTEGER)
+AS
+DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
+DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION; DECLARE rz DOUBLE PRECISION;
+DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
+DECLARE w INTEGER; DECLARE h INTEGER; DECLARE sc DOUBLE PRECISION; DECLARE nearz DOUBLE PRECISION;
+DECLARE kx DOUBLE PRECISION; DECLARE ky DOUBLE PRECISION; DECLARE pvs VARCHAR(2048) CHARACTER SET ASCII; DECLARE vleaf INTEGER;
+DECLARE hw DOUBLE PRECISION; DECLARE hh DOUBLE PRECISION; DECLARE qx DOUBLE PRECISION; DECLARE qy DOUBLE PRECISION;
+DECLARE vseq INTEGER; DECLARE eid INTEGER; DECLARE fid INTEGER; DECLARE cur INTEGER; DECLARE curent INTEGER;
+BEGIN
+  EXECUTE PROCEDURE view_setup RETURNING_VALUES ex, ey, ez, fx, fy, fz, rx, ry, rz, ux, uy, uz, w, h, sc, nearz, kx, ky, pvs, vleaf;
+  hw = w / 2e0; hh = h / 2e0;
+  qx = SQRT(1 + kx * kx); qy = SQRT(1 + ky * ky);
+  EXECUTE PROCEDURE mark_faces(pvs, vleaf);
+
+  -- select the faces that face the eye and whose sphere is in the frustum
+  -- (a pass over the marked faces alone: joining the vertices first would
+  -- walk every vertex of every face in the PVS), then one cursor over their
+  -- vertices. The (face, seq) primary key walks each face's vertices in
+  -- order, so no sort is needed. The view transform and the projection are
+  -- in the select list: evaluated by the engine, they cost a fraction of the
+  -- same arithmetic as PSQL statements. Vertices behind the near plane
+  -- project to NULL; the painter clips those edges in view space.
   DELETE FROM sel_faces;
   INSERT INTO sel_faces (face, ent_id, ox, oy, oz)
   SELECT v.face, v.ent_id, v.ox, v.oy, v.oz

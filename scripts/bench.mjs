@@ -43,6 +43,7 @@ await time('monster_think (running)', `EXECUTE BLOCK AS BEGIN EXECUTE PROCEDURE 
 await time('move_step', `SELECT move_step(${m}, 5, 5, 0) FROM rdb$database`);
 await time('view_setup', 'SELECT * FROM view_setup');
 await time('frame_faces', 'SELECT * FROM frame_faces');
+await time('frame_faces_fast', 'SELECT * FROM frame_faces_fast');
 await time('frame_ents', 'SELECT * FROM frame_ents');
 await time('frame_lightstyles', 'SELECT * FROM frame_lightstyles');
 const v = await q1('SELECT * FROM view_setup');

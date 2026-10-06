@@ -55,13 +55,25 @@ const arr = { rowMode: 'array' };
 async function shot(name) {
   const last = await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
   const t0 = performance.now();
-  const faces = (await db.query('SELECT * FROM frame_faces', [], arr)).rows;
+  const fast = process.argv.includes('--fast');
+  const compare = process.argv.includes('--compare');
+  const faces = (await db.query(fast ? 'SELECT * FROM frame_faces_fast' : 'SELECT * FROM frame_faces', [], arr)).rows;
+  const facesFast = compare ? (await db.query('SELECT * FROM frame_faces_fast', [], arr)).rows : null;
   const ents = (await db.query('SELECT * FROM frame_ents', [], arr)).rows;
   const styles = new Float32Array(64);
   for (const [s, v] of (await db.query('SELECT * FROM frame_lightstyles', [], arr)).rows) if (s < 64) styles[s] = v;
   const t1 = performance.now();
   renderer.beginFrame({ x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, fov: 90 });
-  renderer.drawFaces(faces, styles, last.TIME_, new Map());
+  if (fast) renderer.drawFaceList(faces, styles, last.TIME_, new Map());
+  else renderer.drawFaces(faces, styles, last.TIME_, new Map());
+  if (compare) {
+    const sqlFb = renderer.fb.slice();
+    renderer.beginFrame({ x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, fov: 90 });
+    renderer.drawFaceList(facesFast, styles, last.TIME_, new Map());
+    let diff = 0;
+    for (let i = 0; i < sqlFb.length; i++) if (sqlFb[i] !== renderer.fb[i]) diff++;
+    console.log(`${name}: SQL-projected vs JS-projected frame differ in ${diff} of ${sqlFb.length} pixels (${facesFast.length} faces)`);
+  }
   for (const e of ents) {
     const [, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kind] = e;
     const m = res.models.get(mid);
@@ -74,7 +86,7 @@ async function shot(name) {
   hud.draw(renderer, last, last.TIME_);
   renderer.present();
   const t2 = performance.now();
-  const nf = new Set(faces.map((r) => r[0])).size;
+  const nf = fast ? faces.length : new Set(faces.map((r) => r[0])).size;
   console.log(`${name}: ${nf} faces, ${faces.length} vertex rows, ${ents.length} ents — queries ${(t1 - t0).toFixed(0)} ms, raster ${(t2 - t1).toFixed(0)} ms`);
   fs.mkdirSync(path.dirname(prefix), { recursive: true });
   fs.writeFileSync(`${prefix}-${mapName}-${name}.png`, png(W, H, new Uint8Array(stubCanvas.image.data.buffer)));
