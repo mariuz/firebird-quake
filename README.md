@@ -26,6 +26,7 @@ keyboard/mouse → SELECT * FROM quake_tic(...)     game logic: 20 Hz, PSQL
 npm install
 npm run fetch-pak      # downloads the Quake shareware episode (quake106.zip) and extracts id1/pak0.pak
 npm test               # SQL smoke test in Node against the real Firebird WASM engine
+npm run test:boss      # E1M7: the rune wakes Chthon, lava, both terminals, three bolts, the exit opens
 npm run serve          # http://localhost:8080/ — add --coi if your browser blocks service workers
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw)
 ```

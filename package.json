@@ -9,6 +9,7 @@
     "build": "node scripts/build.mjs",
     "serve": "node scripts/build.mjs --serve",
     "test": "node scripts/sql-smoke.mjs",
+    "test:boss": "node scripts/boss-test.mjs",
     "bench": "node scripts/bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"

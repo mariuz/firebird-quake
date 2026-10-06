@@ -47,6 +47,10 @@ jobs:
       - name: SQL smoke test
         run: npm test
 
+      # Picks up the rune, Chthon rises, lava, both terminals, three bolts, the exit opens
+      - name: The House of Chthon
+        run: npm run test:boss
+
       - name: Headless screenshots
         run: npm run screenshots
 

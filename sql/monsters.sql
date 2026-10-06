@@ -396,21 +396,33 @@ BEGIN
   EXECUTE PROCEDURE link_ent(eid);
 END^
 
--- event_lightning: the two "lightning" terminals, and Chthon takes one hit
+-- event_lightning (boss.qc's lightning_fire): the two terminals are the
+-- doors whose target is "lightning"; both must be up (at their top) for the
+-- bolt to arc between them, 16 units under their bases. Chthon takes one of
+-- his three hits when he stands on the bolt.
 CREATE OR ALTER PROCEDURE event_lightning_fire (eid INTEGER)
 AS
-DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION;
-DECLARE x2 DOUBLE PRECISION; DECLARE y2 DOUBLE PRECISION; DECLARE z2 DOUBLE PRECISION; DECLARE b INTEGER; DECLARE hp INTEGER;
+DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION; DECLARE s1 SMALLINT;
+DECLARE x2 DOUBLE PRECISION; DECLARE y2 DOUBLE PRECISION; DECLARE z2 DOUBLE PRECISION; DECLARE s2 SMALLINT;
+DECLARE b INTEGER; DECLARE hp INTEGER;
 BEGIN
-  SELECT FIRST 1 e.x, e.y, e.z FROM ents e WHERE e.target = 'lightning' ORDER BY e.id INTO x1, y1, z1;
-  SELECT FIRST 1 SKIP 1 e.x, e.y, e.z FROM ents e WHERE e.target = 'lightning' ORDER BY e.id INTO x2, y2, z2;
+  SELECT FIRST 1 e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + e.minz - 16, e.mv_state
+    FROM ents e WHERE e.target = 'lightning' AND e.classname = 'func_door' ORDER BY e.id INTO x1, y1, z1, s1;
+  SELECT FIRST 1 SKIP 1 e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + e.minz - 16, e.mv_state
+    FROM ents e WHERE e.target = 'lightning' AND e.classname = 'func_door' ORDER BY e.id INTO x2, y2, z2, s2;
   IF (x1 IS NULL OR x2 IS NULL) THEN EXIT;
-  EXECUTE PROCEDURE fx(4, x1, y1, z1 - 16, x2, y2, z2 - 16, 0);
+  IF (s1 <> 0 OR s2 <> 0) THEN EXIT;                        -- a terminal is not up
+  -- compensate for the length of the bolt
+  x2 = x2 - (x2 - x1) * 0.1e0; y2 = y2 - (y2 - y1) * 0.1e0; z2 = z2 - (z2 - z1) * 0.1e0;
+  EXECUTE PROCEDURE fx(4, x1, y1, z1, x2, y2, z2, 0);
   EXECUTE PROCEDURE snd_at((x1 + x2) / 2, (y1 + y2) / 2, z1, 'weapons/lhit.wav', 1, 1);
+  EXECUTE PROCEDURE lightning_damage(eid, x1, y1, z1, x2, y2, z2, 10);   -- anything else on the bolt
   SELECT FIRST 1 e.id, e.health FROM ents e WHERE e.classname = 'monster_boss' AND e.st NOT IN ('asleep', 'die', 'dead') INTO b, hp;
   IF (b IS NULL) THEN EXIT;
-  -- is Chthon on the beam?
-  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :b AND ABS((:x2 - :x1) * (e.y - :y1) - (:y2 - :y1) * (e.x - :x1)) / MAXVALUE(1, vlen(:x2 - :x1, :y2 - :y1, 0)) < 160)) THEN EXIT;
+  -- is Chthon on the bolt? (within his box of the segment, in the horizontal plane)
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :b
+        AND ABS((:x2 - :x1) * (e.y - :y1) - (:y2 - :y1) * (e.x - :x1)) / MAXVALUE(1, vlen(:x2 - :x1, :y2 - :y1, 0)) < 160
+        AND ((e.x - :x1) * (:x2 - :x1) + (e.y - :y1) * (:y2 - :y1)) BETWEEN 0 AND (:x2 - :x1) * (:x2 - :x1) + (:y2 - :y1) * (:y2 - :y1))) THEN EXIT;
   UPDATE ents e SET e.health = e.health - 1 WHERE e.id = :b RETURNING e.health INTO hp;
   EXECUTE PROCEDURE snd(b, 2, 'boss1/pain.wav', 1, 1);
   IF (hp <= 0) THEN EXECUTE PROCEDURE monster_die(b, player_ent());
