@@ -61,6 +61,7 @@ npm run test:e1m5      # the crucified zombies (start map) and Gloom Keep's floo
 npm run test:e1m2      # Castle of the Damned: the drawbridge slab sinks into the moat, the player wades across
 npm run test:e1m3      # the Necropolis: the gold key springs the zombie pits; zombies die only when gibbed
 npm run test:e1m4      # the Grisly Grotto: two buttons open the underwater door; swim through, surface for the secret, water-jump out, exit to E1M8
+npm run test:e1m6      # The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key, the exit to E1M7
 
 npm run serve          # http://localhost:8080/ â€” add --coi if your browser blocks service workers
 

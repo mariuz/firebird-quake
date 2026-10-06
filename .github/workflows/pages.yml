@@ -75,6 +75,10 @@ jobs:
       - name: The underwater secret
         run: npm run test:e1m4
 
+      # The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the exit to E1M7
+      - name: The gold key
+        run: npm run test:e1m6
+
       - name: Headless screenshots
         run: npm run screenshots
 
