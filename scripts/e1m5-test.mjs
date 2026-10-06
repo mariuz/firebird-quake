@@ -43,7 +43,7 @@ assert(cruc.every((z) => z.SOLID === 0 && z.TAKEDAMAGE === 0), 'they are not sol
 assert(cruc.every((z) => z.ANIM === 'cruc_'), 'they play the crucified animation');
 assert(s.TOTAL_MONSTERS === (await q1("SELECT COUNT(*) n FROM ents WHERE mtype IS NOT NULL AND st <> 'cruc'")).N, `they are not counted among the level's monsters (${s.TOTAL_MONSTERS})`);
 const frames0 = cruc.map((z) => z.FRAME);
-await run(6);
+await run(14);                                   // a monster's first think comes up to 0.6 s after it spawns
 const frames1 = (await qa("SELECT frame FROM ents WHERE mtype = 'zombie' AND st = 'cruc' ORDER BY id")).map((z) => z.FRAME);
 assert(frames1.some((f, i) => f !== frames0[i]), 'they twitch (frames advance)');
 await db.exec(`EXECUTE PROCEDURE t_damage(${cruc[0].ID}, (SELECT ent_id FROM player), (SELECT ent_id FROM player), 500)`);
