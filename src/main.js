@@ -276,7 +276,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   if (faces) {
     // brush-model frames (button textures) come from the ents table via frame_ents? Brush ents are
     // not in FRAME_ENTS; their frame is in the faces' ent rows only via a side query — keep a cache.
-    r.drawFaces(faces, styles, time, brushFrames);
+    if (settings.renderer === 'sql') r.drawFaces(faces, styles, time, brushFrames);   // vertex rows from FRAME_FACES
+    else r.drawFaceList(faces, styles, time, brushFrames);                             // face rows from FRAME_FACES_FAST
   }
   // alias models and sprites
   const bsp = map.bsp;
