@@ -904,7 +904,8 @@ RETURNS (
   msg VARCHAR(200), cprint VARCHAR(200), dmg_take INTEGER, dmg_save INTEGER, dmg_time DOUBLE PRECISION, bonus_time DOUBLE PRECISION,
   dead SMALLINT, exit_kind SMALLINT, next_map VARCHAR(32), killed INTEGER, total_monsters INTEGER,
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
-  level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER)
+  level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
+  amb_water INTEGER, amb_sky INTEGER)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
@@ -926,12 +927,14 @@ BEGIN
          p.dmg_take, p.dmg_save, p.dmg_time, p.bonus_time, e.deadflag, g.exit_kind, g.next_map, g.killed, g.total_monsters,
          g.found_secrets, g.total_secrets, e.waterlevel, e.watertype, g.map_name, g.level_msg,
          IIF(p.invincible_finished > g.time_, 1, 0), IIF(p.super_damage_finished > g.time_, 1, 0),
-         IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf
-    FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id
+         IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf,
+         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0)
+    FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, time_, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_take, dmg_save, dmg_time, bonus_time, dead, exit_kind, next_map,
-         killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf;
+         killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf,
+         amb_water, amb_sky;
   UPDATE player p SET p.dmg_take = 0, p.dmg_save = 0 WHERE p.id = 1 AND p.dmg_time < :time_ - 0.05e0;
   SUSPEND;
 END^

@@ -111,6 +111,12 @@ the entity and Gouraud light from the vertex normals, clipped against the near p
 triangle; sprites are billboards; the sky is Quake's two scrolling layers mapped by the pixel's
 direction; explosions and blood are particles. The status bar comes from `gfx.wad`.
 
+Sound: `sound_events` rows are played with the Web Audio API, attenuated and panned from where they
+happened. Entity ambients (drips, hums, torches) loop at their entities; the water and wind ambients come
+from the BSP leaf the player is in, which `QUAKE_TIC` reports each frame. Quake's music was CD audio, not
+in the pak: put `track02.ogg`…`track11.ogg` (or `.mp3`) in `public/music/`, or pick that folder in the
+page, and each map plays its `worldspawn` track; without them a synthesised drone fills in.
+
 ## Firebird lessons
 
 - **Derived tables are inlined** and `IN (subquery)` can scan the whole table: `JOIN` the marked set

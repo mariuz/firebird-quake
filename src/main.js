@@ -37,7 +37,7 @@ let lastSoundId = 0;
 let lastFxId = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
-const settings = { map: 'start', detail: 'high', sfx: 70, skill: 1, fov: 90, renderer: 'fast' };
+const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -45,6 +45,8 @@ const viewHeight = () => (settings.detail === 'high' ? 200 : 100);
 const sbarLines = () => (settings.detail === 'high' ? 24 : 12);   // the 3D view is the part above the status bar
 const audio = new QuakeAudio();
 audio.setVolume(settings.sfx / 100);
+audio.setMusicVolume(settings.music / 100);
+audio.musicMode = settings.musicMode;
 for (const ev of ['keydown', 'pointerdown', 'touchstart']) window.addEventListener(ev, () => audio.unlock(), { capture: true });
 document.addEventListener('visibilitychange', () => audio.suspend(document.hidden));
 const perf = { tic: 0, faces: 0, ents: 0, draw: 0, rows: 0, nfaces: 0 };
@@ -152,6 +154,8 @@ async function startMap(name, newGame) {
   renderer.particles = [];
   beams = []; explosions = [];
   audio.setAmbients(bsp.entities);
+  const world = bsp.entities.find((e) => e.classname === 'worldspawn');
+  audio.playMusic(Number(world?.sounds ?? 0));
   const { rows } = await db.query('SELECT MAX(id) m FROM sound_events');
   lastSoundId = rows[0].M ?? 0;
   lastFxId = 0;
@@ -221,7 +225,7 @@ async function frame() {
     for (const [s, v] of styles) if (s < 64) styleMap[s] = v;
     const listener = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW };
     if (sounds.length) { lastSoundId = sounds[sounds.length - 1][0]; audio.playEvents(sounds, listener); }
-    audio.updateAmbients(listener);
+    audio.update(listener, [last.AMB_WATER, last.AMB_SKY], tics * 0.05);
     if (fx.length) { lastFxId = fx[fx.length - 1][0]; handleFx(fx, last.TIME_); }
 
     t = performance.now();
@@ -439,6 +443,8 @@ $('renderer').addEventListener('change', (e) => { settings.renderer = e.target.v
 $('skill').value = String(settings.skill);
 $('skill').addEventListener('change', (e) => { settings.skill = Number(e.target.value); saveSettings(); });
 $('sfxvol').value = settings.sfx;
-$('sfxvol').addEventListener('input', () => { settings.sfx = Number($('sfxvol').value); saveSettings(); audio.unlock(); audio.setVolume(settings.sfx / 100); });
+$('sfxvol').addEventListener('input', () => { settings.sfx = Number($('sfxvol').value); saveSettings(); audio.unlock(); audio.setVolume(settings.sfx / 100);
+audio.setMusicVolume(settings.music / 100);
+audio.musicMode = settings.musicMode; });
 
 boot();

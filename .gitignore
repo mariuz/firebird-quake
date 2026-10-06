@@ -4,3 +4,5 @@ public/wads/*.wad
 *.log
 .claude/
 public/pak/*.pak
+public/music/*
+!public/music/README.txt

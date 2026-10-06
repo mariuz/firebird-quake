@@ -40,6 +40,12 @@
           <option value="sql">SQL projects every vertex</option>
         </select></label>
         <label title="Sound effects volume">Sound <input id="sfxvol" type="range" min="0" max="100" step="5"></label>
+        <label title="Quake's soundtrack was CD audio: put trackNN.ogg files in music/, or pick the folder">Music <select id="music">
+          <option value="tracks">CD tracks (music/trackNN.ogg)</option>
+          <option value="synth">Synth drone</option>
+          <option value="off">Off</option>
+        </select> <input id="musicvol" type="range" min="0" max="100" step="5">
+          <input id="musicdir" type="file" webkitdirectory multiple title="a folder with track02.ogg … track11.ogg"></label>
         <span id="engine" class="pill">Firebird</span>
         <span id="mapname" class="pill"></span>
       </div>
@@ -100,7 +106,12 @@
         <li><b>JavaScript only paints.</b> It rasterises the polygons with perspective-correct spans over a surface cache
           (texture Ã— lightmap through the colormap, as r_surf.c did), draws the alias models with Gouraud light sampled
           from the lightmap below them, sprites, particles, the two-layer sky, and the status bar from gfx.wad.
-          Sounds are rows in <code>SOUND_EVENTS</code>, spatialised with the Web Audio API.</li>
+          Sounds are rows in <code>SOUND_EVENTS</code>, spatialised with the Web Audio API. The map's ambient emitters
+          (drips, hums, torches) loop at their entities; the water and wind ambients come from the BSP leaf the player
+          is in, which <code>QUAKE_TIC</code> reports each frame, faded as <code>S_UpdateAmbientSounds</code> did.
+          Quake's music was CD audio, not in the pak: drop <code>track02.ogg</code>…<code>track11.ogg</code> into
+          <code>music/</code> (or pick that folder) and each map plays its <code>worldspawn</code> track; without them a
+          synthesised drone fills in.</li>
       </ul>
       <p>A port of <a href="https://github.com/mariuz/firebird-doom">Firebird DOOM</a>'s idea to Quake. The engine is
         <a href="https://github.com/mariuz/electric-firebird">Electric Firebird</a> (<code>firebird-wasm</code>). The game

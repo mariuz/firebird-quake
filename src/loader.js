@@ -18,7 +18,7 @@ export const ITEM_ID_BASE = 1000000;      // b_*.bsp boxes: loaded once, kept ac
 // column specs: name:type where type ∈ i (integer) d (double) s (string)
 const TABLES = {
   hulls: 'hull:i node:i nx:d ny:d nz:d dist:d c0:i c1:i',
-  leaves: 'id:i contents:i minx:d miny:d minz:d maxx:d maxy:d maxz:d first_ms:i num_ms:i ambient:i pvs:s',
+  leaves: 'id:i contents:i minx:d miny:d minz:d maxx:d maxy:d maxz:d first_ms:i num_ms:i ambient:i ambient_sky:i pvs:s',
   marksurfaces: 'id:i face:i',
   faces: 'id:i model_id:i nx:d ny:d nz:d dist:d nverts:i miptex:i sx:d sy:d sz:d soff:d tx:d ty:d tz:d toff:d sky:i liquid:i style0:i cx:d cy:d cz:d radius:d',
   face_verts: 'face:i seq:i x:d y:d z:d',
@@ -203,7 +203,7 @@ function geometryRows(bsp, base, res, { pvs = true } = {}) {
       out.hulls.push([1, base + ni, pl.nx, pl.ny, pl.nz, pl.dist, ch[0], ch[1]]);
     });
     bsp.leaves.forEach((l, li) => {
-      out.leaves.push([base + li, l.contents, ...l.mins, ...l.maxs, base + l.firstMarksurface, l.numMarksurfaces, l.ambient[0], bsp.pvsHex[li]]);
+      out.leaves.push([base + li, l.contents, ...l.mins, ...l.maxs, base + l.firstMarksurface, l.numMarksurfaces, l.ambient[0], l.ambient[1], bsp.pvsHex[li]]);
     });
     for (let i = 0; i < bsp.marksurfaces.length; i++) out.marksurfaces.push([base + i, base + bsp.marksurfaces[i]]);
   }

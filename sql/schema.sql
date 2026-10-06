@@ -91,7 +91,8 @@ CREATE TABLE leaves (
   maxx DOUBLE PRECISION, maxy DOUBLE PRECISION, maxz DOUBLE PRECISION,
   first_ms INTEGER NOT NULL,
   num_ms   INTEGER NOT NULL,
-  ambient  INTEGER DEFAULT 0 NOT NULL,
+  ambient  INTEGER DEFAULT 0 NOT NULL,          -- ambient_level[AMBIENT_WATER]
+  ambient_sky INTEGER DEFAULT 0 NOT NULL,       -- ambient_level[AMBIENT_SKY] (wind)
   -- the decompressed PVS as hex: leaf j (1-based) visible ⇔ bit (j-1).
   -- '' means everything is visible (no vis data, or the solid leaf).
   pvs      VARCHAR(2048) CHARACTER SET ASCII
