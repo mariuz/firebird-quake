@@ -67,6 +67,10 @@ jobs:
       - name: The drawbridge
         run: npm run test:e1m2
 
+      # The Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, go down, get up, throw flesh, die only gibbed
+      - name: The zombie pits
+        run: npm run test:e1m3
+
       - name: Headless screenshots
         run: npm run screenshots
 

@@ -32,6 +32,7 @@ AS
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE tic INTEGER;
 BEGIN
   IF (name IS NULL) THEN EXIT;
+  name = TRIM(name);   -- IIF/CASE over literals of different lengths pads the shorter one
   SELECT e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + (e.minz + e.maxz) / 2 FROM ents e WHERE e.id = :eid INTO x, y, z;
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   INSERT INTO sound_events (id, tic, ent_id, chan, snd, vol, attn, x, y, z)
@@ -44,7 +45,7 @@ DECLARE tic INTEGER;
 BEGIN
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   INSERT INTO sound_events (id, tic, ent_id, chan, snd, vol, attn, x, y, z)
-    VALUES (NEXT VALUE FOR sound_seq, :tic, NULL, 0, :name, :vol, :attn, :x, :y, :z);
+    VALUES (NEXT VALUE FOR sound_seq, :tic, NULL, 0, TRIM(:name), :vol, :attn, :x, :y, :z);
 END^
 
 CREATE OR ALTER PROCEDURE fx (kind SMALLINT, x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION,

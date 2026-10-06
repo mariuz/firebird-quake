@@ -918,7 +918,7 @@ BEGIN
     ELSE
     BEGIN
       UPDATE ents e SET e.ltime = e.ltime + :dt WHERE e.id = :eid;
-      IF (think IS NOT NULL AND nt IS NOT NULL AND nt <= lt + dt) THEN
+      IF (think IS NOT NULL AND nt IS NOT NULL AND nt <= lt + dt + 1e-6) THEN
       BEGIN
         UPDATE ents e SET e.think = NULL, e.nextthink = NULL WHERE e.id = :eid;
         EXECUTE PROCEDURE run_think(eid, think);
@@ -977,7 +977,8 @@ BEGIN
   t = now_();
   pe = player_ent();
   -- thinks that are due (non-pushers)
-  FOR SELECT e.id, e.think FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY e.id INTO eid, think DO
+  -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
+  FOR SELECT e.id, e.think FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY e.id INTO eid, think DO
   BEGIN
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
     EXECUTE PROCEDURE run_think(eid, think);
