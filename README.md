@@ -8,10 +8,14 @@
 
 ![E1M8, Ziggurat Vertigo: the lava hall](docs/lavahall-e1m8-0.png) ![a scrag over the lava river](docs/scrag-e1m8-0.png) ![three seconds into a jump, looking down](docs/jump-e1m8-0.png)
 
+![E1M2, Castle of the Damned: the drawbridge slab, raised](docs/bridgeup-e1m2-0.png) ![the slab sunk into the moat](docs/bridgedown-e1m2-0.png) ![the gold key room](docs/keyroom-e1m2-0.png) ![grunts in the beamed hall](docs/hall-e1m2-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
 bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
-since gravity there is an eighth of normal. Every frame is the result of a query, painted headlessly by
+since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
+channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
+demon torches, and grunts in the beamed hall. Every frame is the result of a query, painted headlessly by
 `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
@@ -215,6 +219,10 @@ node scripts/screenshot.mjs e1m7 docs/chthon   --at=-300,64,56,0 --sql="EXECUTE 
 node scripts/screenshot.mjs e1m8 docs/lavahall --at=992,-96,-706,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/scrag    --at=96,-120,-594,315 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/jump     --at=992,-96,-676,270 --sql="UPDATE ents SET vz = 300 WHERE id = (SELECT ent_id FROM player); UPDATE player SET pitch = 45" --tics=55 --single --fast
+node scripts/screenshot.mjs e1m2 docs/bridgeup   --at=1400,-564,229,0 --tics=2  --single --fast
+node scripts/screenshot.mjs e1m2 docs/bridgedown --at=1400,-564,229,0 --tics=80 --single --fast   # the bank is the trigger
+node scripts/screenshot.mjs e1m2 docs/keyroom    --at=880,-300,470,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m2 docs/hall       --at=536,-1264,438,90 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
