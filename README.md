@@ -12,14 +12,18 @@
 
 ![E1M3, the Necropolis: zombies up from the pits](docs/pits-e1m3-0.png) ![zombies in the arched hall](docs/zombies-e1m3-0.png) ![a zombie down the corridor](docs/corridor-e1m3-0.png)
 
+![E1M4, the Grisly Grotto: the carved gate](docs/arch-e1m4-0.png) ![knights across the lake](docs/lake-e1m4-0.png) ![the super nailgun in its chamber](docs/tunnel-e1m4-0.png) ![the secret exit's ledge, from the water](docs/ledge-e1m4-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
 bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
 since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
 channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
 demon torches, and grunts in the beamed hall; the Necropolis' pit zombies four seconds after the trap
-springs, two more in the arched hall, and one shambling down a corridor. Every frame is the result of a
-query, painted headlessly by `scripts/screenshot.mjs`.
+springs, two more in the arched hall, and one shambling down a corridor; the Grisly Grotto's carved gate,
+knights across its lake, the super nailgun in its chamber, and the ledge with the secret slipgate to
+Ziggurat Vertigo seen from the water, where the E1M4 test surfaces. Every frame is the result of a query,
+painted headlessly by `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -229,6 +233,10 @@ node scripts/screenshot.mjs e1m2 docs/hall       --at=536,-1264,438,90 --tics=8 
 node scripts/screenshot.mjs e1m3 docs/pits     --at=-900,-240,-330,90 --sql="UPDATE player SET pitch = 5; EXECUTE PROCEDURE trigger_fire((SELECT id FROM ents WHERE classname = 'trigger_once' AND target = 't83'), (SELECT ent_id FROM player))" --tics=80 --single --fast
 node scripts/screenshot.mjs e1m3 docs/zombies  --at=-128,-824,-322,0 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m3 docs/corridor --at=1352,120,-130,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m4 docs/arch     --at=-472,2080,1230,45 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m4 docs/lake     --at=1088,-784,846,135 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m4 docs/tunnel   --at=704,1408,542,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m4 docs/ledge    --at=1288,1350,845,90 --tics=4 --single --fast
 node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
