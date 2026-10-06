@@ -1,0 +1,24 @@
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
+import { Pak } from '../src/pak.js';
+import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
+const db = new FirebirdBrowser('memory://quake', { transport: new DirectTransport() });
+await createSchema(db, sql);
+const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
+const res = await loadResources(db, pak); await loadMap(db, pak, res, 'e1m1');
+await db.query('SELECT * FROM quake_tic(1,0,0,0,0,0,0,1,0)');
+const t = () => performance.now();
+async function time(label, q, n = 3) { const t0 = t(); let r; for (let i = 0; i < n; i++) r = await db.query(q, [], { rowMode: 'array' }); console.log(`${label.padEnd(50)} ${((t() - t0) / n).toFixed(1)} ms`); return r; }
+const v = (await db.query('SELECT * FROM view_setup')).rows[0];
+const mark = `DELETE FROM vis_faces; INSERT INTO vis_faces (face, ent_id, ox, oy, oz) SELECT DISTINCT m.face, 0, 0, 0, 0 FROM leaves l JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms WHERE l.id > 0 AND l.contents <> -2 AND l.num_ms > 0 AND BIN_AND(POSITION(SUBSTRING('${v.PVS}' FROM BIN_SHR(l.id - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(l.id - 1, 3))) <> 0;`;
+const cursor = `FOR SELECT v.ent_id, f.id, fv.seq, fv.x FROM vis_faces v JOIN faces f ON f.id = v.face JOIN face_verts fv ON fv.face = f.id WHERE f.nx * (${v.EX} - v.ox) + f.ny * (${v.EY} - v.oy) + f.nz * (${v.EZ} - v.oz) - f.dist > 0 ORDER BY v.ent_id, f.id, fv.seq INTO :a, :b, :c, :d DO n = n + 1;`;
+await time('mark only', `EXECUTE BLOCK AS BEGIN ${mark} END`);
+await time('mark + count join', `EXECUTE BLOCK RETURNS (n INTEGER) AS BEGIN ${mark} SELECT COUNT(*) FROM vis_faces v JOIN faces f ON f.id = v.face JOIN face_verts fv ON fv.face = f.id INTO n; SUSPEND; END`);
+await time('mark + cursor loop (no suspend)', `EXECUTE BLOCK RETURNS (n INTEGER) AS DECLARE a INTEGER; DECLARE b INTEGER; DECLARE c INTEGER; DECLARE d DOUBLE PRECISION; BEGIN n = 0; ${mark} ${cursor} SUSPEND; END`);
+await time('mark + cursor, no ORDER BY', `EXECUTE BLOCK RETURNS (n INTEGER) AS DECLARE a INTEGER; DECLARE b INTEGER; DECLARE c INTEGER; DECLARE d DOUBLE PRECISION; BEGIN n = 0; ${mark} ${cursor.replace('ORDER BY v.ent_id, f.id, fv.seq', '')} SUSPEND; END`);
+await time('mark + cursor + 5 doubles/row', `EXECUTE BLOCK RETURNS (n INTEGER) AS DECLARE a INTEGER; DECLARE b INTEGER; DECLARE c INTEGER; DECLARE d DOUBLE PRECISION; DECLARE e DOUBLE PRECISION; DECLARE f2 DOUBLE PRECISION; BEGIN n = 0; ${mark} FOR SELECT v.ent_id, f.id, fv.seq, fv.x, fv.y, fv.z FROM vis_faces v JOIN faces f ON f.id = v.face JOIN face_verts fv ON fv.face = f.id ORDER BY v.ent_id, f.id, fv.seq INTO :a, :b, :c, :d, :e, :f2 DO BEGIN n = n + 1; d = d * ${v.FX} + e * ${v.FY} + f2 * ${v.FZ}; END SUSPEND; END`);
+await time('frame_faces', 'SELECT * FROM frame_faces');
+await time('emit 1800 rows x 8 cols (SUSPEND cost)', `EXECUTE BLOCK RETURNS (a INTEGER, b INTEGER, c DOUBLE PRECISION, d DOUBLE PRECISION, e DOUBLE PRECISION, f DOUBLE PRECISION, g DOUBLE PRECISION, h INTEGER) AS BEGIN a = 0; WHILE (a < 1800) DO BEGIN b = a; c = a * 1.5; d = c; e = d; f = e; g = f; h = 0; SUSPEND; a = a + 1; END END`);
+await db.close(); process.exit(0);

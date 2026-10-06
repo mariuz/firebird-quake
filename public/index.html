@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Firebird Quake</title>
+  <meta name="description" content="Quake simulated and rendered inside the Firebird SQL database, running in your browser via Firebird WASM.">
+  <script src="./coi-serviceworker.js"></script>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header>
+    <h1>Firebird <span>Quake</span></h1>
+    <p class="tagline">Every game tic is a PSQL procedure. Every frame is a <code>SELECT</code>.
+      Firebird 6 runs in WebAssembly in a Worker in this tab.</p>
+  </header>
+
+  <main>
+    <section class="game">
+      <div class="screen-wrap">
+        <canvas id="screen" width="320" height="200" tabindex="0" aria-label="Quake view rendered from Firebird query results"></canvas>
+        <div id="status" class="status">Loading…</div>
+      </div>
+      <div id="stats" class="stats">&nbsp;</div>
+      <div class="controls">
+        <label>PAK <span id="pakname" class="pill">—</span>
+          <input id="pakfile" type="file" accept=".pak,.PAK"></label>
+        <label>Map <select id="map"></select></label>
+        <label>Skill <select id="skill">
+          <option value="0">Easy</option>
+          <option value="1">Normal</option>
+          <option value="2">Hard</option>
+        </select></label>
+        <label>Detail <select id="detail">
+          <option value="high">320×200</option>
+          <option value="low">160×100</option>
+        </select></label>
+        <label title="Sound effects volume">Sound <input id="sfxvol" type="range" min="0" max="100" step="5"></label>
+        <span id="engine" class="pill">Firebird</span>
+        <span id="mapname" class="pill"></span>
+      </div>
+      <p class="keys">Click the view to capture the mouse ·
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows move · mouse looks ·
+        <kbd>Ctrl</kbd> or click fires · <kbd>Space</kbd> jumps · <kbd>Shift</kbd> walks ·
+        <kbd>1</kbd>–<kbd>8</kbd> weapons · <kbd>/</kbd> or wheel cycles · <kbd>9</kbd> all weapons · <kbd>P</kbd> pause.
+        On touch screens the left half moves, the right half looks, a tap fires.</p>
+    </section>
+
+    <section class="console">
+      <h2>SQL console <small>— the live game database</small></h2>
+      <div class="presets">
+        <button data-sql="SELECT * FROM player">player</button>
+        <button data-sql="SELECT id, classname, mtype, st, anim, health, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z, enemy_id FROM ents WHERE mtype IS NOT NULL ORDER BY st, id">monsters</button>
+        <button data-sql="SELECT id, classname, mv_state, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z, targetname, target FROM ents WHERE movetype = 7 ORDER BY classname">movers</button>
+        <button data-sql="SELECT classname, COUNT(*) n FROM ents GROUP BY classname ORDER BY n DESC">entities</button>
+        <button data-sql="SELECT FIRST 40 * FROM frame_faces">frame_faces</button>
+        <button data-sql="SELECT * FROM frame_ents">frame_ents</button>
+        <button data-sql="SELECT * FROM view_setup">view_setup</button>
+        <button data-sql="SELECT * FROM frame_lightstyles WHERE value_ <> 1">lightstyles</button>
+        <button data-sql="EXECUTE PROCEDURE player_impulse(9)">give all</button>
+        <button data-sql="UPDATE ents SET health = 1 WHERE mtype IS NOT NULL AND health > 0">one-hit monsters</button>
+        <button data-sql="UPDATE ents SET flags = BIN_OR(flags, 64) WHERE classname = 'player'">god</button>
+      </div>
+      <textarea id="sql" spellcheck="false" rows="4">SELECT classname, COUNT(*) n FROM ents GROUP BY classname ORDER BY n DESC</textarea>
+      <div class="run"><button id="run-sql">Run</button> <small>Ctrl+Enter</small></div>
+      <pre id="sql-out" class="out"></pre>
+    </section>
+
+    <section class="about">
+      <h2>How it works</h2>
+      <ul>
+        <li><b>The BSP becomes tables.</b> <code>FACES</code> with their plane and texture mapping, <code>FACE_VERTS</code>
+          (the edges and surfedges resolved), <code>LEAVES</code> with a decompressed PVS as a hex string,
+          <code>MARKSURFACES</code>, and <code>HULLS</code>: the node tree and both clipnode hulls, one row per node with the
+          plane copied in. Alias models contribute <code>MODELS</code> and their animation runs in <code>ANIMS</code>; the
+          entity lump becomes <code>MAP_ENTS</code>.</li>
+        <li><b>Collision is a recursive procedure.</b> <code>RHC</code> is <code>SV_RecursiveHullCheck</code>: it splits the
+          segment at every plane it crosses and recurses into both sides, threading the trace state through its parameters.
+          <code>TRACE_MOVE</code> runs it against the world and every door and platform, and tests monsters and the player
+          with a Minkowski slab test. <code>FLY_MOVE</code>, <code>WALK_MOVE</code>, <code>MOVE_STEP</code> and
+          <code>PUSH_MOVE</code> are sv_phys.c in PSQL, clip planes and pushed entities kept in global temporary tables because
+          PSQL has no arrays.</li>
+        <li><b>The game is PSQL.</b> <code>QUAKE_TIC</code> runs at 20 Hz: the player's friction, acceleration, jumping and
+          swimming, doors (linked by touching boxes, with keys), platforms, buttons, trains, secret doors, triggers
+          (once, multiple, secret, counter, relay, teleport, push, hurt, changelevel), items and weapons from the axe to the
+          thunderbolt, damage with armour and quad, gibs, and the monster AI of ai.qc: <code>FIND_TARGET</code>,
+          <code>MOVE_TO_GOAL</code>, <code>NEW_CHASE_DIR</code>, <code>CHECK_ATTACK</code>, and the grunt, dog, knight,
+          ogre, scrag, fiend, zombie and shambler attacks. Chthon rises in E1M8 and takes the lightning.</li>
+        <li><b>The renderer is a query.</b> <code>FRAME_FACES</code> finds the leaf the eye is in, marks the leaves in its PVS
+          that touch the view frustum, collects their faces (<code>DISTINCT</code>, Quake's visframe), drops back faces and
+          faces outside the frustum, and walks each polygon in a single cursor: view transform, clipping to the near plane,
+          projection, and the texel coordinates texinfo gives every vertex. Doors, platforms and ammo boxes are brush models
+          and go through the same cursor at their own origin. <code>FRAME_ENTS</code> lists the alias models and sprites in
+          the PVS with their pose and frame; <code>FRAME_LIGHTSTYLES</code> animates the lights.</li>
+        <li><b>JavaScript only paints.</b> It rasterises the polygons with perspective-correct spans over a surface cache
+          (texture × lightmap through the colormap, as r_surf.c did), draws the alias models with Gouraud light sampled
+          from the lightmap below them, sprites, particles, the two-layer sky, and the status bar from gfx.wad.
+          Sounds are rows in <code>SOUND_EVENTS</code>, spatialised with the Web Audio API.</li>
+      </ul>
+      <p>A port of <a href="https://github.com/mariuz/firebird-doom">Firebird DOOM</a>'s idea to Quake. The engine is
+        <a href="https://github.com/mariuz/electric-firebird">Electric Firebird</a> (<code>firebird-wasm</code>). The game
+        data is the Quake shareware episode (id Software, 1996), which may be freely redistributed; drop in a registered
+        <code>pak0.pak</code>/<code>pak1.pak</code> to play the other episodes. Quake is a trademark of id Software.</p>
+    </section>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

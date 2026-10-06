@@ -1,0 +1,18 @@
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
+import { Pak } from '../src/pak.js';
+import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
+const db = new FirebirdBrowser('memory://quake', { transport: new DirectTransport() });
+await createSchema(db, sql);
+const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
+const res = await loadResources(db, pak); await loadMap(db, pak, res, 'e1m1');
+await db.query('SELECT * FROM quake_tic(1,0,0,0,0,0,0,1,0)');
+const v = (await db.query('SELECT * FROM view_setup')).rows[0];
+console.log('view leaf', v.LEAF, 'pvs len', v.PVS.length);
+console.log(JSON.stringify((await db.query(`SELECT e.id, e.classname, e.model_id, m.kind, e.leaf, e.leafs, CAST(e.x AS INTEGER) x, CAST(e.y AS INTEGER) y, CAST(e.z AS INTEGER) z, pvs_visible('${v.PVS}', e.leaf) vis FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind IN ('M','S') ORDER BY vlen(e.x - ${v.EX}, e.y - ${v.EY}, e.z - ${v.EZ}) ROWS 8`)).rows));
+console.log('frame_ents', (await db.query('SELECT * FROM frame_ents')).rows.length);
+console.log(JSON.stringify('ents kinds', (await db.query("SELECT m.kind, COUNT(*) n FROM ents e JOIN models m ON m.id = e.model_id GROUP BY m.kind")).rows));
+console.log(JSON.stringify('item sample', (await db.query("SELECT e.id, e.classname, e.model_id, e.leaf, e.solid, e.flags, CAST(e.z AS INTEGER) z, CAST(e.spawn_z AS INTEGER) sz FROM ents e WHERE e.classname LIKE 'item_%' ROWS 5")).rows));
+await db.close(); process.exit(0);
