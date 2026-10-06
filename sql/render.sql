@@ -83,7 +83,7 @@ CREATE OR ALTER PROCEDURE mark_faces (pvs VARCHAR(2048) CHARACTER SET ASCII, vle
 AS
 DECLARE cur INTEGER; DECLARE world INTEGER;
 DECLARE eid INTEGER; DECLARE emid INTEGER; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
-DECLARE leafs VARCHAR(200) CHARACTER SET ASCII; DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT;
+DECLARE leafs VARCHAR(200) CHARACTER SET ASCII; DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT; DECLARE lf INTEGER;
 BEGIN
   SELECT g.world_model FROM game g WHERE g.id = 1 INTO world;
   SELECT c.vis_leaf FROM viewcfg c WHERE c.id = 1 INTO cur;
@@ -113,7 +113,8 @@ BEGIN
       BEGIN
         q = POSITION(',', leafs, p);
         IF (q = 0) THEN LEAVE;
-        IF (pvs_visible(pvs, CAST(SUBSTRING(leafs FROM p FOR q - p) AS INTEGER)) = 1) THEN BEGIN vis = 1; LEAVE; END
+        lf = CAST(SUBSTRING(leafs FROM p FOR q - p) AS INTEGER);
+        IF (lf > 0 AND BIN_AND(POSITION(SUBSTRING(pvs FROM BIN_SHR(lf - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(lf - 1, 3))) <> 0) THEN BEGIN vis = 1; LEAVE; END
         p = q + 1;
       END
     END
@@ -259,7 +260,8 @@ BEGIN
       BEGIN
         q = POSITION(',', leafs, p);
         IF (q = 0) THEN LEAVE;
-        IF (pvs_visible(pvs, CAST(SUBSTRING(leafs FROM p FOR q - p) AS INTEGER)) = 1) THEN BEGIN vis = 1; LEAVE; END
+        lf = CAST(SUBSTRING(leafs FROM p FOR q - p) AS INTEGER);
+        IF (lf > 0 AND BIN_AND(POSITION(SUBSTRING(pvs FROM BIN_SHR(lf - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(lf - 1, 3))) <> 0) THEN BEGIN vis = 1; LEAVE; END
         p = q + 1;
       END
     END
