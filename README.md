@@ -6,9 +6,13 @@
 
 ![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png)
 
+![E1M8, Ziggurat Vertigo: the lava hall](docs/lavahall-e1m8-0.png) ![a scrag over the lava river](docs/scrag-e1m8-0.png) ![three seconds into a jump, looking down](docs/jump-e1m8-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
-bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava. Every frame is the
-result of a query, painted headlessly by `scripts/screenshot.mjs`.
+bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
+hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
+since gravity there is an eighth of normal. Every frame is the result of a query, painted headlessly by
+`scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -208,6 +212,10 @@ node scripts/screenshot.mjs e1m1 docs/slime    --at=1392,824,-402,90  --tics=8  
 node scripts/screenshot.mjs e1m1 docs/grunts   --at=1150,1030,-250,330 --tics=12 --single --fast
 node scripts/screenshot.mjs e1m1 docs/slipgate --at=1312,800,-240,270 --tics=10 --single --fast
 node scripts/screenshot.mjs e1m7 docs/chthon   --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
+node scripts/screenshot.mjs e1m8 docs/lavahall --at=992,-96,-706,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m8 docs/scrag    --at=96,-120,-594,315 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m8 docs/jump     --at=992,-96,-676,270 --sql="UPDATE ents SET vz = 300 WHERE id = (SELECT ent_id FROM player); UPDATE player SET pitch = 45" --tics=55 --single --fast
+node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
 ## Layout

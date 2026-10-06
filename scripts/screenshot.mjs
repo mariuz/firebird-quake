@@ -4,7 +4,7 @@
 //
 //   node scripts/screenshot.mjs [map] [out-prefix]
 //   node scripts/screenshot.mjs e1m1 docs/shot      → docs/shot-e1m1-0.png …
-//   options: --at=x,y,z,yaw  --sql="stmt; stmt"  --tics=N  --single  --fast  --compare
+//   options: --at=x,y,z,yaw  --sql="stmt; stmt"  --tics=N  --single  --fast  --compare  --gallery
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -98,6 +98,25 @@ async function shot(name) {
   fs.writeFileSync(`${prefix}-${mapName}-${name}.png`, png(W, H, new Uint8Array(stubCanvas.image.data.buffer)));
 }
 
+// --gallery: one shot from every item spot, facing the longest open direction; a quick way to find views of a level
+if (process.argv.includes('--gallery')) {
+  const pe = (await db.query('SELECT ent_id e FROM player')).rows[0].E;
+  const spots = (await db.query("SELECT classname, CAST((x + minx + x + maxx) / 2 AS INTEGER) cx, CAST((y + miny + y + maxy) / 2 AS INTEGER) cy, CAST(z + minz AS INTEGER) z0 FROM ents WHERE classname STARTING WITH 'item_' OR classname STARTING WITH 'weapon_' OR classname = 'misc_explobox' ORDER BY id")).rows;
+  let n = 0;
+  for (const s of spots) {
+    let best = { f: -1, yaw: 0 };
+    for (let yaw = 0; yaw < 360; yaw += 45) {
+      const dx = Math.cos((yaw * Math.PI) / 180) * 2000, dy = Math.sin((yaw * Math.PI) / 180) * 2000;
+      const f = (await db.query(`SELECT fraction f FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${s.CX}, ${s.CY}, ${s.Z0 + 30}, ${s.CX + dx}, ${s.CY + dy}, ${s.Z0 + 30}, 1)`)).rows[0].F;
+      if (f > best.f) best = { f, yaw };
+    }
+    await db.exec(`UPDATE ents SET x = ${s.CX}, y = ${s.CY}, z = ${s.Z0 + 30}, yaw = ${best.yaw}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+    for (let i = 0; i < 8; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+    await shot(`gallery-${String(n++).padStart(2, '0')}_${s.CLASSNAME}_${s.CX}_${s.CY}_${s.Z0 + 30}_${best.yaw}`);
+  }
+  await db.close(); process.exit(0);
+}
 await shot('0');
 if (process.argv.includes('--single')) { await db.close(); process.exit(0); }
 for (let i = 0; i < 2; i++) await tic([1, 0, 0, 90, 0, 0, 0, 1, 0]);
