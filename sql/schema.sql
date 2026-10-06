@@ -25,7 +25,9 @@ CREATE TABLE game (
   serverflags    INTEGER DEFAULT 0 NOT NULL,            -- runes collected
   world_type     SMALLINT DEFAULT 0 NOT NULL,           -- 0 medieval 1 metal 2 base (key names)
   level_msg      VARCHAR(80),
-  intermission_tics INTEGER DEFAULT 0 NOT NULL
+  intermission_tics INTEGER DEFAULT 0 NOT NULL,
+  registered     SMALLINT DEFAULT 0 NOT NULL,           -- pak1 present: all four episodes
+  finale         SMALLINT DEFAULT 0 NOT NULL            -- Shub-Niggurath is dead
 );
 
 CREATE TABLE viewcfg (

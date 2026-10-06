@@ -4,6 +4,7 @@
 SET TERM ^ ;
 
 CREATE OR ALTER PROCEDURE run_think (eid INTEGER, think VARCHAR(24)) AS BEGIN END^
+CREATE OR ALTER PROCEDURE teleporttrain_next (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE mover_blocked (eid INTEGER, other INTEGER) AS BEGIN END^
 
 -- the current frame of an entity's animation
@@ -179,7 +180,8 @@ BEGIN
   IF (mk = 'leap') THEN
   BEGIN
     -- DemonCheckAttack / dog: jump when 100–400 away and roughly level
-    IF (d < 100 OR d > 400 OR ABS(z1 - z2) > 64) THEN RETURN 0;
+    IF (d > 400 OR ABS(z1 - z2) > 64) THEN RETURN 0;
+    IF (d < 100 AND NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.mtype = 'tarbaby')) THEN RETURN 0;   -- the spawn jumps from anywhere
     chance = IIF(r = 1, 0.5e0, 0.2e0);
   END
   ELSE IF (r = 0) THEN chance = 0.9e0;
@@ -246,7 +248,7 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
     dx = x2 - x1 + evx * 0.3e0; dy = y2 - y1 + evy * 0.3e0; dz = z2 - z1 + 100;
     EXECUTE PROCEDURE launch_rocket(eid, x1 + COS(yaw * 0.0174532925e0) * 80, y1 + SIN(yaw * 0.0174532925e0) * 80, z1 + 100, dx, dy, dz, 300, 100, 'progs/lavaball.mdl');
-    UPDATE ents e SET e.classname = 'lavaball', e.movetype = 6, e.vz = e.vz + 150 WHERE e.classname = 'rocket' AND e.owner_id = :eid AND e.model_id = model_by_name('progs/lavaball.mdl');
+    UPDATE ents e SET e.classname = 'lavaball', e.movetype = 6, e.vz = e.vz + 150 WHERE e.id = (SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid);
   END
   ELSE IF (mk = 'lightning') THEN
   BEGIN
@@ -258,6 +260,32 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 1, 'shambler/sboom.wav', 1, 1);
     EXECUTE PROCEDURE fx(4, x1, y1, z1 + 40, hx, hy, hz, eid);
     EXECUTE PROCEDURE lightning_damage(eid, x1, y1, z1 + 40, hx, hy, hz, 10);
+  END
+  ELSE IF (mk = 'laser') THEN
+  BEGIN
+    -- enforcer: a laser bolt from the gun, 15 damage
+    EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
+    dx = x2 - x1; dy = y2 - y1; dz = z2 + 16 - z1 - 20;
+    EXECUTE PROCEDURE launch_rocket(eid, x1 + COS(yaw * 0.0174532925e0) * 30 + SIN(yaw * 0.0174532925e0) * 8.5e0,
+      y1 + SIN(yaw * 0.0174532925e0) * 30 - COS(yaw * 0.0174532925e0) * 8.5e0, z1 + 16, dx, dy, dz, 600, 15, 'progs/laser.mdl');
+    UPDATE ents e SET e.classname = 'laser', e.effects = 4 WHERE e.id = (SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid);
+  END
+  ELSE IF (mk = 'kspike') THEN
+  BEGIN
+    -- hell knight: one flame spike per frame, fanned around the aim
+    IF ((SELECT e.anim_frame FROM ents e WHERE e.id = :eid) = 6) THEN EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
+    dx = x2 - x1; dy = y2 - y1; dz = z2 - z1;
+    dl = ((SELECT e.anim_frame FROM ents e WHERE e.id = :eid) - 8.5e0) * 0.1e0;
+    EXECUTE PROCEDURE launch_spike(eid, x1, y1, z1 + 20, dx - dy * dl * 0.7e0, dy + dx * dl * 0.7e0, dz, 300, 'kspike');
+  END
+  ELSE IF (mk = 'voreball') THEN
+  BEGIN
+    -- vore: a homing pod
+    EXECUTE PROCEDURE snd(eid, 1, 'shalrath/attack2.wav', 1, 1);
+    dx = x2 - x1; dy = y2 - y1; dz = z2 - z1;
+    EXECUTE PROCEDURE launch_rocket(eid, x1, y1, z1 + 10, dx, dy, dz, 400, 40, 'progs/v_spike.mdl');
+    UPDATE ents e SET e.classname = 'voreball', e.effects = 0, e.think = 'vore_track', e.nextthink = now_() + 0.1e0, e.enemy_id = :enemy
+     WHERE e.id = (SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid);
   END
   ELSE IF (mk = 'leap') THEN
   BEGIN
@@ -283,6 +311,34 @@ BEGIN
   dmg = CAST(dmg * (0.5e0 + RAND()) AS INTEGER);
   EXECUTE PROCEDURE t_damage(enemy, eid, eid, dmg);
   EXECUTE PROCEDURE fx(3, (SELECT e.x FROM ents e WHERE e.id = :enemy), (SELECT e.y FROM ents e WHERE e.id = :enemy), (SELECT e.z + 10 FROM ents e WHERE e.id = :enemy), 0, 0, 0, dmg);
+END^
+
+-- ShalMissileHome: the vore's pod turns toward its target every 0.1 s
+CREATE OR ALTER PROCEDURE vore_track (eid INTEGER)
+AS
+DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE ehp INTEGER;
+BEGIN
+  SELECT t.x - e.x, t.y - e.y, t.z + 10 - e.z, t.health FROM ents e JOIN ents t ON t.id = e.enemy_id WHERE e.id = :eid INTO dx, dy, dz, ehp;
+  IF (dx IS NULL OR ehp <= 0) THEN
+  BEGIN
+    DELETE FROM ents e WHERE e.id = :eid;
+    EXIT;
+  END
+  dl = vlen(dx, dy, dz);
+  IF (dl = 0) THEN EXIT;
+  UPDATE ents e SET e.vx = :dx / :dl * 350, e.vy = :dy / :dl * 350, e.vz = :dz / :dl * 350, e.yaw = vectoyaw(:dx, :dy),
+         e.nextthink = now_() + 0.1e0 WHERE e.id = :eid;
+END^
+
+-- the spawn (tarbaby) bursts: 120 radius damage, and it is gone
+CREATE OR ALTER PROCEDURE tarbaby_explode (eid INTEGER)
+AS
+BEGIN
+  EXECUTE PROCEDURE t_radius_damage(eid, eid, 120, eid);
+  EXECUTE PROCEDURE snd(eid, 2, 'blob/death1.wav', 1, 1);
+  EXECUTE PROCEDURE fx(8, (SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid), (SELECT e.z FROM ents e WHERE e.id = :eid), 0, 0, 0, 0);
+  UPDATE game g SET g.killed = g.killed + 1 WHERE g.id = 1;
+  DELETE FROM ents e WHERE e.id = :eid;
 END^
 
 -- th_pain
@@ -343,6 +399,23 @@ BEGIN
     END
     EXIT;
   END
+  IF (mt = 'tarbaby') THEN
+  BEGIN
+    IF (attacker = player_ent()) THEN UPDATE player p SET p.kills = p.kills + 1 WHERE p.id = 1;
+    EXECUTE PROCEDURE tarbaby_explode(eid);
+    EXIT;
+  END
+  IF (mt = 'oldone') THEN
+  BEGIN
+    -- finale_1: Shub-Niggurath is dead; the browser shows the ending
+    EXECUTE PROCEDURE snd(eid, 2, ds, 1, 1);
+    UPDATE ents e SET e.st = 'die', e.solid = 0, e.takedamage = 0, e.movetype = 0 WHERE e.id = :eid;
+    EXECUTE PROCEDURE set_anim(eid, 'shake');
+    UPDATE game g SET g.finale = 1, g.killed = g.killed + 1 WHERE g.id = 1;
+    UPDATE ents e SET e.health = 0, e.st = 'dead', e.nextthink = NULL WHERE e.mtype IS NOT NULL AND e.id <> :eid AND e.health > 0 AND e.st <> 'cruc';
+    EXECUTE PROCEDURE cprint('Congratulations and well done! You have beaten the hideous Shub-Niggurath, and its hordes of spawn.');
+    EXIT;
+  END
   UPDATE game g SET g.killed = g.killed + 1 WHERE g.id = 1;
   IF (attacker = player_ent()) THEN UPDATE player p SET p.kills = p.kills + 1 WHERE p.id = 1;
   -- drop the backpack
@@ -351,7 +424,8 @@ BEGIN
     EXECUTE PROCEDURE spawn_ent('backpack', x, y, z - 24) RETURNING_VALUES bp;
     EXECUTE PROCEDURE set_model(bp, 'progs/backpack.mdl');
     UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
-           e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
+           e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.ammo_cells = IIF(:drop_ = 'cells', 5, 0),
+           e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
     EXECUTE PROCEDURE drop_to_floor(bp);
   END
   IF (mt = 'boss') THEN
@@ -468,7 +542,7 @@ BEGIN
     af = 0;
   END
   SELECT a.first_frame, a.frame_count FROM anims a WHERE a.model_id = :mid AND a.anim = :anim INTO ff, fc;
-  IF (ff IS NULL) THEN BEGIN ff = 0; fc = 1; END
+  IF (ff IS NULL) THEN BEGIN ff = 0; fc = 12; END   -- no such animation (model missing): a typical run length, so attack frames still come
 
   -- the enemy died?
   IF (enemy IS NOT NULL) THEN
@@ -575,6 +649,7 @@ BEGIN
         SELECT vlen(a.x - b.x, a.y - b.y, 0) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
         IF (d < 48 AND (SELECT e.attack_finished FROM ents e WHERE e.id = :eid) < t) THEN
         BEGIN
+          IF (mt = 'tarbaby') THEN EXECUTE PROCEDURE snd(eid, 1, 'blob/hit1.wav', 1, 1);   -- Tar_JumpTouch
           EXECUTE PROCEDURE t_damage(enemy, eid, eid, 10 + FLOOR(RAND() * 10) + IIF(mt = 'demon1', 10, 0));
           UPDATE ents e SET e.attack_finished = :t + 1 WHERE e.id = :eid;
         END
@@ -678,6 +753,58 @@ BEGIN
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
     EXIT;
   END
+END^
+
+-- the END's spiked ball: glides from path corner to path corner (its target
+-- chain is the destinations; the first corner's target keeps the teleport
+-- destination name while the ball itself keeps 'target' = next corner)
+CREATE OR ALTER PROCEDURE teleporttrain_next (eid INTEGER)
+AS
+DECLARE tgt VARCHAR(40); DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE cz DOUBLE PRECISION; DECLARE ctarget VARCHAR(40);
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE spd DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION;
+DECLARE dest VARCHAR(40);
+BEGIN
+  SELECT e.noise1, e.x, e.y, e.z, e.speed, e.target FROM ents e WHERE e.id = :eid INTO tgt, px, py, pz, spd, dest;
+  IF (tgt IS NULL) THEN tgt = dest;                              -- first call: the ball's target is the first corner
+  SELECT FIRST 1 e.x, e.y, e.z, e.target FROM ents e WHERE e.targetname = :tgt AND e.classname = 'path_corner' INTO cx, cy, cz, ctarget;
+  IF (cx IS NULL) THEN EXIT;
+  dl = vlen(cx - px, cy - py, cz - pz);
+  IF (dl < 4) THEN
+  BEGIN
+    -- arrived: head for the next corner
+    UPDATE ents e SET e.noise1 = :ctarget, e.vx = 0, e.vy = 0, e.vz = 0, e.nextthink = now_() + 0.05e0 WHERE e.id = :eid;
+    EXIT;
+  END
+  UPDATE ents e SET e.noise1 = :tgt, e.x = e.x + (:cx - e.x) / :dl * MINVALUE(:dl, :spd * 0.05e0),
+         e.y = e.y + (:cy - e.y) / :dl * MINVALUE(:dl, :spd * 0.05e0), e.z = e.z + (:cz - e.z) / :dl * MINVALUE(:dl, :spd * 0.05e0),
+         e.yaw = MOD(e.yaw + 5, 360), e.nextthink = now_() + 0.05e0 WHERE e.id = :eid;
+  EXECUTE PROCEDURE link_ent(eid);
+END^
+
+-- a console helper: put a monster in front of the player (impulse-free cheating)
+CREATE OR ALTER PROCEDURE spawn_monster (mname VARCHAR(16), dist DOUBLE PRECISION)
+RETURNS (id INTEGER)
+AS
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE yaw DOUBLE PRECISION;
+DECLARE mmodel VARCHAR(40); DECLARE mhp INTEGER; DECLARE mhull SMALLINT; DECLARE mmaxz DOUBLE PRECISION; DECLARE mflags INTEGER; DECLARE mys DOUBLE PRECISION; DECLARE stand VARCHAR(16);
+BEGIN
+  SELECT e.x, e.y, e.z, e.yaw FROM ents e WHERE e.id = player_ent() INTO px, py, pz, yaw;
+  SELECT t.model, t.health, t.hull, t.maxz, t.flags, t.yaw_speed, t.stand_anim FROM monster_types t WHERE t.name = :mname
+    INTO mmodel, mhp, mhull, mmaxz, mflags, mys, stand;
+  IF (mmodel IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE spawn_ent('monster_' || mname, px + COS(yaw * 0.0174532925e0) * dist, py + SIN(yaw * 0.0174532925e0) * dist, pz + 8) RETURNING_VALUES id;
+  EXECUTE PROCEDURE set_model(id, mmodel);
+  UPDATE ents e SET e.mtype = :mname, e.health = :mhp, e.max_health = :mhp, e.solid = 3, e.takedamage = 2,
+         e.movetype = IIF(BIN_AND(:mflags, 3) <> 0, 5, 4), e.flags = BIN_OR(32, :mflags), e.yaw_speed = :mys, e.yaw = anglemod(:yaw + 180),
+         e.minx = IIF(:mhull = 2, -32, -16), e.miny = IIF(:mhull = 2, -32, -16), e.minz = -24,
+         e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
+         e.st = 'stand', e.anim = :stand, e.ideal_yaw = e.yaw, e.spawn_x = e.x, e.spawn_y = e.y, e.spawn_z = e.z,
+         e.think = 'monster_think', e.nextthink = now_() + 0.1e0 WHERE e.id = :id;
+  IF (mname = 'fish') THEN UPDATE ents e SET e.maxz = 24 WHERE e.id = :id;
+  IF (mname = 'oldone') THEN UPDATE ents e SET e.minx = -160, e.miny = -128, e.maxx = 160, e.maxy = 128, e.maxz = 256, e.takedamage = 0, e.movetype = 0 WHERE e.id = :id;
+  UPDATE game g SET g.total_monsters = g.total_monsters + 1 WHERE g.id = 1;
+  IF (BIN_AND(mflags, 3) = 0) THEN EXECUTE PROCEDURE drop_to_floor(id); ELSE EXECUTE PROCEDURE link_ent(id);
+  SUSPEND;
 END^
 
 -- ── the pushers (SV_Physics_Pusher) ─────────────────────────────────────
@@ -832,6 +959,8 @@ BEGIN
   ELSE IF (think = 'multi_wait') THEN EXECUTE PROCEDURE multi_wait(eid);
   ELSE IF (think = 'delayed_use') THEN EXECUTE PROCEDURE delayed_use(eid);
   ELSE IF (think = 'grenade_explode') THEN EXECUTE PROCEDURE grenade_explode(eid);
+  ELSE IF (think = 'vore_track') THEN EXECUTE PROCEDURE vore_track(eid);
+  ELSE IF (think = 'teleporttrain_next') THEN EXECUTE PROCEDURE teleporttrain_next(eid);
   ELSE IF (think = 'remove') THEN DELETE FROM ents e WHERE e.id = :eid;
   ELSE IF (think = 'monster_think') THEN EXECUTE PROCEDURE monster_think(eid);
   ELSE IF (think = 'fireball_think') THEN EXECUTE PROCEDURE fireball_think(eid);
@@ -905,7 +1034,7 @@ RETURNS (
   dead SMALLINT, exit_kind SMALLINT, next_map VARCHAR(32), killed INTEGER, total_monsters INTEGER,
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
-  amb_water INTEGER, amb_sky INTEGER)
+  amb_water INTEGER, amb_sky INTEGER, finale SMALLINT)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
@@ -928,13 +1057,13 @@ BEGIN
          g.found_secrets, g.total_secrets, e.waterlevel, e.watertype, g.map_name, g.level_msg,
          IIF(p.invincible_finished > g.time_, 1, 0), IIF(p.super_damage_finished > g.time_, 1, 0),
          IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf,
-         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0)
+         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, time_, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_take, dmg_save, dmg_time, bonus_time, dead, exit_kind, next_map,
          killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf,
-         amb_water, amb_sky;
+         amb_water, amb_sky, finale;
   UPDATE player p SET p.dmg_take = 0, p.dmg_save = 0 WHERE p.id = 1 AND p.dmg_time < :time_ - 0.05e0;
   SUSPEND;
 END^
@@ -945,7 +1074,7 @@ AS
 DECLARE i INTEGER;
 BEGIN
   UPDATE game g SET g.tic = 0, g.time_ = 0, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
-         g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0 WHERE g.id = 1;
+         g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0 WHERE g.id = 1;
   -- switchable lights back to their patterns
   DELETE FROM lightstyles l WHERE l.style >= 32;
   i = 32;

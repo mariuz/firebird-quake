@@ -709,9 +709,18 @@ BEGIN
       (SELECT e.z FROM ents e WHERE e.id = :other), 0, 0, 0, 0);
   END
   -- telefrag anything at the destination
-  FOR SELECT e.id FROM ents e WHERE e.id <> :other AND e.takedamage > 0 AND e.health > 0
-        AND ABS(e.x - :dx) < 48 AND ABS(e.y - :dy) < 48 AND ABS(e.z - :dz - 27) < 64 INTO v DO
+  FOR SELECT e.id FROM ents e JOIN ents o ON o.id = :other
+       WHERE e.id <> :other AND e.takedamage > 0 AND e.health > 0
+         AND e.x + e.maxx >= :dx + o.minx AND e.x + e.minx <= :dx + o.maxx
+         AND e.y + e.maxy >= :dy + o.miny AND e.y + e.miny <= :dy + o.maxy
+         AND e.z + e.maxz >= :dz + 27 + o.minz AND e.z + e.minz <= :dz + 27 + o.maxz INTO v DO
     EXECUTE PROCEDURE t_damage(v, other, other, 50000);
+  -- Shub-Niggurath only dies this way: the telefrag must reach her whatever her takedamage
+  FOR SELECT e.id FROM ents e JOIN ents o ON o.id = :other
+       WHERE e.classname = 'monster_oldone' AND e.health > 0
+         AND e.x + e.maxx >= :dx + o.minx AND e.x + e.minx <= :dx + o.maxx
+         AND e.y + e.maxy >= :dy + o.miny AND e.y + e.miny <= :dy + o.maxy INTO v DO
+    EXECUTE PROCEDURE monster_die(v, other);
   UPDATE ents e SET e.x = :dx, e.y = :dy, e.z = :dz + 27, e.yaw = :dyaw, e.pitch = 0,
          e.vx = COS(:dyaw * 0.0174532925e0) * 300, e.vy = SIN(:dyaw * 0.0174532925e0) * 300, e.vz = 0,
          e.flags = BIN_AND(e.flags, BIN_NOT(512)), e.teleport_time = now_() + 0.7e0
@@ -1078,7 +1087,7 @@ BEGIN
   dl = vlen(dx, dy, dz);
   IF (dl = 0) THEN EXIT;
   EXECUTE PROCEDURE spawn_ent(kind, ox, oy, oz) RETURNING_VALUES s;
-  EXECUTE PROCEDURE set_model(s, CASE kind WHEN 'superspike' THEN 'progs/s_spike.mdl' WHEN 'wizspike' THEN 'progs/w_spike.mdl' ELSE 'progs/spike.mdl' END);
+  EXECUTE PROCEDURE set_model(s, CASE kind WHEN 'superspike' THEN 'progs/s_spike.mdl' WHEN 'wizspike' THEN 'progs/w_spike.mdl' WHEN 'kspike' THEN 'progs/k_spike.mdl' ELSE 'progs/spike.mdl' END);
   UPDATE ents e SET e.owner_id = :owner, e.movetype = 9, e.solid = 2,
          e.vx = :dx / :dl * :spd, e.vy = :dy / :dl * :spd, e.vz = :dz / :dl * :spd,
          e.yaw = vectoyaw(:dx, :dy), e.pitch = ATAN2(:dz, vlen(:dx, :dy, 0)) * 57.29577951e0,
@@ -1139,7 +1148,7 @@ BEGIN
   ELSE BEGIN c2 = 'worldspawn'; td2 = 0; END
   IF (e2 = own) THEN EXIT;
 
-  IF (c1 IN ('spike', 'superspike', 'wizspike')) THEN
+  IF (c1 IN ('spike', 'superspike', 'wizspike', 'kspike')) THEN
   BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END   -- sky
     IF (td2 > 0 AND hp2 > 0) THEN
@@ -1159,6 +1168,26 @@ BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END
     IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(RAND() * 20));
     EXECUTE PROCEDURE t_radius_damage(e1, own, dmg, e2);
+    EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
+    EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
+    DELETE FROM ents e WHERE e.id = :e1;
+  END
+  ELSE IF (c1 = 'laser') THEN
+  BEGIN
+    IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END
+    EXECUTE PROCEDURE snd_at(x, y, z, 'enforcer/enfstop.wav', 1, 1);
+    IF (td2 > 0 AND hp2 > 0) THEN
+    BEGIN
+      EXECUTE PROCEDURE fx(3, x, y, z, 0, 0, 0, 15);
+      EXECUTE PROCEDURE t_damage(e2, e1, own, 15);
+    END
+    ELSE EXECUTE PROCEDURE fx(1, x, y, z, 0, 0, 0, 0);
+    DELETE FROM ents e WHERE e.id = :e1;
+  END
+  ELSE IF (c1 = 'voreball') THEN
+  BEGIN
+    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, 40);
+    EXECUTE PROCEDURE t_radius_damage(e1, own, 40, e2);
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
     DELETE FROM ents e WHERE e.id = :e1;
@@ -1262,10 +1291,22 @@ BEGIN
       END
       IF (cls = 'trigger_onlyregistered' AND mdl IS NOT NULL) THEN
       BEGIN
-        -- the shareware version: show the message, never fire
-        EXECUTE PROCEDURE spawn_ent('trigger_message', ox, oy, oz) RETURNING_VALUES eid;
-        EXECUTE PROCEDURE set_model(eid, mdl);
-        UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.message = COALESCE(:msg, 'This item is only available in the registered version'), e.wait_ = 2 WHERE e.id = :eid;
+        SELECT g.registered FROM game g WHERE g.id = 1 INTO wtype;
+        IF (wtype = 1) THEN
+        BEGIN
+          -- registered: an ordinary trigger_multiple
+          EXECUTE PROCEDURE spawn_ent('trigger_multiple', ox, oy, oz) RETURNING_VALUES eid;
+          EXECUTE PROCEDURE set_model(eid, mdl);
+          UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.target = :tg, e.killtarget = :kt, e.message = :msg, e.spawnflags = :sf,
+                 e.wait_ = IIF(COALESCE(:wt, 0) = 0, 2, :wt), e.targetname = :tn WHERE e.id = :eid;
+        END
+        ELSE
+        BEGIN
+          -- the shareware version: show the message, never fire
+          EXECUTE PROCEDURE spawn_ent('trigger_message', ox, oy, oz) RETURNING_VALUES eid;
+          EXECUTE PROCEDURE set_model(eid, mdl);
+          UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.message = COALESCE(:msg, 'This item is only available in the registered version'), e.wait_ = 2 WHERE e.id = :eid;
+        END
       END
       CONTINUE;
     END
@@ -1374,9 +1415,11 @@ BEGIN
     ELSE IF (cls = 'path_corner') THEN BEGIN END
     ELSE IF (cls IN ('func_wall', 'func_episodegate', 'func_bossgate')) THEN
     BEGIN
-      IF (cls = 'func_episodegate') THEN DELETE FROM ents e WHERE e.id = :eid;   -- no runes in the shareware episode
+      -- an episode gate stands only once its rune is held; the boss gate until all four are
+      SELECT g.serverflags FROM game g WHERE g.id = 1 INTO wtype;
+      IF (cls = 'func_episodegate' AND BIN_AND(wtype, sf) = 0) THEN DELETE FROM ents e WHERE e.id = :eid;
+      ELSE IF (cls = 'func_bossgate' AND BIN_AND(wtype, 15) = 15) THEN DELETE FROM ents e WHERE e.id = :eid;
       ELSE UPDATE ents e SET e.solid = 4, e.movetype = 7, e.yaw = 0 WHERE e.id = :eid;
-      IF (cls = 'func_bossgate') THEN DELETE FROM ents e WHERE e.id = :eid;
     END
     ELSE IF (cls = 'func_illusionary') THEN
       UPDATE ents e SET e.solid = 0, e.movetype = 0, e.yaw = 0 WHERE e.id = :eid;
@@ -1466,6 +1509,10 @@ BEGIN
              e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
              e.st = 'stand', e.anim = :stand, e.anim_frame = FLOOR(RAND() * 4), e.ideal_yaw = e.yaw,
              e.think = 'monster_think', e.nextthink = 0.1e0 + RAND() * 0.5e0 WHERE e.id = :eid;
+      IF (mname = 'fish') THEN
+        UPDATE ents e SET e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 24 WHERE e.id = :eid;
+      IF (mname = 'oldone') THEN
+        UPDATE ents e SET e.minx = -160, e.miny = -128, e.minz = -24, e.maxx = 160, e.maxy = 128, e.maxz = 256, e.takedamage = 0, e.movetype = 0 WHERE e.id = :eid;
       IF (mname = 'zombie' AND BIN_AND(sf, 1) <> 0) THEN       -- SPAWN_CRUCIFIED
         UPDATE ents e SET e.solid = 0, e.takedamage = 0, e.movetype = 0, e.anim = 'cruc_', e.flags = 0, e.st = 'cruc' WHERE e.id = :eid;
       ELSE
@@ -1509,6 +1556,13 @@ BEGIN
       IF (cls = 'trap_shooter') THEN UPDATE ents e SET e.think = 'shooter_think', e.nextthink = e.wait_ WHERE e.id = :eid;
     END
     ELSE IF (cls = 'event_lightning') THEN UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
+    ELSE IF (cls = 'misc_teleporttrain') THEN
+    BEGIN
+      EXECUTE PROCEDURE set_model(eid, 'progs/teleport.mdl');
+      UPDATE ents e SET e.classname = 'trigger_teleport', e.solid = 1, e.movetype = 0, e.avel_yaw = 100, e.effects = 8,
+             e.minx = -16, e.miny = -16, e.minz = -16, e.maxx = 16, e.maxy = 16, e.maxz = 16, e.target = :tg, e.targetname = :tn,
+             e.speed = IIF(COALESCE(:spd, 0) = 0, 100, :spd), e.mv_state = 2, e.think = 'teleporttrain_next', e.nextthink = 0.1e0 WHERE e.id = :eid;
+    END
     ELSE
       UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
   END

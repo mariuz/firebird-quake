@@ -131,7 +131,7 @@ export async function loadResources(db, pak, { width = 320, height = 200, fov = 
   const styleRows = LIGHTSTYLES.map((p, i) => `INSERT INTO lightstyles (style, pattern) VALUES (${i}, '${p}');`).join('\n');
   await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${styleRows}\nEND^\nSET TERM ; ^`);
   await loadMonsterTypes(db);
-  await db.exec('INSERT INTO game (id) VALUES (1); INSERT INTO player (id) VALUES (1)');
+  await db.exec(`INSERT INTO game (id, registered) VALUES (1, ${pak.has('maps/e2m1.bsp') ? 1 : 0}); INSERT INTO player (id) VALUES (1)`);
   await setView(db, width, height, fov);
   return res;
 }

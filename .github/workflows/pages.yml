@@ -51,6 +51,10 @@ jobs:
       - name: The House of Chthon
         run: npm run test:boss
 
+      # The pak1 monsters' AI (enforcer, death knight, vore, spawn, rotfish, Shub-Niggurath), without pak1
+      - name: The registered monsters
+        run: npm run test:registered
+
       - name: Headless screenshots
         run: npm run screenshots
 

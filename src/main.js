@@ -35,6 +35,7 @@ let paused = false;
 let lastTic = 0;
 let lastSoundId = 0;
 let lastFxId = 0;
+let finaleShown = false;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast' };
@@ -200,6 +201,16 @@ async function frame() {
       await new Promise((r) => setTimeout(r, 2000));
       if (pak.has(`maps/${next}.bsp`)) await startMap(next, false);
       else { setStatus(`${next} is not in this pak (shareware ends here)`); await new Promise((r) => setTimeout(r, 2500)); await startMap('start', false); }
+      nextFrame();
+      return;
+    }
+    if (last.FINALE === 1 && !finaleShown) {
+      // Shub-Niggurath is dead: the ending, then back to the start map
+      finaleShown = true;
+      setStatus('Congratulations and well done! You have beaten the hideous Shub-Niggurath, and its hordes of spawn. The Quake realm is free.');
+      await new Promise((r) => setTimeout(r, 12000));
+      finaleShown = false;
+      await startMap('start', true);
       nextFrame();
       return;
     }
