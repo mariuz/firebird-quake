@@ -59,6 +59,10 @@ jobs:
       - name: Ziggurat Vertigo
         run: npm run test:e1m8
 
+      # The crucified zombies (start map) and Gloom Keep's flooded moat: swimming, breath, drowning
+      - name: Crucified zombies and the flooded moat
+        run: npm run test:e1m5
+
       - name: Headless screenshots
         run: npm run screenshots
 
