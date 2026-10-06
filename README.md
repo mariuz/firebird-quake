@@ -16,6 +16,8 @@
 
 ![E1M5, Gloom Keep: under the water of the flooded moat](docs/flooded-e1m5-0.png) ![the moat courtyard](docs/moat-e1m5-0.png) ![the stained-glass hall](docs/glass-e1m5-0.png) ![a knight on the checkered floor](docs/knight-e1m5-0.png) ![an ogre at the wooden gate](docs/goldkey-e1m5-0.png)
 
+![E1M6, The Door To Chthon: taking the gold runekey wakes the fiend across the lava](docs/runekey-e1m6-0.png) ![the gold runekey doors, shut](docs/golddoors-e1m6-0.png) ![the doors take the key and slide aside](docs/goldopen-e1m6-0.png) ![a slipgate between its red torches](docs/slipgate-e1m6-0.png) ![the pillared hall](docs/pillars-e1m6-0.png) ![the banner hall](docs/banners-e1m6-0.png)
+
 E1M1 from the start, a grunt, the slime hall with its teleporter and armour, two grunts coming over the
 bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
@@ -26,8 +28,10 @@ springs, two more in the arched hall, and one shambling down a corridor; the Gri
 knights across its lake, the super nailgun in its chamber, and the ledge with the secret slipgate to
 Ziggurat Vertigo seen from the water, where the E1M4 test surfaces; Gloom Keep's flooded moat from under
 the water, where the E1M5 test holds its breath, the moat's courtyard with its round window, the
-stained-glass hall, a knight on the checkered floor, and an ogre at the wooden gate. Every frame is the
-result of a query, painted headlessly by `scripts/screenshot.mjs`.
+stained-glass hall, a knight on the checkered floor, and an ogre at the wooden gate; The Door To Chthon's
+gold runekey, whose taking wakes the fiend across the lava, the gold runekey doors shut and then opened
+by the key, which the E1M6 test plays, a slipgate between its red torches, the pillared hall and the
+banner hall. Every frame is the result of a query, painted headlessly by `scripts/screenshot.mjs`.
 
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
@@ -246,6 +250,12 @@ node scripts/screenshot.mjs e1m5 docs/moat     --at=-792,1608,158,315 --tics=2 -
 node scripts/screenshot.mjs e1m5 docs/glass    --at=128,1840,-18,180 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m5 docs/knight   --at=-1128,1344,162,180 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m5 docs/goldkey  --at=-760,2248,330,315 --tics=2 --single --fast
+node scripts/screenshot.mjs e1m6 docs/runekey   --at=224,120,62,90 --sql="UPDATE player SET pitch = 10" --tics=30 --single --fast
+node scripts/screenshot.mjs e1m6 docs/golddoors --at=250,704,31,0 --tics=4 --single --fast
+node scripts/screenshot.mjs e1m6 docs/goldopen  --at=250,704,31,0 --sql="EXECUTE PROCEDURE door_fire(6, (SELECT ent_id FROM player))" --tics=40 --single --fast
+node scripts/screenshot.mjs e1m6 docs/slipgate  --at=-472,136,110,250 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m6 docs/pillars   --at=-40,1184,-306,135 --tics=8 --single --fast
+node scripts/screenshot.mjs e1m6 docs/banners   --at=672,152,30,135 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
 ```
 
