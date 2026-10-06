@@ -43,61 +43,65 @@ assert(s.TOTAL_SECRETS >= 2, `the grotto keeps ${s.TOTAL_SECRETS} secrets`);
 const exits = await qa("SELECT id, map FROM ents WHERE classname = 'trigger_changelevel' ORDER BY id");
 assert(exits.length === 2 && exits.some((e) => e.MAP === 'e1m5') && exits.some((e) => e.MAP === 'e1m8'), 'two exits: the way on to E1M5, and the secret one to Ziggurat Vertigo');
 
-// ── the secret exit is under water ──────────────────────────────────────
+// ── the secret cave: an underwater door, opened by two buttons through a counter ──
 const exit = await box("classname = 'trigger_changelevel' AND map = 'e1m8'");
-assert((await contents(exit.CX, exit.CY, exit.CZ)) === -3, `the exit to E1M8 lies under the lake (${exit.CX}, ${exit.CY}, ${exit.CZ})`);
 const main = await box("classname = 'trigger_changelevel' AND map = 'e1m5'");
-assert((await contents(main.CX, main.CY, main.CZ)) === -1, 'the ordinary exit is in the air');
+assert((await contents(main.CX, main.CY, main.CZ)) === -1, 'the ordinary exit stands in the open');
+assert((await contents(exit.CX, exit.CY, exit.CZ)) === -1 && exit.Z0 > 852, `the exit to E1M8 stands on a ledge above the lake (z ${exit.Z0}; the surface is near 852)`);
+const door = await q1("SELECT id, mv_state, lip, CAST(y AS INTEGER) y, x + minx x0, x + maxx x1, y + miny y0, y + maxy y1, z + minz z0, z + maxz z1 FROM ents WHERE classname = 'func_door' AND targetname = 't98'");
+assert(door && door.Z1 < 852 && door.LIP === -384, `an underwater door blocks the way to it (x ${door.X0}..${door.X1}, y ${door.Y0}..${door.Y1}, z ${door.Z0}..${door.Z1}); its lip of -384 will slide it far aside`);
+assert((await contents(door.X0 - 20, (door.Y0 + door.Y1) / 2, (door.Z0 + door.Z1) / 2)) === -3, 'the water in front of it');
+const buttons = await qa("SELECT id FROM ents WHERE classname = 'func_button' AND target = 't97' ORDER BY id");
+const counter = await q1("SELECT id, count_ FROM ents WHERE classname = 'trigger_counter' AND targetname = 't97'");
+assert(buttons.length === 2 && counter && counter.COUNT_ === 2 && (await q1("SELECT target t FROM ents WHERE id = " + counter.ID)).T === 't98', 'two buttons feed a counter that targets the door');
+const lake = { y: (door.Y0 + door.Y1) / 2, z: (door.Z0 + door.Z1) / 2 };
+const swimPath = (x1, x2, z) => q1(`SELECT fraction f, hit_ent h FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${x1}, ${lake.y}, ${z}, ${x2}, ${lake.y}, ${z}, 1)`);
+let t = await swimPath(door.X0 - 60, door.X1 + 60, lake.z);
+assert(t.F < 1 && t.H === door.ID, 'at depth the door stops a swimmer');
 
-// an approach: open water some way from the exit, with a clear swim to it
-let start = null;
-outer: for (const dist of [160, 120, 200, 90]) for (const [dx, dy] of [[-1, 0], [0, -1], [1, 0], [0, 1], [-0.7, -0.7], [-0.7, 0.7], [0.7, -0.7], [0.7, 0.7]]) {
-  const x = exit.CX + dx * dist, y = exit.CY + dy * dist, z = exit.CZ;
-  if ((await contents(x, y, z)) !== -3) continue;
-  if ((await q1(`SELECT hull_contents(1, ${head}, ${x}, ${y}, ${z}) c FROM rdb$database`)).C === -2) continue;
-  const t = await q1(`SELECT fraction f FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${x}, ${y}, ${z}, ${exit.CX}, ${exit.CY}, ${exit.CZ}, 1)`);
-  if (t.F === 1) { start = { x, y, z, yaw: (Math.atan2(exit.CY - y, exit.CX - x) * 180) / Math.PI }; break outer; }
-}
-assert(!!start, `open water ${start ? Math.hypot(start.x - exit.CX, start.y - exit.CY).toFixed(0) : '?'} units from the exit with a clear swim to it`);
+// the first button: one more to go
+await db.exec(`EXECUTE PROCEDURE button_fire(${buttons[0].ID}, ${pe})`);
+s = await run(3);
+assert(/more to go/i.test(s.CPRINT ?? ''), `the first button: "${s.CPRINT}"`);
+assert((await q1(`SELECT mv_state m FROM ents WHERE id = ${door.ID}`)).M === 1, 'the door has not moved');
+await db.exec(`EXECUTE PROCEDURE button_fire(${buttons[1].ID}, ${pe})`);
+s = await run(3);
+assert(/completed/i.test(s.CPRINT ?? '') || /secret cave/i.test(s.CPRINT ?? ''), `the second: "${s.CPRINT}"`);
+let opened = false;
+for (let i = 0; i < 200 && !opened; i++) { s = await tic(); opened = (await q1(`SELECT mv_state m FROM ents WHERE id = ${door.ID}`)).M === 0; }
+const d2 = await q1(`SELECT CAST(y AS INTEGER) y FROM ents WHERE id = ${door.ID}`);
+assert(opened && d2.Y - door.Y > 500, `the door slides ${d2.Y - door.Y} units aside and rests open`);
+assert((await q1("SELECT COUNT(*) n FROM ents WHERE classname = 'trigger_once' AND targetname = 't98'")).N === 0, '"A secret cave has opened..." was announced (its trigger is spent)');
+t = await swimPath(door.X0 - 60, door.X1 + 60, lake.z);
+assert(t.F === 1, 'and at depth the way through is clear');
 
-// ── swim to it ──────────────────────────────────────────────────────────
-await teleport(start.x, start.y, start.z, start.yaw);
+// ── swim through, surface by the ledge: the secret ─────────────────────
+const sec = (await qa(`SELECT id, (x + minx + x + maxx) / 2 cx, (y + miny + y + maxy) / 2 cy, z + minz z0, z + maxz z1 FROM ents WHERE classname = 'trigger_secret' ORDER BY vlen((x + minx + x + maxx) / 2 - ${exit.CX}, (y + miny + y + maxy) / 2 - ${exit.CY}, 0)`))[0];
+assert(sec.Z0 > 852 && sec.Z0 < 900 && (await contents(sec.CX, sec.CY, 820)) === -3, 'a secret trigger hangs just above the water by the ledge: found by surfacing there');
+await teleport(door.X0 - 60, lake.y, lake.z, 0);
 s = await tic();
-assert(s.WATERLEVEL === 3, 'the player is under water');
-assert(s.AMB_WATER > 0, 'the lake murmurs (water ambient)');
-let reached = false, tics = 0;
-for (; tics < 200 && !reached; tics++) {
-  s = await tic([1, 1, 0, 0, 0, 0, 0, 1, 0]);
-  if (s.EXIT_KIND === 1) reached = true;
+assert(s.WATERLEVEL === 3 && s.AMB_WATER > 0, 'the player is under the lake, with the water murmuring');
+let found = false, tics = 0;
+for (; tics < 300 && !found; tics++) {
+  const past = s.PX > door.X1 + 20;                       // through the gap first, then up to the surface by the ledge
+  const yaw = past ? (Math.atan2(sec.CY - s.PY, sec.CX - s.PX) * 180) / Math.PI : 0;
+  s = await tic([1, 1, 0, yaw - s.YAW, 0, 0, past ? 1 : 0, 1, 0]);
+  if (s.FOUND_SECRETS > 0) found = true;
 }
-assert(reached && s.NEXT_MAP === 'e1m8', `swimming into the exit asks for Ziggurat Vertigo after ${(tics / 20).toFixed(1)} s`);
+assert(found, `swimming through and surfacing by the ledge finds the secret after ${(tics / 20).toFixed(1)} s`);
+assert((await sounds('misc/secret.wav')) > 0, 'with the chime');
 assert(s.HEALTH === 100, 'with breath to spare');
 
-// ── the secret area beside it ───────────────────────────────────────────
-await loadMap(db, pak, res, 'e1m4', { skill: 1 });
-const pe2 = (await q1('SELECT ent_id e FROM player')).E;
-const secrets = await qa("SELECT id, (x + minx + x + maxx) / 2 cx, (y + miny + y + maxy) / 2 cy, (z + minz + z + maxz) / 2 cz FROM ents WHERE classname = 'trigger_secret' ORDER BY vlen(x - " + exit.CX + ", y - " + exit.CY + ", z - " + exit.CZ + ")");
-const sec = secrets[0];
-assert(Math.hypot(sec.CX - exit.CX, sec.CY - exit.CY) < 400, `a secret area lies ${Math.hypot(sec.CX - exit.CX, sec.CY - exit.CY).toFixed(0)} units from the secret exit`);
-await db.exec(`UPDATE ents SET x = ${sec.CX}, y = ${sec.CY}, z = ${sec.CZ + 20}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe2}`);
-await db.exec(`EXECUTE PROCEDURE link_ent(${pe2})`);
-s = await run(3);
-assert(s.FOUND_SECRETS === 1, 'stepping into it counts the secret');
-assert(/secret area/i.test(s.CPRINT ?? ''), `with the message (${s.CPRINT})`);
-assert((await sounds('misc/secret.wav')) > 0, 'and the chime');
-assert(!(await q1(`SELECT id FROM ents WHERE id = ${sec.ID}`)), 'and only once');
-
-// ── the underwater trap door ────────────────────────────────────────────
-const trap = await box("classname = 'func_door' AND targetname = 't39' AND BIN_AND(spawnflags, 1) <> 0 AND z + maxz < 600");
-const trapTrig = await box("classname = 'trigger_once' AND target = 't39' AND spawnflags = 0");
-assert(trap && trapTrig && (await contents(trapTrig.CX, trapTrig.CY, trapTrig.CZ)) === -3, 'an underwater trigger governs a door that starts open on the lake bed');
-const trap0 = await q1(`SELECT mv_state, CAST(z AS INTEGER) z FROM ents WHERE id = ${trap.ID}`);
-await db.exec(`UPDATE ents SET x = ${trapTrig.CX}, y = ${trapTrig.CY}, z = ${trapTrig.CZ}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe2}`);
-await db.exec(`EXECUTE PROCEDURE link_ent(${pe2})`);
-s = await run(10);
-const trap1 = await q1(`SELECT mv_state, CAST(z AS INTEGER) z FROM ents WHERE id = ${trap.ID}`);
-assert(trap1.MV_STATE !== trap0.MV_STATE || trap1.Z !== trap0.Z, `swimming through the trigger sets the door moving (state ${trap0.MV_STATE} → ${trap1.MV_STATE}, z ${trap0.Z} → ${trap1.Z})`);
-assert(!(await q1(`SELECT id FROM ents WHERE id = ${trapTrig.ID}`)), 'the trigger is spent');
+// ── out of the water onto the ledge (the water jump), and into the slipgate ──
+let reached = false, climbed = false;
+for (tics = 0; tics < 300 && !reached; tics++) {
+  const yaw = (Math.atan2(exit.CY - s.PY, exit.CX - s.PX) * 180) / Math.PI;
+  s = await tic([1, 1, 0, yaw - s.YAW, 0, 0, 1, 1, 0]);
+  if (!climbed && s.WATERLEVEL === 0 && s.PZ > 852) climbed = true;
+  if (s.EXIT_KIND === 1) reached = true;
+}
+assert(climbed, 'pushing against the ledge, the player hops out of the water (FL_WATERJUMP)');
+assert(reached && s.NEXT_MAP === 'e1m8', `and walks into the slipgate: Ziggurat Vertigo, ${(tics / 20).toFixed(1)} s after surfacing`);
 
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');

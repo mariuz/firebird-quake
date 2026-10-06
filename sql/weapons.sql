@@ -270,6 +270,9 @@ DECLARE tid INTEGER; DECLARE tcls VARCHAR(40); DECLARE tst SMALLINT; DECLARE tn 
 DECLARE tx DOUBLE PRECISION; DECLARE ty DOUBLE PRECISION; DECLARE tz DOUBLE PRECISION; DECLARE tdm INTEGER; DECLARE tw DOUBLE PRECISION;
 DECLARE dltime DOUBLE PRECISION; DECLARE afin DOUBLE PRECISION; DECLARE hp INTEGER; DECLARE deadt DOUBLE PRECISION;
 DECLARE tlt DOUBLE PRECISION; DECLARE oldz DOUBLE PRECISION; DECLARE w INTEGER;
+DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
+DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
+DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 BEGIN
   SELECT p.ent_id, p.jump_released, p.dmg_lava_time, p.air_finished, p.dead_time, p.weapon FROM player p WHERE p.id = 1 INTO pe, jr, dltime, afin, deadt, w;
   SELECT e.deadflag, e.flags, e.waterlevel, e.watertype, e.yaw, e.health, e.z FROM ents e WHERE e.id = :pe INTO dead, flags, wl, wt, yaw, hp, oldz;
@@ -313,6 +316,33 @@ BEGIN
     EXECUTE PROCEDURE snd(pe, 2, 'player/inh2o.wav', 1, 1);
   UPDATE ents e SET e.flags = IIF(:wl > 0, BIN_OR(e.flags, 16), BIN_AND(e.flags, BIN_NOT(16))) WHERE e.id = :pe;
 
+  -- FL_WATERJUMP: the hop out of the water onto a low ledge (CheckWaterJump)
+  SELECT e.flags, e.teleport_time, e.yaw FROM ents e WHERE e.id = :pe INTO flags, ttime, yaw;
+  wj = IIF(BIN_AND(flags, 2048) <> 0, 1, 0);
+  IF (wj = 1 AND (wl = 0 OR ttime < t)) THEN
+  BEGIN
+    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(2048)) WHERE e.id = :pe;
+    wj = 0;
+  END
+  IF (wj = 0 AND wl = 2 AND fwd > 0) THEN
+  BEGIN
+    SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :pe INTO px, py, pz;
+    -- solid at the waist 24 units ahead, open at the head: a ledge to climb
+    EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + 8, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + 8, 1)
+      RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+    IF (f < 1) THEN
+    BEGIN
+      EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + 24, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + 24, 1)
+        RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+      IF (f = 1) THEN
+      BEGIN
+        UPDATE ents e SET e.flags = BIN_OR(e.flags, 2048), e.vz = 225, e.teleport_time = :t + 2 WHERE e.id = :pe;
+        UPDATE player p SET p.jump_released = 0 WHERE p.id = 1;
+        wj = 1;
+      END
+    END
+  END
+
   SELECT e.vx, e.vy, e.vz, e.flags FROM ents e WHERE e.id = :pe INTO vx, vy, vz, flags;
   onground = IIF(BIN_AND(flags, 512) <> 0, 1, 0);
   maxspd = IIF(run = 1, 320, 200);
@@ -341,7 +371,7 @@ BEGIN
   ELSE UPDATE player p SET p.jump_released = 1 WHERE p.id = 1;
 
   -- SV_UserFriction
-  IF (onground = 1 OR wl >= 2) THEN
+  IF (wj = 0 AND (onground = 1 OR wl >= 2)) THEN
   BEGIN
     spd = IIF(wl >= 2, vlen(vx, vy, vz), vlen(vx, vy, 0));
     IF (spd > 0) THEN
@@ -361,7 +391,7 @@ BEGIN
   -- the wish direction
   fx_ = COS(yaw * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0);
   rx = fy; ry = -fx_;
-  IF (wl >= 2) THEN
+  IF (wl >= 2 AND wj = 0) THEN
   BEGIN
     -- swimming: the forward vector follows the pitch
     fz = -SIN(pitch * 0.0174532925e0);
@@ -399,12 +429,12 @@ BEGIN
       END
     END
   END
-  -- gravity
-  IF (onground = 0 AND wl < 2) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
+  -- gravity (not during the water jump)
+  IF (onground = 0 AND wl < 2 AND wj = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
   -- move
-  IF (wl >= 2) THEN
+  IF (wl >= 2 AND wj = 0) THEN
   BEGIN
     UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
     EXECUTE PROCEDURE fly_move(pe, dt) RETURNING_VALUES tst, tid;
