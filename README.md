@@ -6,7 +6,7 @@
 
 ![the slime hall, its teleporter and the yellow armour](docs/slime-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![the exit slipgate](docs/slipgate-e1m1-0.png)
 
-![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png)
+![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![the rune on the floor of the hall](docs/rune-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![Chthon winds up a lava ball, the terminals raised](docs/lavathrow-e1m7-0.png) ![Chthon from the far end of the hall](docs/behind-e1m7-0.png) ![the third bolt: Chthon sinks back into the lava](docs/death-e1m7-0.png)
 
 ![E1M8, Ziggurat Vertigo: the lava hall](docs/lavahall-e1m8-0.png) ![a scrag over the lava river](docs/scrag-e1m8-0.png) ![three seconds into a jump, looking down](docs/jump-e1m8-0.png)
 
@@ -22,7 +22,9 @@
 
 The start map's hall of skill doors, its crucified zombies twitching over the lava (the decoration the
 E1M5 test checks first), and the slipgates to episodes 1, 3 and 4; E1M1 from the start, a grunt, the
-slime hall with its teleporter and armour, two grunts coming over the bridge, the exit slipgate; E1M7 from the start, and Chthon risen from the lava; Ziggurat Vertigo's lava
+slime hall with its teleporter and armour, two grunts coming over the bridge, the exit slipgate; E1M7 from the start, the rune whose taking wakes Chthon, Chthon risen from the lava, winding up a lava
+ball with both lightning terminals raised, seen from the far end of the hall, and sinking back into the
+lava under the third bolt, which is the fight the E1M7 test plays; Ziggurat Vertigo's lava
 hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
 since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
 channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
@@ -226,8 +228,8 @@ npm run bench          # where a tic and a frame spend their time
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw [--fast] [--compare])
 ```
 
-The screenshot tool can also start from a spot, run SQL first and let the world turn, which is how the
-pictures above were taken:
+The screenshot tool can also start from a spot, run SQL and let the world turn, in as many steps as a
+scene needs, which is how the pictures above were taken:
 
 ```bash
 node scripts/screenshot.mjs start docs/skills    --single --fast
@@ -238,7 +240,11 @@ node scripts/screenshot.mjs start docs/episode4  --at=1700,1728,-200,0 --tics=4 
 node scripts/screenshot.mjs e1m1 docs/slime    --at=1392,824,-402,90  --tics=8  --single --fast
 node scripts/screenshot.mjs e1m1 docs/grunts   --at=1150,1030,-250,330 --tics=12 --single --fast
 node scripts/screenshot.mjs e1m1 docs/slipgate --at=1312,800,-240,270 --tics=10 --single --fast
+node scripts/screenshot.mjs e1m7 docs/rune     --at=-120,64,20,0 --tics=2 --single --fast
 node scripts/screenshot.mjs e1m7 docs/chthon   --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
+node scripts/screenshot.mjs e1m7 docs/lavathrow --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake(2); EXECUTE PROCEDURE button_fire(22, (SELECT ent_id FROM player)); EXECUTE PROCEDURE button_fire(24, (SELECT ent_id FROM player))" --tics=120 --single --fast
+node scripts/screenshot.mjs e1m7 docs/behind   --at=824,64,180,180 --sql="EXECUTE PROCEDURE boss_awake(2)" --tics=70 --single --fast
+node scripts/screenshot.mjs e1m7 docs/death    --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake(2); EXECUTE PROCEDURE button_fire(22, (SELECT ent_id FROM player)); EXECUTE PROCEDURE button_fire(24, (SELECT ent_id FROM player))" --tics=120 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=3 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=3 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/lavahall --at=992,-96,-706,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/scrag    --at=96,-120,-594,315 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/jump     --at=992,-96,-676,270 --sql="UPDATE ents SET vz = 300 WHERE id = (SELECT ent_id FROM player); UPDATE player SET pitch = 45" --tics=55 --single --fast
