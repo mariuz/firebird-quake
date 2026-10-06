@@ -2,6 +2,8 @@
 
 ![E1M1 rendered from Firebird query results](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
 
+![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png)
+
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
 [Firebird DOOM](https://github.com/mariuz/firebird-doom) to a true 3D engine.
@@ -190,6 +192,13 @@ Tools for the same purpose:
 npm run check          # compile every sql/*.sql against the engine, nothing else
 npm run bench          # where a tic and a frame spend their time
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw [--fast] [--compare])
+```
+
+The screenshot tool can also run SQL first and let the world turn, which is how the pictures above
+were taken; the House of Chthon with its master risen is:
+
+```bash
+node scripts/screenshot.mjs e1m7 docs/chthon --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
 ```
 
 ## Layout

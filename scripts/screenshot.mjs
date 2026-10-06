@@ -4,6 +4,7 @@
 //
 //   node scripts/screenshot.mjs [map] [out-prefix]
 //   node scripts/screenshot.mjs e1m1 docs/shot      → docs/shot-e1m1-0.png …
+//   options: --at=x,y,z,yaw  --sql="stmt; stmt"  --tics=N  --single  --fast  --compare
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,6 +51,11 @@ if (at) {
   await db.exec('EXECUTE PROCEDURE link_ent((SELECT ent_id FROM player))');
 }
 const tic = (args) => db.query('SELECT * FROM quake_tic(?, ?, ?, ?, ?, ?, ?, ?, ?)', args, { rowMode: 'object' }).then((r) => r.rows[0]);
+// --sql="stmt; stmt": run statements first (wake a boss, open a door); --tics=N: let the world run N tics before the shots
+const pre = process.argv.find((a) => a.startsWith('--sql='));
+if (pre) for (const stmt of pre.slice(6).split(';')) if (stmt.trim()) await db.exec(stmt.trim());
+const warm = Number(process.argv.find((a) => a.startsWith('--tics='))?.slice(7) ?? 0);
+for (let i = 0; i < warm; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
 const arr = { rowMode: 'array' };
 
 async function shot(name) {
@@ -93,6 +99,7 @@ async function shot(name) {
 }
 
 await shot('0');
+if (process.argv.includes('--single')) { await db.close(); process.exit(0); }
 for (let i = 0; i < 2; i++) await tic([1, 0, 0, 90, 0, 0, 0, 1, 0]);
 await shot('1');
 // walk ahead a bit and look around
