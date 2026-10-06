@@ -11,6 +11,7 @@
     "test": "node scripts/sql-smoke.mjs",
     "test:boss": "node scripts/boss-test.mjs",
     "test:registered": "node scripts/registered-test.mjs",
+    "test:e1m8": "node scripts/e1m8-test.mjs",
     "bench": "node scripts/bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"

@@ -367,7 +367,8 @@ BEGIN
   -- the world
   SELECT g.world_model FROM game g WHERE g.id = 1 INTO world_mid;
   SELECT IIF(:hull = 0, m.hull0, IIF(:hull = 1, m.hull1, m.hull2)) FROM models m WHERE m.id = :world_mid INTO head;
-  EXECUTE PROCEDURE trace_hull(hull, head, offx, offy, offz, x1, y1, z1, x2, y2, z2)
+  -- hulls 1 and 2 share the CLIPNODES rows (table hull 1) and differ by head node
+  EXECUTE PROCEDURE trace_hull(IIF(hull = 0, 0, 1), head, offx, offy, offz, x1, y1, z1, x2, y2, z2)
     RETURNING_VALUES fraction, ex, ey, ez, nx, ny, nz, allsolid, startsolid, inopen, inwater;
   hit_ent = 0;
   IF (allsolid = 1) THEN
@@ -396,7 +397,7 @@ BEGIN
     BEGIN
       SELECT IIF(:hull = 0, m.hull0, IIF(:hull = 1, m.hull1, m.hull2)) FROM models m WHERE m.id = :emid INTO head;
       IF (head IS NULL) THEN CONTINUE;
-      EXECUTE PROCEDURE trace_hull(hull, head, eox + offx, eoy + offy, eoz + offz, x1, y1, z1, x2, y2, z2)
+      EXECUTE PROCEDURE trace_hull(IIF(hull = 0, 0, 1), head, eox + offx, eoy + offy, eoz + offz, x1, y1, z1, x2, y2, z2)
         RETURNING_VALUES f, tx, ty, tz, tnx, tny, tnz, tas, tss, tio, tiw;
     END
     ELSE
@@ -809,7 +810,7 @@ DECLARE backoff DOUBLE PRECISION;
 BEGIN
   SELECT e.movetype, e.flags, e.vx, e.vy, e.vz FROM ents e WHERE e.id = :eid INTO mt, flags, vx, vy, vz;
   IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN EXIT;       -- resting on the ground
-  IF (mt IN (6, 10)) THEN vz = vz - 800 * dt;              -- SV_AddGravity (toss, bounce)
+  IF (mt IN (6, 10)) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;   -- SV_AddGravity (toss, bounce)
   UPDATE ents e SET e.vz = :vz, e.yaw = MOD(e.yaw + e.avel_yaw * :dt + 360, 360) WHERE e.id = :eid;
   EXECUTE PROCEDURE push_entity(eid, vx * dt, vy * dt, vz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
   IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN EXIT;

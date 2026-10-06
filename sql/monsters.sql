@@ -989,7 +989,7 @@ BEGIN
     IF (mt IN (4, 5)) THEN
     BEGIN
       -- SV_Physics_Step: a monster that is not on the ground falls
-      UPDATE ents e SET e.vz = e.vz - 800 * :dt WHERE e.id = :eid;
+      UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;
       EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid;
       IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) <> 0)) THEN
       BEGIN
@@ -1074,7 +1074,8 @@ AS
 DECLARE i INTEGER;
 BEGIN
   UPDATE game g SET g.tic = 0, g.time_ = 0, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
-         g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0 WHERE g.id = 1;
+         g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
+         g.gravity = IIF(LOWER(:map_name) = 'e1m8', 100, 800) WHERE g.id = 1;   -- worldspawn: Ziggurat Vertigo has low gravity
   -- switchable lights back to their patterns
   DELETE FROM lightstyles l WHERE l.style >= 32;
   i = 32;

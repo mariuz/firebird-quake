@@ -56,6 +56,7 @@ npm test               # SQL smoke test in Node against the real Firebird WASM e
 
 npm run test:boss      # E1M7: the rune wakes Chthon, lava, both terminals, three bolts, the exit opens
 npm run test:registered # the pak1 monsters' AI, spawned into E1M1 without their models
+npm run test:e1m8      # Ziggurat Vertigo: sv_gravity 100, so jumps and grenades go far; the exit leads to E1M5
 
 npm run serve          # http://localhost:8080/ â€” add --coi if your browser blocks service workers
 

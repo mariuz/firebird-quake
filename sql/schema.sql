@@ -27,6 +27,7 @@ CREATE TABLE game (
   level_msg      VARCHAR(80),
   intermission_tics INTEGER DEFAULT 0 NOT NULL,
   registered     SMALLINT DEFAULT 0 NOT NULL,           -- pak1 present: all four episodes
+  gravity        DOUBLE PRECISION DEFAULT 800 NOT NULL, -- sv_gravity: 100 on Ziggurat Vertigo
   finale         SMALLINT DEFAULT 0 NOT NULL            -- Shub-Niggurath is dead
 );
 

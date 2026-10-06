@@ -400,7 +400,7 @@ BEGIN
     END
   END
   -- gravity
-  IF (onground = 0 AND wl < 2) THEN vz = vz - 800 * dt;
+  IF (onground = 0 AND wl < 2) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
   -- move
