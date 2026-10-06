@@ -9,7 +9,9 @@
     "build": "node scripts/build.mjs",
     "serve": "node scripts/build.mjs --serve",
     "test": "node scripts/sql-smoke.mjs",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "screenshots": "node scripts/screenshot.mjs e1m1",
+    "check": "node scripts/sql-check.mjs"
   },
   "license": "MIT",
   "dependencies": {

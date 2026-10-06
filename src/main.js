@@ -42,6 +42,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:se
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
 const viewHeight = () => (settings.detail === 'high' ? 200 : 100);
+const sbarLines = () => (settings.detail === 'high' ? 24 : 12);   // the 3D view is the part above the status bar
 const audio = new QuakeAudio();
 audio.setVolume(settings.sfx / 100);
 for (const ev of ['keydown', 'pointerdown', 'touchstart']) window.addEventListener(ev, () => audio.unlock(), { capture: true });
@@ -206,11 +207,14 @@ async function frame() {
 
     t = performance.now();
     const q = (sql) => db.query(sql, [], arr).then((r) => r.rows);
-    const [faces, ents, styles, sounds, fx] = await Promise.all([
+    const [faces, ents, styles, sounds, fx, bframes] = await Promise.all([
       q('SELECT * FROM frame_faces'), q('SELECT * FROM frame_ents'), q('SELECT * FROM frame_lightstyles'),
       q(`SELECT id, tic, ent_id, chan, snd, vol, attn, x, y, z FROM sound_events WHERE id > ${lastSoundId} ORDER BY id`),
       q(`SELECT id, kind, x, y, z, x2, y2, z2, n FROM fx_events WHERE id > ${lastFxId} ORDER BY id`),
+      q("SELECT e.id, e.frame FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.frame <> 0"),
     ]);
+    brushFrames.clear();
+    for (const [id, f] of bframes) brushFrames.set(id, f);
     perf.faces = performance.now() - t;
     perf.rows = faces.length;
     const styleMap = new Float32Array(64);
@@ -262,7 +266,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   // alias models and sprites
   const bsp = map.bsp;
   for (const e of ents) {
-    const [id, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kind, flags] = e;
+    const [, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kindRaw] = e;
+    const kind = String(kindRaw).trim();   // CHAR(1) comes back padded
     const m = res.models.get(mid);
     if (!m) continue;
     if (kind === 'M') {
@@ -299,7 +304,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
       const bob = Math.sin(time * 8) * Math.min(1, Math.hypot(last.PX - (prevPos?.x ?? last.PX), last.PY - (prevPos?.y ?? last.PY)) / 8) * 1.5;
       const light = Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32);
       r.zb.fill(0, 0, r.w * r.h);   // the gun is always in front
-      r.drawAlias(vm.mdl, Math.min(last.WEAPONFRAME, vm.mdl.frames.length - 1), 0, [last.PX, last.PY, last.VIEW_Z + bob], [-last.PITCH, last.YAW, 0], light, { near: 1, time });
+      r.drawAlias(vm.mdl, Math.min(last.WEAPONFRAME, vm.mdl.frames.length - 1), 0, [last.PX, last.PY, last.VIEW_Z + 2 + bob], [-last.PITCH, last.YAW, 0], light, { near: 1, time });
     }
   }
   prevPos = { x: last.PX, y: last.PY };
@@ -386,11 +391,12 @@ async function usePak(buffer, label) {
   const maps = pak.mapNames();
   if (!maps.length) throw new Error(`${label} has no maps`);
   setStatus(`Copying ${label} models into Firebird…`);
-  res = await loadResources(db, pak, { width: viewWidth(), height: viewHeight(), fov: settings.fov });
+  res = await loadResources(db, pak, { width: viewWidth(), height: viewHeight() - sbarLines(), fov: settings.fov });
   const palette = loadPalette(pak.get('gfx/palette.lmp'));
   const colormap = pak.get('gfx/colormap.lmp');
   wad = new Wad2(pak.get('gfx.wad'));
   renderer = new Renderer(canvas, { palette, colormap });
+  renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
   hud = new Hud(wad);
   audio.setPak(pak);
@@ -424,7 +430,8 @@ $('map').addEventListener('change', (e) => { settings.map = e.target.value; save
 $('detail').value = settings.detail;
 $('detail').addEventListener('change', async (e) => {
   settings.detail = e.target.value; saveSettings();
-  await setView(db, viewWidth(), viewHeight(), settings.fov);
+  await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov);
+  renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
 });
 $('skill').value = String(settings.skill);

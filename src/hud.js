@@ -62,6 +62,12 @@ export class Hud {
   /** hud: the QUAKE_TIC row. time: game time. */
   draw(r, hud, time) {
     const w = r.w, h = r.h;
+    if (w < 320) {
+      // low detail: no room for the pictures, just the numbers
+      r.fillRect(0, h - 12, w, 12, 0);
+      r.drawString(this.conchars, `${String(hud.ARMORVALUE).padStart(3)} ${String(hud.HEALTH).padStart(3)} ${String(hud.WEAPON & 3 ? hud.SHELLS : hud.WEAPON & 12 ? hud.NAILS : hud.WEAPON & 48 ? hud.ROCKETS : hud.WEAPON & 64 ? hud.CELLS : 0).padStart(3)}`, 4, h - 10);
+      return;
+    }
     const sbx = (w - 320) >> 1;
     const y = h - 24;
     const items = hud.ITEMS;

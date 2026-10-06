@@ -14,6 +14,7 @@ import { Pak, Wad2, loadPalette } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
+import { png } from './png.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mapName = process.argv[2] ?? 'e1m1';
@@ -30,37 +31,10 @@ const stubCanvas = {
   }),
 };
 
-function png(width, height, rgba) {
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (width * 4 + 1)] = 0;
-    Buffer.from(rgba.buffer, rgba.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
-  }
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td) >>> 0);
-    return Buffer.concat([len, td, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
-}
-let crcTable;
-function crc32(buf) {
-  if (!crcTable) {
-    crcTable = new Int32Array(256);
-    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c; }
-  }
-  let c = -1;
-  for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 255] ^ (c >>> 8);
-  return ~c;
-}
-
 const db = new FirebirdBrowser('memory://quake', { transport: new DirectTransport() });
 await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
-const res = await loadResources(db, pak, { width: W, height: H });
+const res = await loadResources(db, pak, { width: W, height: H - 24 });
 const bsp = await loadMap(db, pak, res, mapName);
 const renderer = new Renderer(stubCanvas, { palette: loadPalette(pak.get('gfx/palette.lmp')), colormap: pak.get('gfx/colormap.lmp') });
 renderer.setSize(W, H);
@@ -96,7 +70,7 @@ async function shot(name) {
     else if (kind.trim() === 'S') renderer.drawSprite(m.spr, frame, [x, y, z]);
   }
   const vm = res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
-  if (vm) { renderer.zb.fill(0); renderer.drawAlias(vm.mdl, 0, 0, [last.PX, last.PY, last.VIEW_Z], [-last.PITCH, last.YAW, 0], 128, { near: 1 }); }
+  if (vm) { renderer.zb.fill(0); renderer.drawAlias(vm.mdl, 0, 0, [last.PX, last.PY, last.VIEW_Z + 2], [-last.PITCH, last.YAW, 0], Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32), { near: 1 }); }
   hud.draw(renderer, last, last.TIME_);
   renderer.present();
   const t2 = performance.now();

@@ -1,5 +1,7 @@
 # Firebird Quake
 
+![E1M1 rendered from Firebird query results](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
+
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
 [Firebird DOOM](https://github.com/mariuz/firebird-doom) to a true 3D engine.

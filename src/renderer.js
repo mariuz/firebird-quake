@@ -21,6 +21,7 @@ export class Renderer {
     this.faceInfo = new Map();   // face id â†’ { bsp, f, tex }
     this.models = null;
     this.particles = [];
+    this.sbarLines = 24;
     this.setSize(320, 200);
   }
 
@@ -138,9 +139,10 @@ export class Renderer {
       view.right = [R[0] * cr + U[0] * sr, R[1] * cr + U[1] * sr, R[2] * cr + U[2] * sr];
       view.up = [-R[0] * sr + U[0] * cr, -R[1] * sr + U[1] * cr, -R[2] * sr + U[2] * cr];
     }
+    // the 3D view is the part above the status bar (Quake's vrect: 320×176)
     view.scale = (w / 2) / Math.tan((view.fov * Math.PI) / 360);
     view.cx = w / 2;
-    view.cy = h / 2;
+    view.cy = (h - this.sbarLines) / 2;
   }
 
   /**
@@ -297,7 +299,7 @@ export class Renderer {
     const fwd = view.fwd, right = view.right, up = view.up;
     // the light direction, in Quake: from above and ahead of the viewer
     const ldx = -1, ldy = 0, ldz = 1;
-    const ambient = Math.max(light * 0.5, 12), shade = light * 0.5;
+    const ambient = Math.max(light, 8), shade = Math.max(light, 8);   // R_AliasSetupLighting
     let anyNear = false;
     for (let i = 0; i < n; i++) {
       const mx = verts[i * 4] * mdl.scale[0] + mdl.origin[0];
@@ -317,7 +319,7 @@ export class Renderer {
       const ny = F[1] * ANORMS[ni] - R[1] * ANORMS[ni + 1] + U[1] * ANORMS[ni + 2];
       const nz = F[2] * ANORMS[ni] - R[2] * ANORMS[ni + 1] + U[2] * ANORMS[ni + 2];
       const d = (nx * ldx + ny * ldy + nz * ldz) * 0.7071;
-      lv[i] = Math.min(255, ambient + shade * Math.max(0, d) + shade * 0.5);
+      lv[i] = Math.min(255, ambient + shade * Math.max(0, d));
     }
     const skinData = mdl.skins[Math.min(skin, mdl.skins.length - 1)] ?? mdl.skins[0];
     const tris = mdl.tris, st = mdl.st, skinW = mdl.skinW, skinH = mdl.skinH;
@@ -328,7 +330,7 @@ export class Renderer {
     const proj = (v) => [vcx + (v[1] * sc) / v[0], vcy - (v[2] * sc) / v[0], (1 / v[0]) * depthHack, v[3], v[4], v[5]];
     const drawTri = (A, B, C) => {
       const a = proj(A), b = proj(B), c = proj(C);
-      if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) >= 0) return;   // back face
+      if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) <= 0) return;   // back face (MDL winding)
       this.triangle(a[0], a[1], a[2], a[3], a[4], a[5], b[0], b[1], b[2], b[3], b[4], b[5], c[0], c[1], c[2], c[3], c[4], c[5],
         skinData, skinW, skinH, transparent, opts.noZTest, opts.alpha);
     };
