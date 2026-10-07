@@ -182,3 +182,25 @@ node scripts/screenshot.mjs e1m8 docs/pentagram --at=672,536,-706,0 --tics=8 --s
 node scripts/screenshot.mjs e1m8 docs/silverkey --at=672,152,38,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e1m8 docs/exit      --at=1400,-240,31,0 --tics=4 --single --fast
 ```
+
+## The registered monsters
+
+The enforcer, the hell knight, the vore, the spawn, the rotfish and Shub-Niggurath live in `pak1.pak`,
+the registered half of Quake, which the shareware episode does not include: the game logic for all six
+is in `sql/monsters.sql` and `npm run test:registered` runs them in E1M1 without their models, so there
+is nothing of them to draw here. If you own Quake, put `pak1.pak` beside `pak0.pak` in `public/pak/`
+(the page and the screenshot tool pick it up; the page's file picker also takes the two files together)
+and these commands render each one, spawned a few steps ahead of the player and given a second to
+notice him:
+
+```bash
+node scripts/screenshot.mjs e1m1 docs/enforcer   --sql="EXECUTE PROCEDURE spawn_monster('enforcer', 250)"    --tics=20 --single --fast
+node scripts/screenshot.mjs e1m1 docs/hellknight --sql="EXECUTE PROCEDURE spawn_monster('hell_knight', 250)" --tics=20 --single --fast
+node scripts/screenshot.mjs e1m1 docs/vore       --sql="EXECUTE PROCEDURE spawn_monster('shalrath', 300)"    --tics=20 --single --fast
+node scripts/screenshot.mjs e1m1 docs/spawn      --sql="EXECUTE PROCEDURE spawn_monster('tarbaby', 200)"     --tics=10 --single --fast
+node scripts/screenshot.mjs e1m1 docs/rotfish    --sql="EXECUTE PROCEDURE spawn_monster('fish', 150)"        --tics=10 --single --fast
+node scripts/screenshot.mjs e1m1 docs/shub       --sql="EXECUTE PROCEDURE spawn_monster('oldone', 400)"      --tics=10 --single --fast
+```
+
+Without `pak1.pak` the commands still run and the frame shows E1M1 with an invisible monster in it,
+which is also what the registered test sees.

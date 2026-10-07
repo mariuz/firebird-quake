@@ -47,6 +47,33 @@ export class Pak {
   }
 }
 
+/** Several paks as one (pak0.pak and the registered pak1.pak): a later pak's file shadows an earlier one's. */
+export class PakSet {
+  constructor(paks) {
+    this.paks = paks;
+    this.files = new Map();
+    for (const pak of paks) for (const name of pak.files.keys()) this.files.set(name, pak);
+  }
+
+  has(name) { return this.files.has(name.toLowerCase()); }
+
+  get(name) {
+    const pak = this.files.get(name.toLowerCase());
+    if (!pak) throw new Error(`${name} not in pak`);
+    return pak.get(name);
+  }
+
+  buffer(name) { return this.get(name).slice().buffer; }
+
+  list(prefix = '', suffix = '') {
+    return [...this.files.keys()].filter((n) => n.startsWith(prefix) && n.endsWith(suffix)).sort();
+  }
+
+  mapNames() {
+    return this.list('maps/', '.bsp').map((n) => n.slice(5, -4)).filter((n) => !n.startsWith('b_'));
+  }
+}
+
 /** gfx.wad: WAD2 with the status bar pictures and CONCHARS. */
 export class Wad2 {
   constructor(bytes) {

@@ -34,10 +34,11 @@ npm run serve          # http://localhost:8080/ — add --coi if your browser bl
 ```
 
 `fetch-pak` needs a tool that can read the LHA archive inside the shareware zip: 7-Zip, `lha` or
-`lhasa` (`sudo apt-get install lhasa` on Debian/Ubuntu). If you own Quake, you can instead point the
-page at your own `pak0.pak`/`pak1.pak` with the file picker, or copy it with
-`PAK=/path/to/pak0.pak npm run fetch-pak`. With the registered `pak1.pak` loaded the page offers the
-other three episodes and the registered monsters (enforcer, hell knight, vore, spawn, rotfish, Shub-Niggurath).
+`lhasa` (`sudo apt-get install lhasa` on Debian/Ubuntu). If you own Quake, copy your `pak0.pak` with
+`PAK=/path/to/pak0.pak npm run fetch-pak` and put `pak1.pak` beside it in `public/pak/`, or pick the
+two files together in the page's file picker. With `pak1.pak` loaded the page offers the other three
+episodes and the registered monsters (enforcer, hell knight, vore, spawn, rotfish, Shub-Niggurath), and
+the screenshot tool can draw them.
 
 Firebird WASM uses pthreads, so the page must be cross-origin isolated. The dev server sends the
 COOP/COEP headers with `--coi`; a static host like GitHub Pages cannot, so `coi-serviceworker.js`

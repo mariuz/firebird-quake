@@ -11,7 +11,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
-import { Pak, Wad2, loadPalette } from '../src/pak.js';
+import { Pak, PakSet, Wad2, loadPalette } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
@@ -34,7 +34,10 @@ const stubCanvas = {
 
 const db = new FirebirdBrowser('memory://quake', { transport: new DirectTransport() });
 await createSchema(db, sql);
-const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
+// public/pak/pak0.pak, and pak1.pak beside it if you own Quake (or PAK1=/path/to/pak1.pak): the other
+// episodes and the registered monsters' models
+const pakFiles = [process.env.PAK ?? path.join(root, 'public/pak/pak0.pak'), process.env.PAK1 ?? path.join(root, 'public/pak/pak1.pak')].filter((f) => fs.existsSync(f));
+const pak = new PakSet(pakFiles.map((f) => new Pak(fs.readFileSync(f).buffer)));
 const res = await loadResources(db, pak, { width: W, height: H - 24 });
 const bsp = await loadMap(db, pak, res, mapName);
 const renderer = new Renderer(stubCanvas, { palette: loadPalette(pak.get('gfx/palette.lmp')), colormap: pak.get('gfx/colormap.lmp') });

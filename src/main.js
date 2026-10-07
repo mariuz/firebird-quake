@@ -15,7 +15,7 @@ import gameSql from '../sql/game.sql';
 import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
-import { Pak, Wad2, loadPalette } from './pak.js';
+import { Pak, Wad2, loadPalette, PakSet } from './pak.js';
 import { createSchema, loadResources, loadMap, setView } from './loader.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { Hud, VIEW_MODELS } from './hud.js';
@@ -401,9 +401,9 @@ async function openDatabase() {
   return instance;
 }
 
-async function usePak(buffer, label) {
+async function usePak(buffers, label) {
   running = false;
-  pak = new Pak(buffer);
+  pak = new PakSet(buffers.map((b) => new Pak(b)));     // pak0.pak, and pak1.pak if you own Quake
   const maps = pak.mapNames();
   if (!maps.length) throw new Error(`${label} has no maps`);
   setStatus(`Copying ${label} models into Firebird…`);
@@ -430,7 +430,11 @@ async function boot() {
     setStatus('Downloading pak0.pak…');
     const resp = await fetch(new URL('./pak/pak0.pak', location.href));
     if (!resp.ok) throw new Error(`could not fetch pak0.pak (${resp.status}); pick a PAK file instead`);
-    await usePak(await resp.arrayBuffer(), 'pak0.pak');
+    const buffers = [await resp.arrayBuffer()];
+    let label = 'pak0.pak';
+    const resp1 = await fetch(new URL('./pak/pak1.pak', location.href)).catch(() => null);   // the registered data, if served
+    if (resp1?.ok && (resp1.headers.get('content-type') ?? '').indexOf('text/html') < 0) { buffers.push(await resp1.arrayBuffer()); label = 'pak0.pak + pak1.pak'; }
+    await usePak(buffers, label);
     nextFrame();
   } catch (err) {
     console.error(err);
@@ -439,9 +443,9 @@ async function boot() {
 }
 
 $('pakfile').addEventListener('change', async (e) => {
-  const f = e.target.files[0];
-  if (!f || !db) return;
-  try { await usePak(await f.arrayBuffer(), f.name); } catch (err) { setStatus(err.message, true); }
+  const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name));   // pak0.pak before pak1.pak
+  if (!files.length || !db) return;
+  try { await usePak(await Promise.all(files.map((f) => f.arrayBuffer())), files.map((f) => f.name).join(' + ')); } catch (err) { setStatus(err.message, true); }
 });
 $('map').addEventListener('change', (e) => { settings.map = e.target.value; saveSettings(); startMap(e.target.value, true).catch((err) => setStatus(err.message, true)); });
 $('detail').value = settings.detail;
