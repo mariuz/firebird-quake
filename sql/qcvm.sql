@@ -604,4 +604,56 @@ BEGIN
   SUSPEND;
 END^
 
+
+-- ── the client (sv_main.c, sv_user.c: the QuakeC half) ───────────────────
+
+-- a touch delivered: self = e, other = o, e.touch()
+CREATE OR ALTER PROCEDURE qc_touch (e INTEGER, o INTEGER)
+AS
+DECLARE f INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER;
+BEGIN
+  f = CAST(qc_f(e, qc_fdef('touch')) AS INTEGER);
+  IF (f = 0) THEN EXIT;
+  SELECT v.g_self, v.g_other FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other;
+  EXECUTE PROCEDURE qc_sg(g_self, e); EXECUTE PROCEDURE qc_sg(g_other, o);
+  EXECUTE PROCEDURE qc_call(f);
+END^
+
+-- a new game's client in edict 1: SetNewParms (a fresh game's parms), ClientConnect, PutClientInServer
+CREATE OR ALTER PROCEDURE qc_client_connect (t DOUBLE PRECISION)
+AS
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE f INTEGER;
+BEGIN
+  SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
+  EXECUTE PROCEDURE qc_sg(g_time, t);
+  EXECUTE PROCEDURE qc_sg(g_other, 0);
+  UPDATE qc_edicts d SET d.free = 0 WHERE d.id = 1;
+  DELETE FROM qc_fields x WHERE x.ent = 1;
+  EXECUTE PROCEDURE qc_set_str(1, qc_fdef('netname'), 'player');
+  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  f = qc_fn('SetNewParms'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  f = qc_fn('ClientConnect'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  f = qc_fn('PutClientInServer'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+END^
+
+-- the client's frame: the input into the fields, PlayerPreThink, (the engine's movement goes here), PlayerPostThink
+CREATE OR ALTER PROCEDURE qc_player_frame (t DOUBLE PRECISION, dt DOUBLE PRECISION, pitch DOUBLE PRECISION, yaw DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, impulse SMALLINT)
+AS
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE g_ft INTEGER; DECLARE f INTEGER; DECLARE va INTEGER;
+BEGIN
+  SELECT v.g_self, v.g_other, v.g_time, v.g_frametime FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, g_ft;
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_ft, dt);
+  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button0'), fire);
+  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button2'), jump);
+  IF (impulse <> 0) THEN EXECUTE PROCEDURE qc_sf(1, qc_fdef('impulse'), impulse);
+  va = qc_fdef('v_angle');
+  EXECUTE PROCEDURE qc_sf(1, va, pitch); EXECUTE PROCEDURE qc_sf(1, va + 1, yaw); EXECUTE PROCEDURE qc_sf(1, va + 2, 0);
+  EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('PlayerPreThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('PlayerPostThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+END^
+
 SET TERM ; ^

@@ -151,6 +151,38 @@ assert(/^army_stand/.test(armyThink) && (await fld(army, 'frame')) >= 0 && (awai
 assert((await fld(door, 'nextthink')) === 0 && (await fld(door, 'owner')) >= 0, 'LinkDoors ran for the doors');
 assert((await log('error')).length === 0, 'no builtin missing in five frames of thinks');
 
+// ── the player through QuakeC: connect, fire, pick up, cheat ─────────────
+await db.exec('EXECUTE PROCEDURE qc_client_connect(1.6)');
+const start = await q1("SELECT ox, oy, oz FROM map_ents WHERE classname = 'info_player_start'");
+assert((await str(await fld(1, 'classname'))) === 'player' && (await fld(1, 'health')) === 100 && (await fld(1, 'max_health')) === 100 && (await fld(1, 'movetype')) === 3 && (await fld(1, 'solid')) === 3, 'PutClientInServer: the client is a "player" with 100 health, MOVETYPE_WALK, SOLID_SLIDEBOX');
+assert(Math.abs((await fld(1, 'origin')) - start.OX) < 1 && Math.abs((await fld(1, 'origin')) - start.OX) < 1 && Math.abs((await fld(1, 'origin_z') ?? 0) - 0) >= 0, 'standing on the info_player_start');
+const porg = [await fld(1, 'origin'), await q1("SELECT qc_f(1, qc_fdef('origin') + 1) v FROM rdb$database").then((r) => r.V), await q1("SELECT qc_f(1, qc_fdef('origin') + 2) v FROM rdb$database").then((r) => r.V)];
+assert(Math.abs(porg[0] - start.OX) < 1 && Math.abs(porg[1] - start.OY) < 1 && Math.abs(porg[2] - start.OZ - 1) < 1, `at the info_player_start (${porg.map((v) => v.toFixed(0)).join(' ')}), one unit up`);
+assert((await fld(1, 'weapon')) === 1 && (await str(await fld(1, 'weaponmodel'))) === 'progs/v_shot.mdl' && (await fld(1, 'ammo_shells')) === 25 && (await fld(1, 'currentammo')) === 25, 'W_SetCurrentAmmo: the shotgun with 25 shells');
+assert((await str(await fld(1, 'model'))) === 'progs/player.mdl' && (await fld(1, 'view_ofs_z') ?? 22) === 22, 'the player model');
+assert((await log('bprint')).join('').includes('entered the game'), `ClientConnect: "${(await log('bprint')).join('').trim()}"`);
+assert((await fname(await fld(1, 'think'))) === 'player_stand2' || /^player_stand/.test(await fname(await fld(1, 'think'))), 'player_stand1 ran (OP_STATE)');
+// fire: PlayerPreThink, PlayerPostThink → W_WeaponFrame → W_Attack → W_FireShotgun → FireBullets → traceline
+await db.exec('EXECUTE PROCEDURE qc_player_frame(1.7, 0.1, 0, 90, 1, 0, 0)');
+assert((await fld(1, 'ammo_shells')) === 24 && (await fld(1, 'currentammo')) === 24 && (await fld(1, 'punchangle')) === -2, 'a frame with fire down: W_FireShotgun took a shell and kicked the view');
+assert((await log('sound')).some((m) => /guncock/.test(m)), 'with the shotgun sound');
+assert((await fld(1, 'attack_finished')) > 1.7 && (await fld(1, 'weaponframe')) >= 1, 'attack_finished set, the weapon animates');
+assert((await fname(await fld(1, 'think'))) && /^player_shot/.test(await fname(await fld(1, 'think'))), `the player's own animation is ${await fname(await fld(1, 'think'))}`);
+// the shells on the floor: ammo_touch(other = player)
+await db.exec(`EXECUTE PROCEDURE qc_touch(${item}, 1)`);
+assert((await fld(1, 'ammo_shells')) === 44, 'touching an item_shells box gives 20 shells (ammo_touch, bound_other_ammo)');
+assert((await log('sprint')).join('').includes('You got the shells'), `and says "${(await log('sprint')).join('').trim().split('\n').pop()}"`);
+assert((await fld(item, 'solid')) === 0 && (await str(await fld(item, 'model'))) === '', 'the box is gone from the floor (model cleared, SOLID_NOT)');
+assert((await log('cmd')).some((m) => /bf/.test(m)), 'with the pickup flash (stuffcmd "bf")');
+// impulse 9: CheatCommand, once attack_finished (2.4, the shotgun's 0.7 s) has passed, since W_WeaponFrame holds impulses until then
+await db.exec('EXECUTE PROCEDURE qc_player_frame(1.8, 0.1, 0, 90, 0, 0, 9)');
+assert((await fld(1, 'impulse')) === 9 && (await fld(1, 'weapon')) === 1, "an impulse during the shotgun's recovery waits");
+await db.exec('EXECUTE PROCEDURE qc_player_frame(2.5, 0.1, 0, 90, 0, 0, 0)');
+assert((await fld(1, 'weapon')) === 32 && (await fld(1, 'ammo_rockets')) === 100 && ((await fld(1, 'items')) & 64) !== 0 && (await str(await fld(1, 'weaponmodel'))) === 'progs/v_rock2.mdl', 'impulse 9: every weapon, 100 rockets, the rocket launcher in hand');
+assert((await fld(1, 'impulse')) === 0, 'the impulse is consumed');
+assert((await log('error')).length === 0, 'no builtin missing for the player');
+console.log(`${await steps()} statements in all`);
+
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');
 process.exit(failed ? 1 : 0);
