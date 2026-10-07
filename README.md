@@ -194,9 +194,10 @@ pickup flash, damage, the intermission and `changelevel` included), and a level 
 player's parms (`SetChangeParms`, `DecodeLevelParms`) as Quake does. The monsters see the player
 through `checkclient` (the PVS from eye to eye), walk and chase through `walkmove` and `movetogoal`
 (the engine's `SV_movestep` family), and the gunshots, blood, explosions and lightning they and the
-player make arrive as effects from the progs' temp-entity messages. A tic costs about 15 ms there with
-the monsters asleep and 60 to 80 ms with them awake, against 6 to 12 in the PSQL game, so the page keeps
-time with fewer frames per second.
+player make arrive as effects from the progs' temp-entity messages. The interpreter runs a statement in
+about 13.5 µs (one joined query and one `UPDATE`), and a server frame of E1M1 takes about 37 ms with the
+monsters asleep and 43 ms with grunts awake (`npm run bench:qc`), against 6 to 12 ms for the PSQL game's
+tic, so the page keeps time with fewer frames per second.
 
 ![E1M1 in QuakeC mode: a grunt from the bridge runs at the player, aiming](docs/qcvm-ai-e1m1-0.png)
 
