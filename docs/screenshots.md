@@ -390,3 +390,23 @@ node scripts/screenshot.mjs e3m2 docs/zombie    --at=1008,8,-178,270 --tics=8 --
 node scripts/screenshot.mjs e3m2 docs/lavawalk  --at=256,-1536,-258,0 --tics=8 --single --fast
 node scripts/screenshot.mjs e3m2 docs/exitgate  --at=1700,496,47,0 --tics=4 --single --fast
 ```
+
+## E3M3, the Tomb of Terror
+
+![the tomb at the start](tomb-e3m3-0.png) ![the hall of crosses](crosses-e3m3-0.png) ![the lava hall under its bridges](lavahall-e3m3-0.png) ![a fiend between the crosses](fiend-e3m3-0.png) ![an ogre by the rune blocks](ogre-e3m3-0.png) ![the exit slipgate to E3M4](exitgate-e3m3-0.png)
+
+1. the tomb at the start, its steps and crosses
+2. the hall of crosses, from the blue lights of the entrance
+3. the lava hall under its bridges, a scrag overhead
+4. a fiend charging between the crosses
+5. an ogre by the rune blocks
+6. the exit slipgate to E3M4
+
+```bash
+node scripts/screenshot.mjs e3m3 docs/tomb     --single --fast
+node scripts/screenshot.mjs e3m3 docs/crosses  --at=712,-120,30,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m3 docs/lavahall --at=-1080,328,174,315 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m3 docs/fiend    --at=880,-256,30,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m3 docs/ogre     --at=1632,280,-98,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m3 docs/exitgate --at=1700,400,-97,0 --tics=4 --single --fast
+```
