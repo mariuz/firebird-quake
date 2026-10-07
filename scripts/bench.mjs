@@ -48,7 +48,7 @@ await time('frame_ents', 'SELECT * FROM frame_ents');
 await time('frame_lightstyles', 'SELECT * FROM frame_lightstyles');
 const v = await q1('SELECT * FROM view_setup');
 await time('mark leaves (pvs+sphere)', `SELECT COUNT(*) FROM leaves l WHERE l.id > 0 AND pvs_visible('${v.PVS}', l.id) = 1`);
-await time('mark faces (insert distinct)', `EXECUTE BLOCK AS BEGIN DELETE FROM vis_faces; INSERT INTO vis_faces (face) SELECT DISTINCT m.face FROM leaves l JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms WHERE l.id > 0 AND pvs_visible('${v.PVS}', l.id) = 1; END`);
+await time('mark faces (insert distinct)', `EXECUTE BLOCK AS BEGIN DELETE FROM vis_faces; INSERT INTO vis_faces (face, ent_id, ox, oy, oz) SELECT DISTINCT m.face, 0, 0, 0, 0 FROM leaves l JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms WHERE l.id > 0 AND pvs_visible('${v.PVS}', l.id) = 1; END`);
 console.log('ents near player in pvs:', (await db.query(`SELECT e.id, e.classname, e.leaf, e.leafs, pvs_visible('${v.PVS}', e.leaf) vis FROM ents e WHERE e.model_id IS NOT NULL AND e.id <> ${pe} ORDER BY vlen(e.x - ${p.X}, e.y - ${p.Y}, e.z - ${p.Z}) ROWS 6`)).rows);
 await db.close();
 process.exit(0);

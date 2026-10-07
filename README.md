@@ -11,7 +11,9 @@ The series went on: [Firebird Quake 2](https://github.com/mariuz/firebird-quake2
 ![E1M1, the Slipgate Complex](docs/screenshot-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![the crucified zombies on the start map](docs/crucified-start-0.png)
 
 More pictures, of every level of the first two episodes, the start of the third and the registered
-monsters, with the commands that made them, are in [docs/screenshots.md](docs/screenshots.md).
+monsters, with the commands that made them, are in [docs/screenshots.md](docs/screenshots.md). The
+long account of how it is built is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); what is still
+missing is [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Every game tic is a PSQL procedure call. Every frame is a `SELECT`. JavaScript handles the keyboard,
 the mouse and the canvas; everything else — collision against the BSP hulls, the player's physics,

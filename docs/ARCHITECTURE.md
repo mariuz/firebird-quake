@@ -1,0 +1,277 @@
+# How Firebird Quake is made
+
+This is the long version of the README's "How it works": what runs where, how the data flows, what
+each file and procedure is for, and the decisions that shaped them. Read it before changing the
+engine. The companion documents are [ROADMAP.md](ROADMAP.md) (what is missing) and
+[screenshots.md](screenshots.md) (every level, with the commands that rendered it).
+
+## 1. The idea, and the division of labour
+
+Quake's server (physics, game rules, monster AI) and the visibility half of its renderer run as PSQL
+inside Firebird 6, compiled to WebAssembly and loaded in a browser Worker. JavaScript keeps only what
+SQL cannot do: read the keyboard and mouse, paint pixels on a canvas, and play sounds.
+
+| concern | where | entry point |
+|---|---|---|
+| one game tic (20 Hz) | PSQL | `SELECT * FROM quake_tic(tics, fwd, side, yaw_d, pitch_d, fire, jump, run, impulse)` |
+| which faces are on screen | PSQL | `SELECT * FROM frame_faces_fast` (or `frame_faces`) |
+| which models are on screen, posed | PSQL | `SELECT * FROM frame_ents` |
+| light animation | SQL view | `SELECT * FROM frame_lightstyles` |
+| what to play | tables | `sound_events`, `fx_events` (rows appended by the tic, read by id) |
+| rasterising | JS | `src/renderer.js` |
+| input, loop, UI, audio | JS | `src/main.js`, `src/audio.js`, `src/hud.js` |
+
+Every piece of game state is a row. There is no JavaScript game state at all: the page could be
+closed and reopened against the same database and the game would continue. This is also why the SQL
+console on the page can change anything while playing.
+
+## 2. Boot
+
+`src/main.js` → `openDatabase()` creates a `FirebirdBrowser` (package `firebird-wasm`) backed by a
+Worker running the engine; the Node scripts use `DirectTransport` instead, same API, no Worker. The
+engine needs `SharedArrayBuffer`, so the page must be cross-origin isolated: the dev server sends the
+COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworker.js` installs a
+service worker that re-issues every response with the headers after one reload.
+
+`createSchema(db, sql)` in `src/loader.js` runs the six SQL files in order, `SQL_FILES = schema,
+physics, game, weapons, monsters, render`, splitting each on `SET TERM`. The order matters because
+PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
+PROCEDURE x (...) AS BEGIN END^`) for the procedures it calls before defining them, and the stub's
+signature must match the real one exactly.
+
+Then the page picks a data set (section 11), loads it with `loadResources`, and `startMap` loads a
+level with `loadMap`.
+
+## 3. The data pipeline (`src/pak.js`, `src/bsp.js`, `src/mdl.js`, `src/loader.js`)
+
+`Pak` reads a PAK directory; `PakSet` merges several paks with the same interface, later paks
+shadowing earlier ones (pak0 + pak1). `Wad2` reads `gfx.wad` for the status bar pictures and the
+console font; `loadPalette` the 256 RGB colours.
+
+`Bsp` parses BSP version 29 only. It produces, for the SQL side: planes folded into faces (the plane
+flipped for `side`), texture info and miptex, the lightmap bytes per face, the ordered vertex list per
+face (edges and surfedges resolved), leaves with their contents, bounding box and the PVS run-length
+decoded into a hex string, marksurfaces, nodes (hull 0) and clipnodes (hulls 1 and 2) with their planes
+copied in, submodels (`*N`), the entity lump parsed into objects, and the texture names for the sky.
+
+`Mdl` parses `.mdl`: skins (first of a group), vertices as `(x, y, z, normalIndex)` bytes per frame,
+frame groups flattened to their first frame with the group kept for the painter, and `animations()`:
+consecutive frames whose names share a prefix (`run1`…`run6`) become one named run. LibreQuake's
+models name frames `1`, `2`… so the loader substitutes the id layout (section 3.1).
+
+`loader.js` holds `TABLES`, a one-line spec per table (`name:type` columns). From it the loader
+*generates* a `LOAD_<table>` PSQL procedure that parses `|`-separated lines, and `bulkLoad` feeds
+text chunks of 30 KB to it. The WASM build binds parameters only as text; this beats `EXECUTE BLOCK`s
+of `INSERT`s by about 2.5×, and E1M1 (70 k rows) loads in two seconds.
+
+`loadResources(db, pak, view)` loads what does not change between maps: every `.mdl` and `.spr`,
+the `b_*.bsp` item boxes, `monster_types` from `src/gamedata.js`, the light styles, `viewcfg`, and
+the `game` row with the `registered` flag (set when `maps/e2m1.bsp` exists). It returns `res`: models
+by id and by name, with the parsed `Mdl` for the painter.
+
+`loadMap(db, pak, res, name, { skill })` clears the per-map tables, loads the BSP tables, runs
+`init_map` (worldspawn message and type, gravity, `spawn_map_ents(skill)`), and returns the `Bsp`
+for the painter (which keeps textures, lightmaps and vertices in JavaScript; the SQL side has the
+same vertices for the slow renderer mode).
+
+### 3.1 Frame layouts
+
+`src/framelayouts.js` is generated by `npm run gen-frame-layouts` from paks with named frames: for
+each model, its frame count and the list of `(anim, first, count)`. `animationsOf()` in the loader
+uses it for any model whose frames carry no names and whose frame count matches. QuakeC addresses
+frames by number, so any model that works with the original `progs.dat` has the same layout.
+
+## 4. The schema (`sql/schema.sql`)
+
+Static per map:
+
+- `faces (id, model_id, nx, ny, nz, dist, nverts, miptex, sx, sy, sz, soff, tx, ty, tz, toff, sky, liquid, style0..3, cx, cy, cz, radius, lm_off, lm_w, lm_h, …)`: a face with its plane, texture mapping, light styles and a bounding sphere for frustum tests.
+- `face_verts (face, seq, x, y, z)`: primary key `(face, seq)` yields the polygon's vertices in order.
+- `leaves (id, contents, minx..maxz, first_ms, num_ms, ambient, ambient_sky, pvs)`: `pvs` is a hex string; leaf *j* is visible when bit *j−1* is set, low nibble first.
+- `marksurfaces (id, face)`, `hulls (model_id, hull, id, planenx..dist, child0, child1)`: hull 0 is the nodes (children `-(leaf)-1` for leaves), hulls 1 and 2 share the clipnodes.
+- `miptex`, `map_ents (id, classname, keys as columns, extra as text)`.
+- `models (id, name, kind, hull0, hull1, hull2, minx..maxz, …)`: the world, its submodels, boxes, alias models and sprites, all in one id space.
+- `anims (model_id, anim, first_frame, frame_count)`.
+
+Dynamic:
+
+- `ents`: the edict table, one wide row per entity: origin, velocity, angles, bounding box (`minx..maxz`), `model_id`, `frame`, `anim`, `anim_frame`, `health`, `flags`, `solid`, `movetype`, `think`/`nextthink`, `touch`, `st` (state), the mover fields (`mv_state`, `p1`/`p2`, `dst`, `speed`, `wait`, `lip`, `linked_id`, `noise1..3`), AI fields (`mtype`, `enemy_id`, `goal_id`, `ideal_yaw`, `attack_state`, `attack_finished`), `items`, ammo, `leaf`/`leafs` (the leaves the box touches, for the PVS), `waterlevel`/`watertype`, `owner_id`, `target`/`targetname`, `spawn_x/y/z`, `effects`, `alpha`.
+- `player`: the client's extras (`ent_id`, `pitch`, `view_ofs`, `weapon`, `weaponframe`, `attack_finished`, `punchangle`, `air_finished`, powerup times, `jump_released`, damage flash…).
+- `game`: `tic`, `time_`, `map_name`, `next_map`, `exit_kind`, `skill`, `world_model`, totals (monsters, secrets, kills), `serverflags`, `world_type`, `level_msg`, `registered`, `finale`, `gravity`, `intermission_tics`.
+- `viewcfg (w, h, fov, near_z, vis_leaf)`; `vis_faces (face, ent_id, ox, oy, oz)` the current leaf's marked faces; `sel_faces` (GTT) this frame's pre-filter.
+- `sound_events (id, tic, ent_id, chan, snd, vol, attn, x, y, z)`, `fx_events (id, tic, kind, x, y, z, dx, dy, dz, n)`: kept for 40 tics (two seconds) by `quake_tic`.
+- `lightstyles (style, pattern)`, `monster_types` (section 8).
+- Global temporary tables, because PSQL has no arrays: `clip_planes` (fly_move's bumps), `pushed` (what a pusher carried), `sel_faces`.
+
+Conventions: angles in degrees (`yaw`, `pitch`), Quake units, times in seconds as `DOUBLE PRECISION`,
+`BIN_AND`/`BIN_OR` for flags, `ents.flags` bit 512 = resting on the ground (FL_ONGROUND), 2048 =
+water jump, 64 = god.
+
+## 5. Physics (`sql/physics.sql`)
+
+A direct port of `world.c` and `sv_phys.c`:
+
+- `point_leaf(x, y, z)` walks hull 0; `hull_contents(hull, node, x, y, z)` walks a clip hull; `point_contents` is the world's hull 0 contents (`-1` empty, `-2` solid, `-3` water, `-4` slime, `-5` lava, `-6` sky). Clip hulls carry no liquid contents, so water levels use the point hull.
+- `pvs_visible(pvs, leaf)` tests one bit of the hex string.
+- `rhc(...)` is `SV_RecursiveHullCheck`: it splits the segment at each plane and recurses into both sides, threading the whole trace state (`allsolid`, `startsolid`, `inopen`, `inwater`, fraction, end point, hit plane) through its parameters, since PSQL procedures can recurse but cannot share arrays.
+- `trace_hull(hull, head, ...)` runs `rhc` from a hull's head node, offsetting by the entity's origin.
+- `trace_box` clips a moving box against another entity's box (Minkowski sum, slab test).
+- `trace_move(ent, minx..maxz, from, to, nomonsters)` picks the hull by the box size (point, player, or the big hull), runs the world, then every brush-model entity at its own origin with its own hull, then monsters and the player as boxes; returns `fraction`, end point, `hit_ent`, normal, `allsolid`, `startsolid`, `inwater`. Note the mapping `trace_hull(IIF(hull = 0, 0, 1), …)`: hulls 1 and 2 are both stored under hull row 1 since they share clipnodes; the hull number only selects the head node.
+- `test_position`, `link_ent` (recomputes `leaf` and `leafs` for the PVS and the touch loop), `check_water` (waterlevel 0..3 and watertype from the point hull), `clip_velocity` (slide along a plane with overbounce).
+- `fly_move(ent, dt)`: up to four bumps, planes collected in `clip_planes`, the velocity clipped against each and against pairs (crease); returns the blocked bits and the entity hit.
+- `walk_move`: the player's step: try the move, if blocked try from 18 units up and settle down, with the step-smoothing that the client applies.
+- `move_step(ent, dx, dy, dz)`: monsters' step with the drop-to-floor check (no walking off ledges, flying and swimming variants by the type's flags).
+- `toss_move`: gravity (`game.gravity`), bounce (`movetype` 10), rest when landing on a floor (flag 512), the entity is only relinked when it moved: items at rest cost nothing per tic.
+- `push_entity`/`push_move`: a pusher (door, plat, train) moves, carrying what stands on it and crushing or blocking on what it hits (`mover_blocked`), with the `pushed` table to undo a blocked move.
+
+## 6. The game (`sql/game.sql`)
+
+- `spawn_map_ents(skill)`: walks `map_ents`, drops entities by skill flags and deathmatch, applies the registered-only gates (`trigger_onlyregistered`, `func_episodegate`, `func_bossgate`), and spawns each class: `light_*` and `ambient_*` as point entities that only the audio reads, `func_*` movers with their sounds, speeds and positions (`calc_move`, START_OPEN, `lip`, `wait`), `trigger_*` as non-solid boxes with `touch`, items with their box model (`b_*.bsp`) and `drop_to_floor`, keys by `world_type`, weapons, `misc_*`, `trap_spikeshooter`, `path_corner`, `info_*`, and every `monster_*` through `spawn_monster` by the class suffix. Doors that touch are linked (`linked_id`) so a pair opens as one.
+- Movers: `door_*` (`door_touch` with the two-second debounce via `attack_finished`, key checks with the metal/base/medieval messages, `door_fire`/`go_up`/`go_down`/`hit_top`/`hit_bottom`), `plat_*`, `button_*`, `train_*` with `path_corner` targets, `secret_*` (the six-step secret door). All use `mv_state` 0 top, 1 bottom, 2 up, 3 down, and `SUB_CalcMove` semantics: a destination, a speed, and `ltime`-based arrival.
+- Triggers: once, multiple (with `wait`), relay, counter, secret, teleport (`teleport_touch`, telefrag by box overlap), push, hurt, monsterjump, setskill, changelevel (`changelevel` sets `next_map` and `exit_kind`), message, onlyregistered. `use_targets(ent, activator)` fires everything with a matching `targetname`, by class; `delayed_use` through a think.
+- Items: `item_touch` gives health (with the mega-health rot), armour, ammo (`bound_ammo`), weapons (`best_weapon`), keys, sigils, powerups, backpacks; respawn is deathmatch-only and absent.
+- Combat: `t_damage(target, inflictor, attacker, dmg)` with armour absorption, god mode, the damage momentum, pain (`monster_pain`), death (`killed` → `monster_die`, gibs through `throw_gib`/`throw_head`, kill count); `t_radius_damage` for explosions.
+- Projectiles: `launch_spike`/`launch_grenade`/`launch_rocket` create tossed or flying entities whose `impact(e1, e2)` does the class-specific thing: spikes and the three monster spike kinds, rockets, lasers, vore balls, lava balls, fireballs, grenades (bounce, explode on a timer or on a monster), zombie gibs, and the player bumping doors, secret doors, buttons, and taking fall damage.
+- Messages and sound: `cprint` (centre print, two seconds) and `sprint` write to `game`; `snd(ent, chan, name, vol, attn)` and `snd_at(x, y, z, ...)` append `sound_events`; `fx(kind, ...)` appends `fx_events` (explosions, blood, gunshot, teleport, lightning, lava splash…). Names picked with `IIF`/`CASE` are `TRIM`med (section 13).
+
+## 7. The player (`sql/weapons.sql`)
+
+`player_think(dt, fwd, side, yaw_d, pitch_d, fire, jump, run, impulse)` is `client.qc` and
+`sv_user.c` in one procedure, in this order: angles; water level and drowning (air runs out after 12 s,
+damage every second after); the water jump (FL_WATERJUMP: pushing against a ledge from the water
+with the waist blocked and the head clear gives an upward kick); jumping with the `jump_released`
+latch; friction (ground, or water); acceleration (walk, air, swim, with the swimming forward vector
+following the pitch); gravity unless water-jumping; `walk_move` or `fly_move`; step smoothing; the
+touch loop over triggers, items, door fields and plat fields that overlap the player's box; powerup
+expiry; the weapon frame; the player model's animation. `player_fire` is each weapon from the axe to
+the thunderbolt (`fire_bullets` with the spread table, `lightning_damage` as a 600-unit trace),
+`player_impulse` the weapon selects, cycle and 9 (everything). `view_vectors` gives forward, right and
+up from the player's angles.
+
+`quake_tic` (in `monsters.sql`) runs `tics` of this and returns one row with everything the page
+needs: position, view height, angles, health, armour, ammo, items, the current weapon and frame, the
+centre print, the level message, the leaf and its ambients, exit and finale flags, kill and secret
+counts, damage taken for the flash.
+
+## 8. Monsters (`sql/monsters.sql`)
+
+`monster_types` (from `src/gamedata.js`) describes each of the fifteen monsters: model, head model,
+health, hull size, flags (fly, swim), speeds, the animation names for stand/walk/run/melee/missile,
+pain and death animations, the missile kind, attack and pain chances, the sounds. The code is the
+state machine from `ai.qc` with one `CASE` per monster where they differ:
+
+- `st` is the state: `stand`, `walk`, `run`, `missile`, `melee`, `pain`, `die`, `dead`, `cruc` (the crucified zombies), `asleep` (Chthon before the rune).
+- `monster_think` runs every 0.1 s (`nextthink`, compared with a 1 µs tolerance since floating-point time drifts): `set_anim`, the animation frame step, `find_target` (sight and sound), `found_target`, `change_yaw` towards `ideal_yaw`, `move_to_goal` (`new_chase_dir`, `step_direction`, `facing_ideal`), `check_attack` (range and `visible`/`infront`), then `monster_missile` (shotgun, grenade, wizard spike, zombie gib, lava ball, lightning, leap, laser, knight spike, vore ball) or `monster_melee`. A monster far from the player and out of its PVS thinks at 3 Hz and strides further.
+- `monster_pain` picks a pain animation (zombies fall down from a hard hit and get up), `monster_die` the death one, drops a backpack for the soldiers and ogres, gibs below the gib health, and counts the kill.
+- Specials: `boss_awake` and the `event_lightning_fire` dance (the lightning only hurts Chthon with both terminals up), `tarbaby_explode`, `vore_track` (the homing ball), the oldone's death by telefrag, the fish's water bounds, `teleporttrain_next`.
+- `spawn_monster(name, dist)` is selectable: it spawns one ahead of the player and returns its id (the console's buttons and the screenshot tool use it).
+- `run_pushers(dt)` moves the movers, `run_think(t)` runs due thinks (`remove`, `delayed_use`, `grenade_explode`, `fireball_think`, `shooter_think`, …), `run_physics(dt)` moves everything that flies, bounces or falls, skipping what rests.
+- `init_map(name)` sets `game` from worldspawn (message, type, gravity 100 on E1M8) and spawns.
+
+## 9. The renderer in SQL (`sql/render.sql`)
+
+`view_setup` computes the camera from the player's row and `viewcfg`: forward/right/up, the
+projection scale, the near plane and the frustum planes. `mark_faces(pvs, leaf)` runs once per leaf
+change: it clears `vis_faces` and inserts every face of every leaf whose PVS bit is set (`JOIN`ing
+`marksurfaces` by range, not `IN`), plus every face of every visible brush model at its origin. The
+leaf is remembered in `viewcfg.vis_leaf`, so nothing is recomputed while the eye stays in a leaf.
+
+`frame_faces_fast` (the default): fills `sel_faces` from `vis_faces` by dropping back faces (plane
+test at the eye) and faces whose bounding sphere is outside the frustum, and returns one row per face
+`(face, ent_id, ox, oy, oz)`. `frame_faces` does the same and then joins `face_verts`, computing the
+view transform, the projection and the texel coordinates in the select list, one row per vertex. The
+first costs about a quarter of the second since a frame is ~300 face rows instead of ~1400 vertex rows.
+
+`frame_ents` lists the alias models and sprites whose `leafs` intersect the PVS, with pose, frame,
+skin, effects and alpha. `frame_lightstyles` evaluates the 64 light styles at the current time.
+
+## 10. The painter (`src/renderer.js`, `src/hud.js`)
+
+An 8-bit framebuffer of palette indices with a 16-bit z-buffer, presented through the palette into an
+`ImageData`. `setResources` keeps per-face info (the BSP's vertices, texture and lightmap) so the fast
+mode needs only face ids. `drawFaceList`/`drawFaces` transform (if needed) and clip each polygon
+against the near plane in view space, then `fillPolygon` scan-converts with perspective-correct
+spans: 1/z, s/z and t/z are affine in screen space, so each span walks them and divides every 8 pixels.
+Texels come from a **surface cache**: the miptex tiled under the face's lightmap (the four light
+styles summed) and pushed through the colormap once per face and light level, up to
+`SURF_CACHE_MAX` entries. Liquids are drawn with the sine warp, the sky with Quake's two scrolling
+layers mapped by the pixel's direction (`skyPixel`), both as special fill modes of the same span
+routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`.
+
+`drawAlias` draws an `.mdl`: the frame's vertices (or the group's frame by time) transformed by the
+entity's angles, lit by the lightmap value under the entity (`lightPoint`) plus Gouraud light from
+the vertex normals, each triangle clipped against the near plane and rasterised with the z-buffer;
+the view model is drawn last with a cleared z-buffer. `drawSprite` is a billboard. Particles
+(explosions, blood, teleport) are points with gravity and a lifetime. `present(tint)` applies the
+damage, quad, pentagram and ring tints. `Hud` draws the status bar from `gfx.wad` (numbers, faces,
+ammo, keys, sigils), the centre print, and a text HUD at low detail.
+
+## 11. The page (`src/main.js`)
+
+- **Input**: `keydown`/`keyup` into a set, pointer lock for the mouse, the wheel for weapons, touch halves for phones; `readInput(tics)` turns them into the nine `quake_tic` arguments.
+- **The loop**: `frame()` computes how many tics are due (1..4 at 50 ms) so a slow frame catches up, runs `quake_tic`, then in one `Promise.all` queries `frame_faces[_fast]`, `frame_ents`, `frame_lightstyles`, the new `sound_events` and `fx_events` (by last id) and the brush models' frames, paints, plays, presents. Level changes (`EXIT_KIND`) load the next map after the stats message; the finale shows the ending text.
+- **Data sets**: `DATASETS` in `boot()` are the pak combinations the site may serve (`pak/pak0.pak`, `pak/pak1.pak`, `pak/lq1/pak0.pak`, `pak/lq1/pak1.pak`), probed with `HEAD`; the **Data** selector shows those whose files exist. The file picker takes one or two paks.
+- **Settings** persist in `localStorage`: map, skill, detail (320×200 or 160×100), renderer mode, volumes, music mode, data set.
+- **Console**: any SQL against the live database, with buttons for the common queries; `window.quake` exposes `db`, `sql()`, `renderer`, `res`, `settings`, `last` (the last tic row) and `map` to the devtools console.
+- **Music**: `worldspawn.sounds` names the CD track; `public/music/trackNN.ogg` or a picked folder; otherwise a synthesised drone.
+
+## 12. Audio (`src/audio.js`)
+
+`QuakeAudio` decodes `.wav` files from the pak on demand, plays `sound_events` with Quake's
+spatialisation (volume falls off linearly with distance × attenuation, pan by the dot with the right
+vector), loops entity ambients (`ambient_*` entities, torches, the hums) at their positions, plays the
+leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles the music modes.
+
+## 13. Tooling (`scripts/`)
+
+| script | purpose |
+|---|---|
+| `build.mjs` | bundles `src/main.js` with esbuild-wasm into `dist/`, copies `public/` and the engine's wasm; `--serve [--coi]` serves it |
+| `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
+| `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
+| `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
+| `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |
+| `screenshot.mjs` | renders frames headlessly: `--at=x,y,z,yaw`, `--sql="…"` and `--tics=N` (repeatable, in order), `--single`, `--fast`, `--compare` (SQL-projected vs JS-projected frame, must match), `--gallery` (a view from every item spot) |
+| `gen-frame-layouts.mjs` | regenerates `src/framelayouts.js` |
+| `png.mjs` | a tiny PNG encoder for the screenshots |
+
+Timings on a desktop (E1M1, `npm run bench`): a tic 6 ms idle and 12 ms walking; a player-box trace
+0.8 ms; a monster think 0.4 ms standing and 5 ms running; `frame_faces_fast` 6 ms for ~270 faces and
+`frame_faces` 36 ms for ~1400 vertex rows; marking a new leaf's faces 15 ms. The painter takes 30 to
+150 ms per frame at 320×200 depending on the scene.
+
+## 14. CI and deployment (`.github/workflows/pages.yml`)
+
+Every push to `main`: install, cache or fetch the paks (shareware and LibreQuake), the SQL smoke test,
+the LibreQuake smoke test, the nine scene tests one step each, headless screenshots, the build, and
+the deploy to GitHub Pages at https://mariuz.github.io/firebird-quake/. The pak files are never
+committed (`.gitignore`); the registered `pak1.pak` is only ever local.
+
+## 15. Firebird lessons, in full
+
+- **Variables in DML need the colon** (`:x`), and a reserved word such as `at` cannot be a name.
+- **Forward references**: declare a stub with the identical signature first.
+- **`VARCHAR` beyond 8191** needs `CHARACTER SET ASCII` (the PVS strings, the loader chunks).
+- **No binary parameters** in the WASM build: bind text, parse in PSQL.
+- **`INSERT ... VALUES` takes one row**; bulk goes through the generated loaders.
+- **`THEN NULL;` is not a statement**: use `THEN BEGIN END`.
+- **`IIF`/`CASE` over literals pad to the longest**: `TRIM` anything that is compared as a string in JavaScript or used as a file name. SQL ignores trailing blanks in `=`, so this hides until a test compares strings.
+- **Floating-point time drifts**: compare `nextthink <= t + 1e-6`, or a 10 Hz think runs at 8 Hz.
+- **Derived tables are inlined; `IN (subquery)` scans**: `JOIN` the small set; a predicate on the joined row still walks every vertex, so filter before joining.
+- **Select-list expressions are cheap, PSQL statements are not**: the projection moved from the loop body to the cursor's select list halved the frame query.
+- **Rows are the cost**: emit faces, not vertices.
+- **Keep what does not change**: the PVS marking per leaf, items at rest not relinked, the surface cache in the painter.
+- **A primary-key lookup is ~4 µs**, so recursion over a BSP hull is fine.
+- **Selectable procedures run only when selected from**: `EXECUTE PROCEDURE spawn_monster(...)` does nothing visible; `SELECT * FROM spawn_monster(...)` does.
+- **Events need a lifetime**: `sound_events`/`fx_events` are deleted after 40 tics; a test that looks for an event must look while it is still there.
+- **Global temporary tables** stand in for arrays (clip planes, pushed entities, this frame's faces).
+
+## 16. Debugging recipes
+
+- In the page's devtools: `await quake.sql("SELECT id, mtype, st, health FROM ents WHERE mtype IS NOT NULL")`, `quake.last` for the last tic row, `quake.settings`.
+- A scene headlessly: `node scripts/screenshot.mjs e1m7 out --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake(2)" --tics=70 --single --fast` then open `out-e1m7-0.png`.
+- Finding a view: `node scripts/screenshot.mjs e2m3 out --gallery --fast`, tile the PNGs into a contact sheet (PIL), pick the spot from the file name (`..._x_y_z_yaw.png`).
+- A test's pattern: `teleport(x, y, z, yaw)` writes the player row and relinks; `run(n, args)` plays tics; `sounds('doors/%')` counts events; assert on `ents` rows after.
+- When CI fails and the test passes locally, run it three times locally: the monster AI uses `RAND()`, first thinks are random within 0.6 s, and events expire. Fix the test's timing or neutralise the random actors (`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE mtype IS NOT NULL AND …`).
+- `npm run check` for a PSQL compile error with the line; `npm test` for a quick end-to-end.
