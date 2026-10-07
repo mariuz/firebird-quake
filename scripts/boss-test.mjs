@@ -79,9 +79,10 @@ for (let i = 0; i < 160 && lava === 0; i++) {
 assert(lava > 0, 'Chthon threw a lava ball');
 assert((await sounds('boss1/throw.wav')) > 0, 'the throw was heard');
 assert((await q1(`SELECT takedamage t FROM ents WHERE classname = 'monster_boss'`)).T === 0, 'weapons cannot hurt him');
-// the lava ball must eventually explode (fx 7) and vanish
-s = await run(80);
-assert((await q1('SELECT COUNT(*) n FROM fx_events WHERE kind = 7')).N > 0, 'a lava ball exploded');
+// the lava ball must eventually explode (fx 7) and vanish; events are kept for two seconds, so look each tic
+let burst = false;
+for (let i = 0; i < 160 && !burst; i++) { s = await tic(); burst = (await q1('SELECT COUNT(*) n FROM fx_events WHERE kind = 7')).N > 0; }
+assert(burst, 'a lava ball exploded');
 
 // ── 4. raise both terminals with their floor buttons ────────────────────
 const buttons = await qa("SELECT id, target FROM ents WHERE classname = 'func_button' AND target IN ('t12', 't13') ORDER BY id");
