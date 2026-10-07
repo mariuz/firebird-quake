@@ -142,8 +142,9 @@ check(hot.every((h) => h.COMPILED === 1), `the hottest functions are compiled: $
 const hunting = (await db2.query(`SELECT e.id, q.name FROM ents e JOIN qc_functions q ON q.id = CAST(qc_f(e.id, qc_fdef('think')) AS INTEGER)
   WHERE BIN_AND(e.flags, 32) <> 0 AND e.enemy_id = 1`)).rows;
 check(hunting.some((h) => /^army_(run|atk|pain)/.test(h.NAME)), `${hunting.length} grunts hunt the player: ${hunting.map((h) => h.NAME).join(', ')}`);
-const shells = (await q1(db2, 'SELECT * FROM qc_tic(1, 0, 0, 0, 0, 0, 0, 1, 0)')).SHELLS;
-check(shells < 25, `the shotgun fired (${shells} shells left)`);
+// (the shell count may also grow: a dead grunt's backpack)
+const shots = (await q1(db2, "SELECT COUNT(*) n FROM qc_log WHERE kind = 'sound' AND msg LIKE '%weapons/guncock%'")).N;
+check(shots > 0, `the shotgun fired ${shots} times`);
 const sorted = [...ms.slice(60)].sort((a, b) => a - b);
 console.log(`the last 60 tics: median ${sorted[30].toFixed(0)} ms, max ${sorted[59].toFixed(0)} ms`);
 
