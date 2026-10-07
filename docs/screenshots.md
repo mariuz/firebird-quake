@@ -312,3 +312,21 @@ node scripts/screenshot.mjs e2m5 docs/redgates    --at=-1024,3152,-42,225 --tics
 node scripts/screenshot.mjs e2m5 docs/greathall   --at=-520,3160,-106,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m5 docs/thunderbolt --at=-672,1392,-74,270 --tics=8 --single --fast
 ```
+
+## E2M6, the Dismal Oubliette
+
+![the vaulted hall at the start](vault-e2m6-0.png) ![two vores guard the rune](vores-e2m6-0.png) ![an ogre and a zombie at the doorway of the slime hall](slimehall-e2m6-0.png) ![a hell knight under the blue window](hellknight-e2m6-0.png) ![the blue stained-glass window](bluewindow-e2m6-0.png)
+
+1. the vaulted hall at the start
+2. the two vores that guard the episode's rune, at the bottom of the oubliette
+3. an ogre and a zombie at the doorway of the slime hall
+4. a hell knight in the hallway under the blue window
+5. the blue stained-glass window
+
+```bash
+node scripts/screenshot.mjs e2m6 docs/vault      --single --fast
+node scripts/screenshot.mjs e2m6 docs/vores      --at=-608,700,-978,270 --tics=6 --single --fast
+node scripts/screenshot.mjs e2m6 docs/slimehall  --at=1904,-224,-402,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m6 docs/hellknight --at=1024,792,-482,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m6 docs/bluewindow --at=1240,1280,-994,270 --tics=8 --single --fast
+```
