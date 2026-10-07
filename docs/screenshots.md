@@ -256,3 +256,21 @@ node scripts/screenshot.mjs e2m2 docs/window   --at=-208,992,134,270 --tics=8 --
 node scripts/screenshot.mjs e2m2 docs/walkway  --at=-552,192,-34,225 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m2 docs/exitogre --at=1880,-180,200,0 --tics=6 --single --fast
 ```
+
+## E2M3, the Crypt of Decay
+
+![the red carved doorway](altar-e2m3-0.png) ![a rotfish under the water](rotfish-e2m3-0.png) ![the shambler at the grated gate](grate-e2m3-0.png) ![an ogre leaping by the window lights](lights-e2m3-0.png) ![the secret slipgate to E2M7](secretgate-e2m3-0.png)
+
+1. the red carved doorway at the end of the hall
+2. a rotfish under the surface of the flooded crypt
+3. a shambler at the grated gate
+4. an ogre leaping by the window lights
+5. the secret slipgate to the Underearth, E2M7
+
+```bash
+node scripts/screenshot.mjs e2m3 docs/altar      --at=184,-1520,-242,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m3 docs/rotfish    --at=-56,576,-354,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m3 docs/grate      --at=-1256,1448,-50,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m3 docs/lights     --at=-800,1504,-50,315 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m3 docs/secretgate --at=880,1776,-220,0 --tics=4 --single --fast
+```
