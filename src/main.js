@@ -15,8 +15,9 @@ import gameSql from '../sql/game.sql';
 import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
+import qcvmSql from '../sql/qcvm.sql';
 import { Pak, Wad2, loadPalette, PakSet } from './pak.js';
-import { createSchema, loadResources, loadMap, setView } from './loader.js';
+import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
@@ -397,7 +398,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql });
   return instance;
 }
 
@@ -425,8 +426,9 @@ async function usePak(buffers, label) {
 async function boot() {
   try {
     db = await openDatabase();
-    // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last
-    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
+    // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last;
+    // the QuakeC VM: await quake.loadProgs(); await quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)"); await quake.sql('SELECT * FROM qc_log')
+    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
     // which game data the site serves: the shareware pak, the registered pak1.pak beside it, LibreQuake
     // (public/pak/lq1/, `npm run fetch-pak -- --librequake`), or the shareware pak with LibreQuake's
     // pak1.pak, which gives the registered monsters free models

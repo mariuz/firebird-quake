@@ -168,6 +168,25 @@ state machine from `ai.qc` with one `CASE` per monster where they differ:
 - `run_pushers(dt)` moves the movers, `run_think(t)` runs due thinks (`remove`, `delayed_use`, `grenade_explode`, `fireball_think`, `shooter_think`, …), `run_physics(dt)` moves everything that flies, bounces or falls, skipping what rests.
 - `init_map(name)` sets `game` from worldspawn (message, type, gravity 100 on E1M8) and spawns.
 
+## 8a. The QuakeC VM (`src/progs.js`, `sql/qcvm.sql`)
+
+The game in sections 6 to 8 is a rewrite of `progs.dat`; the VM is the start of running the original
+bytecode instead.
+
+- `Progs` parses `progs.dat` version 6: statements `(op, a, b, c)` with signed 16-bit operands, functions (first statement, parameter start, number of locals, name, file, parameter sizes), global and field definitions (type, offset, name), the string table split at NULs into `(offset, text)` rows, and the global image, typed by the definitions so that string, entity, field and function references load as integers and everything else as floats.
+- Tables: `qc_statements`, `qc_functions`, `qc_defs` (kind 0 global, 1 field), `qc_strings` (negative offsets for strings made at run time by `ftos`/`vtos`), `qc_globals0` (pristine) and `qc_globals` (live), `qc_edicts`, `qc_fields (ent, ofs, v)`, `qc_log` (what the print builtins wrote), `qc_vm` (depth, step counter and limit, the next runtime string, and the cached offsets of `self`, `time`, `v_forward`, the `trace_*` globals and the fields the VM touches), and the temporary `qc_localstack`.
+- Values: every global and field is one `DOUBLE PRECISION`; integers (entities, function and string references) are exact in it. An entity reference is the edict number (0 = world, 1 = the player). `OP_ADDRESS` makes `ent * 4096 + field`, which `OP_STOREP_*` decodes. In `OP_LOAD_*` and `OP_ADDRESS`, operand `b` is a global holding the field offset, as in `pr_exec.c`.
+- `qc_call(f)`: a builtin (negative first statement) goes to `qc_builtin`; otherwise the depth is raised, the locals saved to `qc_localstack`, the parameters copied from `OFS_PARM0` (global 4, three slots each) into the locals, and the statements run in a loop with one `IF` branch per opcode, the frequent ones first. `OP_CALLn` recurses into `qc_call`; `OP_RETURN`/`OP_DONE` copy three slots to `OFS_RETURN` (global 1) and leave; the locals are restored. Jumps are `pc + b - 1` after the increment, as in Quake. A step limit (5 million) stops runaway loops; `qc_error` is raised for a null function, a bad opcode, `error()` and missing builtins.
+- `qc_builtin(n)`: `makevectors`, `setorigin`, `setmodel` (with the model's bounds when it is loaded), `setsize`, `random`, `sound` (logged), `normalize`, `error`, `vlen`, `vectoyaw`, `spawn`, `remove`, `traceline` (against the loaded world's hull 0 through `trace_hull`, filling the `trace_*` globals), `find`, `findradius` (the `.chain` list), the `precache_*` no-ops, the prints, `ftos`/`vtos`, `walkmove` (unchecked), `droptofloor` (stays), `lightstyle` (writes `lightstyles`), `rint`/`floor`/`ceil`/`fabs`, `cvar` (a few known names), `nextent`, `changeyaw`, `vectoangles`, `pointcontents`, `makestatic`, `cvar_set`, `centerprint`, `ambientsound`; the `Write*` network builtins do nothing. Anything else raises.
+- `qc_run(name, self)` sets `self` and calls by name; `qc_reset` restores the globals, makes the world and the player edicts and caches the offsets.
+
+`scripts/qcvm-test.mjs` runs the shareware `progs.dat`: `anglemod`, builtins through the function
+table, `crandom`, `makevectors`, `main`, `SetNewParms` and `DecodeLevelParms` (global and field
+stores), `InitBodyQue` (spawning and string fields), `info_null`, `ftos`/`vtos`, and `worldspawn`,
+which sets the light styles. Cost: about 100 us per statement (three to six primary-key lookups each).
+LibreQuake's `progs.dat` (an extended QuakeC) loads but stops at its own `vectoyaw`, which is not
+builtin 13 there; supporting its extensions is roadmap work.
+
 ## 9. The renderer in SQL (`sql/render.sql`)
 
 `view_setup` computes the camera from the player's row and `viewcfg`: forward/right/up, the

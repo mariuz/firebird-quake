@@ -90,6 +90,10 @@ jobs:
       - name: The gold key
         run: npm run test:e1m6
 
+      # The QuakeC VM in PSQL runs the real progs.dat: pure functions, builtins, entity fields, worldspawn
+      - name: The QuakeC VM
+        run: npm run test:qcvm
+
       - name: Headless screenshots
         run: npm run screenshots
 

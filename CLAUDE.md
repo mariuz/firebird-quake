@@ -13,6 +13,7 @@ npm run fetch-librequake       # LibreQuake lite into public/pak/lq1/ (free pak0
 npm run check                  # compile every sql/*.sql against the engine (first error with its line)
 npm test                       # SQL smoke test on E1M1
 npm run test:boss | test:registered | test:e1m2 … test:e1m8   # the scene tests, one level each
+npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run bench                  # timings of a tic, the traces, a monster think, the frame queries
 npm run serve                  # http://localhost:8080/ (add --coi for browsers without service workers)
 node scripts/screenshot.mjs <map> <prefix> --at=x,y,z,yaw --sql="…" --tics=N --single --fast   # a posed frame

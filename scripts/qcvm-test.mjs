@@ -1,0 +1,115 @@
+// qcvm-test.mjs – the QuakeC VM in PSQL runs the real progs.dat: pure
+// functions, builtins, the calling convention with locals and recursion,
+// entity fields through OP_ADDRESS/OP_STOREP/OP_LOAD, strings, and
+// worldspawn with its light styles.
+//
+//   node scripts/qcvm-test.mjs            (PAK=path/to/pak0.pak for another progs.dat)
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
+import { Pak } from '../src/pak.js';
+import { createSchema, loadProgs, SQL_FILES } from '../src/loader.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
+const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
+
+let failed = 0;
+const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); failed++; } else console.log(`ok   ${msg}`); };
+
+const db = new FirebirdBrowser('memory://quake', { transport: new DirectTransport() });
+await createSchema(db, sql);
+const pak = new Pak(fs.readFileSync(pakPath).buffer);
+let t0 = performance.now();
+const progs = await loadProgs(db, pak);
+console.log(`progs.dat loaded in ${(performance.now() - t0).toFixed(0)} ms`);
+const q1 = (s, p = []) => db.query(s, p).then((r) => r.rows[0]);
+const qa = (s, p = []) => db.query(s, p).then((r) => r.rows);
+const g = (ofs) => q1(`SELECT qc_g(${ofs}) v FROM rdb$database`).then((r) => r.V);
+const setg = (ofs, v) => db.exec(`EXECUTE PROCEDURE qc_sg(${ofs}, ${v})`);
+const call = (name) => db.exec(`EXECUTE PROCEDURE qc_call(qc_fn('${name}'))`);
+const run = (name, self = 0) => db.exec(`EXECUTE PROCEDURE qc_run('${name}', ${self})`);
+const steps = () => q1('SELECT steps FROM qc_vm').then((r) => Number(r.STEPS));
+const fld = (ent, name) => q1(`SELECT qc_f(${ent}, qc_fdef('${name}')) v FROM rdb$database`).then((r) => r.V);
+const str = (ofs) => q1(`SELECT qc_str(${ofs}) s FROM rdb$database`).then((r) => r.S);
+const log = (kind) => qa(`SELECT msg FROM qc_log WHERE kind = '${kind}' ORDER BY id`).then((r) => r.map((x) => x.MSG));
+
+// ── loaded ────────────────────────────────────────────────────────────────
+const n = await q1('SELECT (SELECT COUNT(*) FROM qc_statements) s, (SELECT COUNT(*) FROM qc_functions) f, (SELECT COUNT(*) FROM qc_defs WHERE kind = 0) g, (SELECT COUNT(*) FROM qc_defs WHERE kind = 1) e, (SELECT COUNT(*) FROM qc_strings) st, (SELECT COUNT(*) FROM qc_globals) gl FROM rdb$database');
+assert(n.S === progs.statements.length && n.F === progs.functions.length, `progs.dat version 6, crc ${progs.crc}: ${n.S} statements, ${n.F} functions`);
+assert(n.G === progs.globaldefs.length && n.E === progs.fielddefs.length, `${n.G} global and ${n.E} field definitions`);
+assert(n.ST === progs.strings.length && n.GL === progs.globals.length, `${n.ST} strings, ${n.GL} non-zero globals`);
+assert((await str(0)) === '' && (await q1("SELECT qc_fn('main') f FROM rdb$database")).F > 0, 'main() is a function');
+const vm = await q1('SELECT * FROM qc_vm');
+assert(vm.G_SELF > 0 && vm.G_TIME > 0 && vm.F_ORIGIN >= 0 && vm.F_NEXTTHINK > 0, `the VM knows self (${vm.G_SELF}), time (${vm.G_TIME}), .origin (${vm.F_ORIGIN}), .nextthink (${vm.F_NEXTTHINK})`);
+
+// ── pure QuakeC ───────────────────────────────────────────────────────────
+// float(float v) anglemod = { while (v >= 360) v = v - 360; while (v < 0) v = v + 360; return v; }
+await setg(4, 370); await call('anglemod');
+assert((await g(1)) === 10, 'anglemod(370) = 10');
+await setg(4, -10); await call('anglemod');
+assert((await g(1)) === 350, 'anglemod(-10) = 350 (loops, comparisons, locals)');
+await setg(4, 725); await call('anglemod');
+assert((await g(1)) === 5, 'anglemod(725) = 5');
+assert((await q1('SELECT depth FROM qc_vm')).DEPTH === 0, 'the call depth is back to 0');
+
+// builtins through the function table: vectoyaw is #13, vlen #12
+await setg(4, 0); await setg(5, 1); await setg(6, 0); await call('vectoyaw');
+assert(Math.abs((await g(1)) - 90) < 1e-4, `vectoyaw((0 1 0)) = ${await g(1)}, a builtin`);
+await setg(4, 3); await setg(5, 4); await setg(6, 0); await call('vlen');
+assert((await g(1)) === 5, 'vlen((3 4 0)) = 5');
+// float() crandom = { return 2 * (random() - 0.5); }
+let lo = 1, hi = -1;
+for (let i = 0; i < 10; i++) { await call('crandom'); const v = await g(1); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+assert(lo >= -1 && hi <= 1 && hi - lo > 0.1, `crandom() in [-1, 1] (${lo.toFixed(2)}..${hi.toFixed(2)})`);
+// makevectors: v_forward for yaw 90 is (0 1 0)
+await setg(4, 0); await setg(5, 90); await setg(6, 0); await call('makevectors');
+assert(Math.abs((await g(vm.G_VFWD)) - 0) < 1e-6 && Math.abs((await g(vm.G_VFWD + 1)) - 1) < 1e-6, 'makevectors((0 90 0)) sets v_forward = (0 1 0)');
+
+// ── main(): prints ────────────────────────────────────────────────────────
+await run('main');
+assert((await log('dprint')).some((m) => /main function/.test(m)), `main() printed "${(await log('dprint')).join('|')}"`);
+
+// ── globals and entity fields ─────────────────────────────────────────────
+// void() SetNewParms = { parm1 = IT_SHOTGUN | IT_AXE; parm2 = 100; parm3 = 0; parm4 = 25; parm5..9 = 0; }
+await run('SetNewParms');
+const parm = async (i) => g((await q1(`SELECT qc_gdef('parm${i}') o FROM rdb$database`)).O);
+assert((await parm(1)) === 4097 && (await parm(2)) === 100 && (await parm(4)) === 25, 'SetNewParms: parm1 = IT_SHOTGUN|IT_AXE, parm2 = 100, parm4 = 25 (global stores)');
+// void() DecodeLevelParms = { if (serverflags) { if (world.model == "maps/start.bsp") SetNewParms(); } self.items = parm1; self.health = parm2; … }
+const e = (await q1('SELECT qc_spawn() e FROM rdb$database')).E;
+assert(e >= 2, `spawn() made edict ${e}`);
+await run('DecodeLevelParms', e);
+assert((await fld(e, 'items')) === 4097 && (await fld(e, 'health')) === 100 && (await fld(e, 'ammo_shells')) === 25, 'DecodeLevelParms(self): .items, .health, .ammo_shells stored through OP_ADDRESS/OP_STOREP');
+// void() InitBodyQue: four spawned "bodyque" entities chained through .owner
+await run('InitBodyQue');
+const bodies = (await qa("SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) = 'bodyque'")).map((r) => r.ENT);
+assert(bodies.length === 4, `InitBodyQue spawned ${bodies.length} bodyque entities (spawn, string fields, OP_LOAD_ENT)`);
+const owner1 = bodies.length ? await fld(bodies[0], 'owner') : null;
+assert(bodies.includes(owner1) && owner1 !== bodies[0], 'and chained them through .owner');
+// info_null removes self
+const e2 = (await q1('SELECT qc_spawn() e FROM rdb$database')).E;
+await run('info_null', e2);
+assert((await q1(`SELECT free FROM qc_edicts WHERE id = ${e2}`)).FREE === 1, 'info_null: remove(self) frees the edict');
+// ftos / vtos make strings
+await setg(4, 12.5); await call('ftos');
+assert((await str(await g(1))) === '12.5', `ftos(12.5) = "${await str(await g(1))}"`);
+await setg(4, 1); await setg(5, 2); await setg(6, 3); await call('vtos');
+assert((await str(await g(1))) === "'1.0 2.0 3.0'", `vtos((1 2 3)) = ${await str(await g(1))}`);
+
+// ── worldspawn: precaches, light styles, world fields ─────────────────────
+await db.exec('EXECUTE PROCEDURE qc_reset');
+await setg((await q1("SELECT qc_gdef('world') o FROM rdb$database")).O, 0);
+t0 = performance.now();
+const s0 = await steps();
+await run('worldspawn', 0);
+const dt = performance.now() - t0, ds = (await steps()) - s0;
+const ls = await qa('SELECT style, pattern FROM lightstyles WHERE style < 12 ORDER BY style');
+assert(ls.length >= 11 && ls[0].PATTERN.trim() === 'm' && /^mmnmmommommnonmmonqnmmo$/.test(ls[1].PATTERN.trim()), `worldspawn set the light styles (0 = "${ls[0].PATTERN.trim()}", 1 = "${ls[1].PATTERN.trim()}")`);
+assert((await log('error')).length === 0, 'with no builtin missing');
+console.log(`worldspawn: ${ds} statements in ${dt.toFixed(0)} ms (${(dt / ds * 1000).toFixed(0)} µs per statement)`);
+
+await db.close();
+console.log(failed ? `${failed} FAILED` : 'all good');
+process.exit(failed ? 1 : 0);

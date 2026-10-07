@@ -163,6 +163,19 @@ Shub-Niggurath of the registered one. Per-map gravity (Ziggurat Vertigo), the le
 message and type, the intermission and the finale live in `game`. Everything the simulation wants heard
 is a row in `sound_events`; visual effects are rows in `fx_events`.
 
+### A QuakeC VM (`sql/qcvm.sql`)
+
+The game above is a rewrite of `progs.dat` in PSQL, so mods do not run. The start of the faithful route
+is a QuakeC virtual machine in PSQL: `src/progs.js` loads `progs.dat` (statements, functions, global
+and field definitions, strings, the global image) into tables, and `QC_CALL` is `PR_ExecuteProgram`
+with one branch per opcode, the locals saved on a stack table, parameters copied into the callee's
+locals, recursion for calls, entity fields as rows addressed by `OP_ADDRESS`, and forty of the
+builtins (`makevectors`, `setorigin`, `spawn`, `find`, `traceline` against the loaded world, `ftos`,
+`lightstyle`, the prints into `qc_log`...). It runs the shareware `progs.dat`'s `worldspawn` at about
+100 us per statement; in the page, `await quake.loadProgs()` then
+`quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)")`. It is not yet wired to the tic: see the
+roadmap.
+
 ### The renderer is a query (`sql/render.sql`)
 
 `FRAME_FACES` finds the leaf the eye is in and, once per leaf, marks every face of every leaf in its PVS
@@ -214,6 +227,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:e1m3` | the Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, fall and rise, throw flesh, and die only when gibbed |
 | `npm run test:e1m4` | the Grisly Grotto: two buttons open the underwater door; swim through, surface for the secret, water-jump onto the ledge, exit to E1M8 |
 | `npm run test:e1m6` | The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the silver doors stay shut, the exit to E1M7 |
+| `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles |
 
 Tools for the same purpose:
 
@@ -234,6 +248,7 @@ sql/game.sql       spawning, movers, triggers, items, damage, projectiles, the e
 sql/weapons.sql    the player's tic: movement, firing, impulses
 sql/monsters.sql   the AI, the pushers, the think and physics loops, QUAKE_TIC, INIT_MAP
 sql/render.sql     visibility and projection
+sql/qcvm.sql       the QuakeC VM: progs.dat as tables, the interpreter, the builtins
 src/loader.js      BSP and MDL to tables, the generated bulk loaders
 src/main.js        the page: input, the game loop, settings, the console
 src/renderer.js    the painter

@@ -19,6 +19,7 @@
     "test:e1m3": "node scripts/e1m3-test.mjs",
     "test:e1m4": "node scripts/e1m4-test.mjs",
     "test:e1m6": "node scripts/e1m6-test.mjs",
+    "test:qcvm": "node scripts/qcvm-test.mjs",
     "bench": "node scripts/bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"
