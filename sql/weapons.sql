@@ -536,7 +536,7 @@ BEGIN
   EXECUTE PROCEDURE player_fire(fire);
   UPDATE player p SET p.weaponframe = IIF(p.attack_finished > :t AND p.weapon <> 0, 1 + FLOOR((:t - p.lightning_time) * 10 + 0.001e0), 0) WHERE p.id = 1;
   -- player animation
-  UPDATE ents e SET e.anim = IIF(ABS(e.vx) + ABS(e.vy) > 10, 'rockrun', 'stand'), e.anim_frame = MOD(CAST(:t * 10 AS INTEGER), 6) WHERE e.id = :pe;
+  UPDATE ents e SET e.anim = TRIM(IIF(ABS(e.vx) + ABS(e.vy) > 10, 'rockrun', 'stand')), e.anim_frame = MOD(CAST(:t * 10 AS INTEGER), 6) WHERE e.id = :pe;
 END^
 
 SET TERM ; ^

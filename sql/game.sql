@@ -1378,8 +1378,8 @@ BEGIN
     ELSE IF (cls = 'func_plat') THEN
     BEGIN
       IF (snds IS NULL OR snds = 0) THEN snds = 2;
-      n1 = IIF(snds = 1, 'plats/plat1.wav', 'plats/medplat1.wav');
-      n2 = IIF(snds = 1, 'plats/plat2.wav', 'plats/medplat2.wav');
+      n1 = TRIM(IIF(snds = 1, 'plats/plat1.wav', 'plats/medplat1.wav'));
+      n2 = TRIM(IIF(snds = 1, 'plats/plat2.wav', 'plats/medplat2.wav'));
       IF (spd IS NULL OR spd = 0) THEN spd = 150;
       IF (hgt IS NULL OR hgt = 0) THEN hgt = sz - 8;
       UPDATE ents e SET e.solid = 4, e.movetype = 7, e.yaw = 0, e.speed = :spd, e.noise1 = :n1, e.noise2 = :n2, e.height = :hgt,
@@ -1408,8 +1408,8 @@ BEGIN
     ELSE IF (cls = 'func_train') THEN
     BEGIN
       IF (spd IS NULL OR spd = 0) THEN spd = 100;
-      n1 = IIF(COALESCE(snds, 1) = 1, 'plats/train2.wav', 'misc/null.wav');
-      n2 = IIF(COALESCE(snds, 1) = 1, 'plats/train1.wav', 'misc/null.wav');
+      n1 = TRIM(IIF(COALESCE(snds, 1) = 1, 'plats/train2.wav', 'misc/null.wav'));
+      n2 = TRIM(IIF(COALESCE(snds, 1) = 1, 'plats/train1.wav', 'misc/null.wav'));
       UPDATE ents e SET e.solid = 4, e.movetype = 7, e.yaw = 0, e.speed = :spd, e.noise1 = :n1, e.noise2 = :n2, e.dmg = IIF(COALESCE(:dmg, 0) = 0, 2, :dmg),
              e.mv_state = IIF(:tn IS NULL OR :tn = '', 2, 1), e.think = 'train_find', e.nextthink = 0.1e0 WHERE e.id = :eid;
     END
@@ -1464,7 +1464,7 @@ BEGIN
     ELSE IF (cls LIKE 'item_%' OR cls LIKE 'weapon_%') THEN
     BEGIN
       mdl = CASE cls
-        WHEN 'item_health' THEN IIF(BIN_AND(sf, 2) <> 0, 'maps/b_bh100.bsp', IIF(BIN_AND(sf, 1) <> 0, 'maps/b_bh10.bsp', 'maps/b_bh25.bsp'))
+        WHEN 'item_health' THEN TRIM(IIF(BIN_AND(sf, 2) <> 0, 'maps/b_bh100.bsp', IIF(BIN_AND(sf, 1) <> 0, 'maps/b_bh10.bsp', 'maps/b_bh25.bsp')))
         WHEN 'item_armor1' THEN 'progs/armor.mdl' WHEN 'item_armor2' THEN 'progs/armor.mdl' WHEN 'item_armorInv' THEN 'progs/armor.mdl'
         WHEN 'item_shells' THEN IIF(BIN_AND(sf, 1) <> 0, 'maps/b_shell1.bsp', 'maps/b_shell0.bsp')
         WHEN 'item_spikes' THEN IIF(BIN_AND(sf, 1) <> 0, 'maps/b_nail1.bsp', 'maps/b_nail0.bsp')

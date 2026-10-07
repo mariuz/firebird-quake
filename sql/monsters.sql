@@ -733,7 +733,7 @@ BEGIN
         EXECUTE PROCEDURE set_anim(eid, 'walk');
         EXIT;
       END
-      UPDATE ents e SET e.st = IIF(e.enemy_id IS NULL, 'stand', 'run') WHERE e.id = :eid;
+      UPDATE ents e SET e.st = TRIM(IIF(e.enemy_id IS NULL, 'stand', 'run')) WHERE e.id = :eid;   -- TRIM: IIF pads to the longer literal
       EXECUTE PROCEDURE set_anim(eid, IIF(enemy IS NULL, stand_a, run_a));
       EXIT;
     END
