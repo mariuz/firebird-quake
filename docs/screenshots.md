@@ -274,3 +274,21 @@ node scripts/screenshot.mjs e2m3 docs/grate      --at=-1256,1448,-50,270 --tics=
 node scripts/screenshot.mjs e2m3 docs/lights     --at=-800,1504,-50,315 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m3 docs/secretgate --at=880,1776,-220,0 --tics=4 --single --fast
 ```
+
+## E2M4, the Ebon Fortress
+
+![the red carved gate](redgate-e2m4-0.png) ![a hell knight](hellknight-e2m4-0.png) ![the moat courtyard, an ogre in the window above](moat-e2m4-0.png) ![the fortress gate](fortgate-e2m4-0.png) ![the stained-glass hall](glass-e2m4-0.png)
+
+1. the red carved gate in the mossy wall
+2. a hell knight, sword drawn
+3. the moat courtyard, an ogre in the window above
+4. the fortress gate, the yellow armour before it
+5. the stained-glass hall
+
+```bash
+node scripts/screenshot.mjs e2m4 docs/redgate    --at=-1104,1968,158,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m4 docs/hellknight --at=752,1504,62,15 --tics=10 --single --fast
+node scripts/screenshot.mjs e2m4 docs/moat       --at=680,2200,302,45 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m4 docs/fortgate   --at=2216,2184,-2,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m4 docs/glass      --at=1024,1408,182,180 --tics=8 --single --fast
+```
