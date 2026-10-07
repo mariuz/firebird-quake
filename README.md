@@ -8,8 +8,8 @@ entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the id
 
 ![E1M1, the Slipgate Complex](docs/screenshot-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![the crucified zombies on the start map](docs/crucified-start-0.png)
 
-More pictures, of every level of the first episode, the registered monsters and E2M1, with the
-commands that made them, are in [docs/screenshots.md](docs/screenshots.md).
+More pictures, of every level of the first episode, the registered monsters and the first levels of the
+second, with the commands that made them, are in [docs/screenshots.md](docs/screenshots.md).
 
 Every game tic is a PSQL procedure call. Every frame is a `SELECT`. JavaScript handles the keyboard,
 the mouse and the canvas; everything else — collision against the BSP hulls, the player's physics,

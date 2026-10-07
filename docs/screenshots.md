@@ -236,3 +236,23 @@ node scripts/screenshot.mjs e2m1 docs/goldkey  --at=1848,1320,78,270 --tics=8 --
 node scripts/screenshot.mjs e2m1 docs/pillars  --at=576,216,-66,90 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m1 docs/exitroom --at=60,-24,0,180 --tics=4 --single --fast
 ```
+
+## E2M2, the Ogre Citadel
+
+![a knight in the stained-glass hall](glass-e2m2-0.png) ![an ogre at the gate](gate-e2m2-0.png) ![the shambler](shambler-e2m2-0.png) ![an ogre in the window](window-e2m2-0.png) ![the gold key's walkway over the pit](walkway-e2m2-0.png) ![an ogre before the exit gate to E2M3](exitogre-e2m2-0.png)
+
+1. a knight in the stained-glass hall
+2. an ogre at the gate under its lit lintel
+3. the citadel's shambler
+4. an ogre in the window
+5. the gold key's walkway over the pit
+6. an ogre before the red-bannered exit gate to E2M3
+
+```bash
+node scripts/screenshot.mjs e2m2 docs/glass    --at=80,480,30,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m2 docs/gate     --at=152,1608,166,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m2 docs/shambler --at=-296,208,-34,75 --tics=6 --single --fast
+node scripts/screenshot.mjs e2m2 docs/window   --at=-208,992,134,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m2 docs/walkway  --at=-552,192,-34,225 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m2 docs/exitogre --at=1880,-180,200,0 --tics=6 --single --fast
+```
