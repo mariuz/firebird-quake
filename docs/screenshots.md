@@ -350,3 +350,23 @@ node scripts/screenshot.mjs e2m7 docs/skylights  --at=920,520,-102,45 --tics=8 -
 node scripts/screenshot.mjs e2m7 docs/bridge     --at=784,1816,-210,180 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m7 docs/scrag      --at=1200,1992,-162,270 --tics=8 --single --fast
 ```
+
+## E3M1, Termination Central
+
+![the walkways over the slime](slime-e3m1-0.png) ![a grunt by the caged lift](bridge-e3m1-0.png) ![the skylit hall](console-e3m1-0.png) ![two enforcers on the ledge](enforcer-e3m1-0.png) ![the gold key room](keyroom-e3m1-0.png) ![an enforcer on the red grating before the exit to E3M2](exitgate-e3m1-0.png)
+
+1. the walkways over the slime
+2. a grunt by the caged lift
+3. the skylit hall, grunts at the far end
+4. two enforcers on the ledge
+5. the gold key room, over the lower hall
+6. an enforcer on the red grating before the exit to E3M2
+
+```bash
+node scripts/screenshot.mjs e3m1 docs/slime    --at=1072,952,-242,315 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m1 docs/bridge   --at=1952,256,-82,315 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m1 docs/console  --at=304,576,-130,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m1 docs/enforcer --at=-368,144,-130,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m1 docs/keyroom  --at=-160,-752,-2,180 --tics=6 --single --fast
+node scripts/screenshot.mjs e3m1 docs/exitgate --at=2340,-420,0,270 --tics=4 --single --fast
+```
