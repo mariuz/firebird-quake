@@ -199,10 +199,10 @@ about 13.5 µs (one joined query and one `UPDATE`); on top of it, **QuakeC is co
 (`src/qcjit.js`): the functions a level calls most become stored procedures of their own, with the
 temporaries, locals and parameters in PSQL variables, constants as literals and jumps as nested
 labelled loops, a few between frames while the game runs. The compiled code runs about six times
-faster than the interpreter, and a server frame of E1M1 takes about 22 ms with the monsters asleep
-and 25 to 30 ms with grunts awake (36 and 43 interpreted: `npm run bench:qc`, `QCJIT=all` to compile
-everything first), against 6 to 12 ms for the PSQL game's tic; what is left is mostly the engine's
-own work (the traces of the monsters' steps).
+faster than the interpreter, and a server frame of E1M1 takes 15 to 22 ms with the monsters asleep
+and 21 to 26 ms with grunts awake (25 to 44 interpreted: `npm run bench:qc`, `QCJIT=all` to compile
+everything first), against 5 to 10 ms for the PSQL game's tic; what is left is mostly the engine's
+own work (the traces of the monsters' steps, the client's physics).
 
 ![E1M1 in QuakeC mode: a grunt from the bridge runs at the player, aiming](docs/qcvm-ai-e1m1-0.png)
 

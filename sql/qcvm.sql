@@ -328,6 +328,7 @@ BEGIN
   DELETE FROM qc_fields;
   DELETE FROM qc_edicts;
   DELETE FROM qc_localstack;
+  DELETE FROM qc_eyeleaf;
   DELETE FROM qc_log;
   UPDATE qc_functions f SET f.active = 0 WHERE f.active <> 0;   -- the calls and compiled flags stay: the procedures do
   INSERT INTO qc_edicts (id, free) VALUES (0, 0);     -- world
@@ -516,20 +517,30 @@ BEGIN
     IF (qc_on() = 1) THEN
     BEGIN
       e = CAST(qc_g(gself) AS INTEGER);
-      SELECT d.x, d.y, d.z, d.flags FROM ents d WHERE d.id = 1 INTO x, y, z, i;
-      IF (x IS NOT NULL AND qc_f(1, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) > 0 AND BIN_AND(i, 128) = 0
-          AND EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN
+      SELECT d.x, d.y, d.z, d.flags, v.f_health, v.f_view_ofs, v.check_time, v.check_pvs, v.sv_time FROM qc_vm v LEFT JOIN ents d ON d.id = 1 WHERE v.id = 1
+        INTO x, y, z, i, head, mid, a, pv, b;
+      IF (x IS NOT NULL AND qc_fq(1, head) > 0 AND BIN_AND(i, 128) = 0 AND EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN
       BEGIN
-        i = qc_fdef('view_ofs');
         -- PF_newcheckclient: the client's eye PVS, recomputed every 0.1 s
-        SELECT v.check_time, v.check_pvs, v.sv_time FROM qc_vm v WHERE v.id = 1 INTO a, pv, b;
         IF (a IS NULL OR b - a >= 0.1e0 OR b < a) THEN
         BEGIN
-          pv = (SELECT l.pvs FROM leaves l WHERE l.id = point_leaf(:x + qc_f(1, :i), :y + qc_f(1, :i + 1), :z + qc_f(1, :i + 2)));
+          pv = (SELECT l.pvs FROM leaves l WHERE l.id = point_leaf(:x + qc_fq(1, :mid), :y + qc_fq(1, :mid + 1), :z + qc_fq(1, :mid + 2)));
           UPDATE qc_vm v SET v.check_time = :b, v.check_pvs = :pv WHERE v.id = 1;
         END
-        SELECT d.x + qc_f(:e, :i), d.y + qc_f(:e, :i + 1), d.z + qc_f(:e, :i + 2) FROM ents d WHERE d.id = :e INTO bx, by_, bz;
-        IF (bx IS NOT NULL AND pvs_visible(pv, point_leaf(bx, by_, bz)) = 1) THEN c = 1;
+        -- the caller's eye, and its leaf: kept while it stands there (a waiting monster asks every think)
+        SELECT d.x + COALESCE(MAX(IIF(f.ofs = :mid, f.v, NULL)), 0), d.y + COALESCE(MAX(IIF(f.ofs = :mid + 1, f.v, NULL)), 0), d.z + COALESCE(MAX(IIF(f.ofs = :mid + 2, f.v, NULL)), 0)
+          FROM ents d LEFT JOIN qc_fields f ON f.ent = d.id AND f.ofs BETWEEN :mid AND :mid + 2 WHERE d.id = :e GROUP BY d.x, d.y, d.z INTO bx, by_, bz;
+        IF (bx IS NOT NULL) THEN
+        BEGIN
+          wm = NULL;
+          SELECT k.leaf FROM qc_eyeleaf k WHERE k.ent = :e AND k.x = :bx AND k.y = :by_ AND k.z = :bz INTO wm;
+          IF (wm IS NULL) THEN
+          BEGIN
+            wm = point_leaf(bx, by_, bz);
+            UPDATE OR INSERT INTO qc_eyeleaf (ent, x, y, z, leaf) VALUES (:e, :bx, :by_, :bz, :wm) MATCHING (ent);
+          END
+          IF (pvs_visible(pv, wm) = 1) THEN c = 1;
+        END
       END
     END
     EXECUTE PROCEDURE qc_sg(1, c);
@@ -1324,7 +1335,7 @@ BEGIN
     IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :tr AND d.solid = 1)) THEN CONTINUE;
     f = CAST(qc_f(tr, f_touch) AS INTEGER);
     IF (f = 0) THEN CONTINUE;
-    EXECUTE PROCEDURE qc_sg(g_time, svt); EXECUTE PROCEDURE qc_sg(g_self, tr); EXECUTE PROCEDURE qc_sg(g_other, e);
+    UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END WHERE g.ofs IN (:g_time, :g_self, :g_other);
     EXECUTE PROCEDURE qc_call(f);
   END
 END^
@@ -1338,12 +1349,14 @@ DECLARE f_nt INTEGER; DECLARE f_think INTEGER; DECLARE g_self INTEGER; DECLARE g
 BEGIN
   alive = 1;
   SELECT v.f_nextthink, v.f_think, v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO f_nt, f_think, g_self, g_other, g_time;
-  nt = qc_f(e, f_nt);
+  -- nextthink and think are never the engine's columns: both from qc_fields at once
+  SELECT COALESCE(MAX(IIF(q.ofs = :f_nt, q.v, NULL)), 0), CAST(COALESCE(MAX(IIF(q.ofs = :f_think, q.v, NULL)), 0) AS INTEGER)
+    FROM qc_fields q WHERE q.ent = :e AND q.ofs IN (:f_nt, :f_think) INTO nt, f;
   IF (nt <= 0 OR nt > t + dt + 1e-6) THEN EXIT;
   IF (nt < t) THEN nt = t;
-  EXECUTE PROCEDURE qc_sf(e, f_nt, 0);
-  f = CAST(qc_f(e, f_think) AS INTEGER);
-  EXECUTE PROCEDURE qc_sg(g_time, nt); EXECUTE PROCEDURE qc_sg(g_self, e); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  UPDATE qc_fields q SET q.v = 0 WHERE q.ent = :e AND q.ofs = :f_nt;
+  -- time, self and other in one statement
+  UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :nt WHEN :g_self THEN :e ELSE 0 END WHERE g.ofs IN (:g_time, :g_self, :g_other);
   IF (f <> 0) THEN EXECUTE PROCEDURE qc_call(f);
   alive = IIF(EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :e AND d.free = 0), 1, 0);
 END^

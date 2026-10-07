@@ -468,6 +468,12 @@ CREATE TABLE qc_vm (
   -- checkclient's client: the PVS of its eye, kept for 0.1 s (sv.lastcheck, sv.lastchecktime)
   check_time DOUBLE PRECISION, check_pvs VARCHAR(2048) CHARACTER SET ASCII
 );
+-- checkclient's cache of each caller's eye leaf, by the eye's position (emptied with the level)
+CREATE TABLE qc_eyeleaf (
+  ent INTEGER NOT NULL PRIMARY KEY,
+  x DOUBLE PRECISION NOT NULL, y DOUBLE PRECISION NOT NULL, z DOUBLE PRECISION NOT NULL,
+  leaf INTEGER NOT NULL
+);
 CREATE GLOBAL TEMPORARY TABLE qc_localstack (
   depth INTEGER NOT NULL,
   ofs INTEGER NOT NULL,

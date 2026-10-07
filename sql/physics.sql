@@ -446,33 +446,49 @@ BEGIN
   RETURN tss;
 END^
 
--- SV_LinkEdict: remember the leaf of the origin and the leaves the box
--- touches (for the PVS test when drawing), and the water level.
+-- SV_FindTouchedLeafs: the leaves a box touches, by one walk down the BSP tree that goes to both
+-- sides of every plane the box straddles (BoxOnPlaneSide), as one recursive query. A point inside the
+-- box rides along: at_point marks the leaf it is in (SV_PointInLeaf, without a second walk). Leaf 0 is
+-- the solid leaf.
+CREATE OR ALTER PROCEDURE box_leafs (px DOUBLE PRECISION, py DOUBLE PRECISION, pz DOUBLE PRECISION,
+  x0 DOUBLE PRECISION, y0 DOUBLE PRECISION, z0 DOUBLE PRECISION, x1 DOUBLE PRECISION, y1 DOUBLE PRECISION, z1 DOUBLE PRECISION)
+RETURNS (leaf INTEGER, at_point SMALLINT)
+AS
+BEGIN
+  FOR WITH RECURSIVE w (node, onpath) AS (
+    SELECT m.hull0, 1 FROM models m JOIN game g ON g.world_model = m.id WHERE g.id = 1
+    UNION ALL
+    SELECT h.c0, IIF(w.onpath = 1 AND h.nx * :px + h.ny * :py + h.nz * :pz - h.dist >= 0, 1, 0)       -- the front: the box's farthest corner along the normal
+      FROM w JOIN hulls h ON h.hull = 0 AND h.node = w.node
+     WHERE w.node >= 0 AND h.nx * IIF(h.nx >= 0, :x1, :x0) + h.ny * IIF(h.ny >= 0, :y1, :y0) + h.nz * IIF(h.nz >= 0, :z1, :z0) - h.dist >= 0
+    UNION ALL
+    SELECT h.c1, IIF(w.onpath = 1 AND h.nx * :px + h.ny * :py + h.nz * :pz - h.dist < 0, 1, 0)        -- the back: its nearest corner
+      FROM w JOIN hulls h ON h.hull = 0 AND h.node = w.node
+     WHERE w.node >= 0 AND h.nx * IIF(h.nx >= 0, :x0, :x1) + h.ny * IIF(h.ny >= 0, :y0, :y1) + h.nz * IIF(h.nz >= 0, :z0, :z1) - h.dist < 0)
+  SELECT -w.node - 1, w.onpath FROM w WHERE w.node < 0 ORDER BY 2 DESC, 1 INTO leaf, at_point DO SUSPEND;
+END^
+
+-- SV_LinkEdict: remember the leaf of the origin and the leaves the box (absmin..absmax: one unit
+-- bigger, fifteen sideways for items) touches, for the PVS test when drawing.
 CREATE OR ALTER PROCEDURE link_ent (eid INTEGER)
 AS
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
 DECLARE mnx DOUBLE PRECISION; DECLARE mny DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
 DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE PRECISION;
-DECLARE lf INTEGER; DECLARE l2 INTEGER;
+DECLARE lf INTEGER; DECLARE l2 INTEGER; DECLARE ap SMALLINT; DECLARE grow DOUBLE PRECISION;
 DECLARE lst VARCHAR(200) CHARACTER SET ASCII;
-DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE cz DOUBLE PRECISION;
-DECLARE i INTEGER;
 BEGIN
-  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz FROM ents e WHERE e.id = :eid
-    INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
-  lf = point_leaf(px, py, pz);
-  lst = ',' || lf || ',';
-  -- the box corners and centre (enough for the PVS test; Quake walks the tree)
-  cx = px + (mnx + mxx) / 2; cy = py + (mny + mxy) / 2; cz = pz + (mnz + mxz) / 2;
-  l2 = point_leaf(cx, cy, cz);
-  IF (POSITION(',' || l2 || ',', lst) = 0) THEN lst = lst || l2 || ',';
-  i = 0;
-  WHILE (i < 8) DO
+  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) FROM ents e WHERE e.id = :eid
+    INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, grow;
+  -- the origin's leaf comes first (one outside its box, such as a door's at 0 0 0, has a walk of its own)
+  lst = ',';
+  FOR SELECT b.leaf, b.at_point FROM box_leafs(:px, :py, :pz, :px + :mnx - :grow, :py + :mny - :grow, :pz + :mnz - 1,
+                                               :px + :mxx + :grow, :py + :mxy + :grow, :pz + :mxz + 1) b INTO l2, ap DO
   BEGIN
-    l2 = point_leaf(px + IIF(BIN_AND(i, 1) = 0, mnx, mxx), py + IIF(BIN_AND(i, 2) = 0, mny, mxy), pz + IIF(BIN_AND(i, 4) = 0, mnz, mxz));
-    IF (l2 > 0 AND POSITION(',' || l2 || ',', lst) = 0 AND CHAR_LENGTH(lst) < 180) THEN lst = lst || l2 || ',';
-    i = i + 1;
+    IF (ap = 1 AND lf IS NULL) THEN BEGIN lf = l2; lst = ',' || lf || ','; END
+    ELSE IF (l2 > 0 AND POSITION(',' || l2 || ',', lst) = 0 AND CHAR_LENGTH(lst) < 180) THEN lst = lst || l2 || ',';
   END
+  IF (lf IS NULL) THEN BEGIN lf = point_leaf(px, py, pz); lst = ',' || lf || lst; END
   UPDATE ents e SET e.leaf = :lf, e.leafs = :lst WHERE e.id = :eid;
 END^
 
