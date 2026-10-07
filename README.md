@@ -6,6 +6,8 @@ entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the id
 
 **Play it:** https://mariuz.github.io/firebird-quake/
 
+The series went on: [Firebird Quake 2](https://github.com/mariuz/firebird-quake2) ([play](https://mariuz.github.io/firebird-quake2/)) and [Firebird Quake III Arena](https://github.com/mariuz/firebird-quake3) ([play](https://mariuz.github.io/firebird-quake3/)), with Bézier patches, MD3 player models and deathmatch bots that think in SQL.
+
 ![E1M1, the Slipgate Complex](docs/screenshot-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![the crucified zombies on the start map](docs/crucified-start-0.png)
 
 More pictures, of every level of the first two episodes, the start of the third and the registered
