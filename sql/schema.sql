@@ -417,7 +417,8 @@ CREATE TABLE qc_fields (
 -- Empty outside QuakeC mode. col: 1..3 x y z, 4..6 vx vy vz, 7..9 pitch yaw roll, 10 avel_yaw,
 -- 11..16 minx..maxz, 17 solid, 18 movetype, 19 flags, 20 frame, 21 skin, 22 effects, 23 model_id,
 -- 24 ltime, 25 waterlevel, 26 watertype, 27 owner_id; read-only, computed: 31..33 absmin,
--- 34..36 absmax, 37..39 size; 40 the model string, kept in qc_fields, which shows or hides the model.
+-- 34..36 absmax, 37..39 size; 40 the model string, kept in qc_fields, which shows or hides the model;
+-- 28 enemy_id, 29 goal_id (goalentity), 41 ideal_yaw, 42 yaw_speed: what the monster movement reads.
 CREATE TABLE qc_engine_fields (
   ofs INTEGER NOT NULL PRIMARY KEY,
   col SMALLINT NOT NULL
@@ -449,7 +450,10 @@ CREATE TABLE qc_vm (
   -- the server frame (qc_server_frame)
   sv_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
   f_touch INTEGER, f_blocked INTEGER, f_v_angle INTEGER, f_avelocity INTEGER, f_gravity INTEGER,
-  f_teleport_time INTEGER, f_punchangle INTEGER, f_groundentity INTEGER, f_view_ofs INTEGER, f_health INTEGER
+  f_teleport_time INTEGER, f_punchangle INTEGER, f_groundentity INTEGER, f_view_ofs INTEGER, f_health INTEGER,
+  -- a temp entity being written (WriteByte SVC_TEMPENTITY, its type, then its coordinates)
+  te_state SMALLINT DEFAULT 0 NOT NULL, te_type SMALLINT DEFAULT 0 NOT NULL, te_n SMALLINT DEFAULT 0 NOT NULL,
+  te_c0 DOUBLE PRECISION, te_c1 DOUBLE PRECISION, te_c2 DOUBLE PRECISION, te_c3 DOUBLE PRECISION, te_c4 DOUBLE PRECISION, te_c5 DOUBLE PRECISION
 );
 CREATE GLOBAL TEMPORARY TABLE qc_localstack (
   depth INTEGER NOT NULL,

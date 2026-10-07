@@ -88,6 +88,9 @@ assert(sh.SOLID === 1 && (sh.FLAGS & 512) && (sh.FLAGS & 256) && /^maps\/b_shell
 const grunt = (await byClass('monster_army'))[0];
 const gr = await ent(grunt);
 assert(gr.SOLID === 3 && gr.MOVETYPE === 4 && (gr.FLAGS & 512) && gr.MODEL_ID === (await modelId('progs/soldier.mdl')) && gr.FRAME >= 0 && gr.FRAME <= 7, `walkmonster_start_go: a grunt stands on the floor (SOLID_SLIDEBOX, MOVETYPE_STEP, soldier.mdl, frame ${gr.FRAME})`);
+// this test is about the physics: from here the monsters stand still (their thinks stop), as they did before checkclient
+// and movetogoal let them see and chase; scripts/qcvm-ai-test.mjs plays them
+for (const m of (await qa('SELECT id FROM ents WHERE BIN_AND(flags, 32) <> 0')).map((x) => x.ID)) await setf(m, 'nextthink', 0);
 const spot = await q1("SELECT ox, oy, oz FROM map_ents WHERE classname = 'info_player_start'");
 let pl = await ent(1);
 assert(pl.MODEL_ID === (await modelId('progs/player.mdl')) && pl.SOLID === 3 && pl.MOVETYPE === 3 && (pl.FLAGS & 512) && Math.abs(pl.Z - spot.OZ) < 1.5, `the player stands on the start (z ${pl.Z.toFixed(1)}, spot ${spot.OZ}), MOVETYPE_WALK, on the ground`);

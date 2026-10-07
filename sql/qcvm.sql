@@ -50,6 +50,7 @@ BEGIN
           WHEN 11 THEN e.minx WHEN 12 THEN e.miny WHEN 13 THEN e.minz WHEN 14 THEN e.maxx WHEN 15 THEN e.maxy WHEN 16 THEN e.maxz
           WHEN 17 THEN e.solid WHEN 18 THEN e.movetype WHEN 19 THEN e.flags WHEN 20 THEN e.frame WHEN 21 THEN e.skin WHEN 22 THEN e.effects
           WHEN 23 THEN COALESCE(e.model_id, 0) WHEN 24 THEN e.ltime WHEN 25 THEN e.waterlevel WHEN 26 THEN e.watertype WHEN 27 THEN COALESCE(e.owner_id, 0)
+          WHEN 28 THEN COALESCE(e.enemy_id, 0) WHEN 29 THEN COALESCE(e.goal_id, 0) WHEN 41 THEN e.ideal_yaw WHEN 42 THEN e.yaw_speed
           -- SV_LinkEdict's absolute box: items grow by 15 sideways, everything else by 1
           WHEN 31 THEN e.x + e.minx - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 32 THEN e.y + e.miny - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 33 THEN e.z + e.minz - 1
           WHEN 34 THEN e.x + e.maxx + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 35 THEN e.y + e.maxy + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 36 THEN e.z + e.maxz + 1
@@ -74,7 +75,7 @@ BEGIN
         WHERE e.id = :ent;
     ELSE IF (c IS NOT NULL) THEN
     BEGIN
-      IF (c < 30) THEN                              -- 31..39 are computed from the box
+      IF (c < 30 OR c > 40) THEN                    -- 31..39 are computed from the box
         UPDATE ents e SET
           e.x = IIF(:c = 1, :v, e.x), e.y = IIF(:c = 2, :v, e.y), e.z = IIF(:c = 3, :v, e.z),
           e.vx = IIF(:c = 4, :v, e.vx), e.vy = IIF(:c = 5, :v, e.vy), e.vz = IIF(:c = 6, :v, e.vz),
@@ -86,7 +87,9 @@ BEGIN
           e.skin = IIF(:c = 21, CAST(:v AS INTEGER), e.skin), e.effects = IIF(:c = 22, CAST(:v AS INTEGER), e.effects),
           e.model_id = IIF(:c = 23, NULLIF(CAST(:v AS INTEGER), 0), e.model_id), e.ltime = IIF(:c = 24, :v, e.ltime),
           e.waterlevel = IIF(:c = 25, CAST(:v AS SMALLINT), e.waterlevel), e.watertype = IIF(:c = 26, CAST(:v AS INTEGER), e.watertype),
-          e.owner_id = IIF(:c = 27, CAST(:v AS INTEGER), e.owner_id)
+          e.owner_id = IIF(:c = 27, CAST(:v AS INTEGER), e.owner_id),
+          e.enemy_id = IIF(:c = 28, CAST(:v AS INTEGER), e.enemy_id), e.goal_id = IIF(:c = 29, CAST(:v AS INTEGER), e.goal_id),
+          e.ideal_yaw = IIF(:c = 41, :v, e.ideal_yaw), e.yaw_speed = IIF(:c = 42, :v, e.yaw_speed)
         WHERE e.id = :ent;
       EXIT;
     END
@@ -269,6 +272,8 @@ BEGIN
   o = qc_fdef('absmax');    EXECUTE PROCEDURE qc_route(o, 34); EXECUTE PROCEDURE qc_route(o + 1, 35); EXECUTE PROCEDURE qc_route(o + 2, 36);
   o = qc_fdef('size');      EXECUTE PROCEDURE qc_route(o, 37); EXECUTE PROCEDURE qc_route(o + 1, 38); EXECUTE PROCEDURE qc_route(o + 2, 39);
   EXECUTE PROCEDURE qc_route(qc_fdef('model'), 40);
+  EXECUTE PROCEDURE qc_route(qc_fdef('enemy'), 28); EXECUTE PROCEDURE qc_route(qc_fdef('goalentity'), 29);
+  EXECUTE PROCEDURE qc_route(qc_fdef('ideal_yaw'), 41); EXECUTE PROCEDURE qc_route(qc_fdef('yaw_speed'), 42);
   EXECUTE PROCEDURE qc_reset;
   DELETE FROM vis_faces;
   UPDATE viewcfg c SET c.vis_leaf = NULL;
@@ -286,6 +291,7 @@ END^
 -- Parameters sit at OFS_PARM0 = 4, PARM1 = 7, … (three slots each); the result goes to OFS_RETURN = 1.
 
 CREATE OR ALTER PROCEDURE qc_call (fnum INTEGER) AS BEGIN END^
+CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER) AS BEGIN END^
 
 CREATE OR ALTER PROCEDURE qc_builtin (n INTEGER, fnum INTEGER)
 AS
@@ -299,7 +305,11 @@ DECLARE frac DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PR
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE hit INTEGER; DECLARE alls SMALLINT; DECLARE starts SMALLINT; DECLARE inw SMALLINT;
 DECLARE head INTEGER; DECLARE wm INTEGER; DECLARE mid INTEGER;
 DECLARE cur DOUBLE PRECISION; DECLARE ideal DOUBLE PRECISION; DECLARE spd DOUBLE PRECISION; DECLARE mv DOUBLE PRECISION;
+DECLARE gself INTEGER; DECLARE oself DOUBLE PRECISION; DECLARE ok SMALLINT; DECLARE pv VARCHAR(2048) CHARACTER SET ASCII;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE best DOUBLE PRECISION; DECLARE bent INTEGER;
+DECLARE tst SMALLINT; DECLARE tty SMALLINT; DECLARE tn SMALLINT; DECLARE th INTEGER;
 BEGIN
+  gself = (SELECT v.g_self FROM qc_vm v WHERE v.id = 1);
   SELECT v.f_origin, v.f_mins, v.f_maxs, v.f_size, v.f_absmin, v.f_absmax, v.g_vfwd, v.g_vup, v.g_vright, v.f_chain
     FROM qc_vm v WHERE v.id = 1 INTO vm_fo, vm_mi, vm_ma, vm_sz, vm_amin, vm_amax, vm_fwd, vm_up, vm_right, vm_chain;
   IF (n = 1) THEN                                   -- makevectors(angles)
@@ -394,7 +404,24 @@ BEGIN
     EXECUTE PROCEDURE qc_sg(CAST(z AS INTEGER), nx * ex + ny * ey + nz * ez);
     EXECUTE PROCEDURE qc_sg(e, hit); EXECUTE PROCEDURE qc_sg(i, IIF(frac < 1, 1, 0)); EXECUTE PROCEDURE qc_sg(CAST(sp AS INTEGER), inw);
   END
-  ELSE IF (n = 17) THEN EXECUTE PROCEDURE qc_sg(1, 0);                                                  -- checkclient(): nobody
+  ELSE IF (n = 17) THEN                             -- checkclient(): the client, if the caller's eye is in the PVS of the client's eye
+  BEGIN
+    c = 0;
+    IF (qc_on() = 1) THEN
+    BEGIN
+      e = CAST(qc_g(gself) AS INTEGER);
+      SELECT d.x, d.y, d.z, d.flags FROM ents d WHERE d.id = 1 INTO x, y, z, i;
+      IF (x IS NOT NULL AND qc_f(1, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) > 0 AND BIN_AND(i, 128) = 0
+          AND EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN
+      BEGIN
+        i = qc_fdef('view_ofs');
+        pv = (SELECT l.pvs FROM leaves l WHERE l.id = point_leaf(:x + qc_f(1, :i), :y + qc_f(1, :i + 1), :z + qc_f(1, :i + 2)));
+        SELECT d.x + qc_f(:e, :i), d.y + qc_f(:e, :i + 1), d.z + qc_f(:e, :i + 2) FROM ents d WHERE d.id = :e INTO bx, by_, bz;
+        IF (bx IS NOT NULL AND pvs_visible(pv, point_leaf(bx, by_, bz)) = 1) THEN c = 1;
+      END
+    END
+    EXECUTE PROCEDURE qc_sg(1, c);
+  END
   ELSE IF (n = 18) THEN                             -- find(start, field, match)
   BEGIN
     s = qc_str(CAST(qc_g(10) AS INTEGER)); i = CAST(qc_g(7) AS INTEGER); c = 0;
@@ -436,6 +463,18 @@ BEGIN
   ELSE IF (n = 27) THEN EXECUTE PROCEDURE qc_sg(1, qc_newstr(qc_vtos(qc_g(4), qc_g(5), qc_g(6))));    -- vtos
   ELSE IF (n IN (28, 29, 30)) THEN BEGIN END         -- coredump, traceon, traceoff
   ELSE IF (n = 31) THEN EXECUTE PROCEDURE qc_print('eprint', 'edict ' || qc_ftos(qc_g(4)));
+  ELSE IF (n = 32 AND qc_on() = 1) THEN            -- walkmove(yaw, dist): SV_movestep, touching triggers
+  BEGIN
+    oself = qc_g(gself); e = CAST(oself AS INTEGER); a = qc_g(4) * 0.0174532925e0; b = qc_g(7);
+    ok = 0;
+    IF (EXISTS (SELECT 1 FROM ents d WHERE d.id = :e AND BIN_AND(d.flags, 515) <> 0)) THEN
+    BEGIN
+      ok = move_step(e, COS(a) * b, SIN(a) * b, 0);
+      IF (ok = 1) THEN EXECUTE PROCEDURE qc_touch_triggers(e);
+      EXECUTE PROCEDURE qc_sg(gself, oself);
+    END
+    EXECUTE PROCEDURE qc_sg(1, ok);
+  END
   ELSE IF (n = 32) THEN                             -- walkmove(yaw, dist): the step, unchecked
   BEGIN
     e = CAST(qc_g((SELECT v.g_self FROM qc_vm v WHERE v.id = 1)) AS INTEGER); a = qc_g(4) * 0.0174532925e0; b = qc_g(7);
@@ -466,12 +505,69 @@ BEGIN
   ELSE IF (n = 36) THEN EXECUTE PROCEDURE qc_sg(1, IIF(qc_g(4) > 0, FLOOR(qc_g(4) + 0.5e0), CEIL(qc_g(4) - 0.5e0)));   -- rint
   ELSE IF (n = 37) THEN EXECUTE PROCEDURE qc_sg(1, FLOOR(qc_g(4)));
   ELSE IF (n = 38) THEN EXECUTE PROCEDURE qc_sg(1, CEIL(qc_g(4)));
-  ELSE IF (n = 40) THEN EXECUTE PROCEDURE qc_sg(1, 1);                                                  -- checkbottom
+  ELSE IF (n = 40) THEN                             -- checkbottom(e): SV_CheckBottom, every corner on something
+  BEGIN
+    ok = 1;
+    IF (qc_on() = 1) THEN
+    BEGIN
+      e = CAST(qc_g(4) AS INTEGER);
+      SELECT d.x + d.minx, d.y + d.miny, d.z + d.minz, d.x + d.maxx, d.y + d.maxy FROM ents d WHERE d.id = :e INTO x, y, z, a, b;
+      IF (point_contents(x, y, z - 1) <> -2 OR point_contents(x, b, z - 1) <> -2 OR point_contents(a, y, z - 1) <> -2 OR point_contents(a, b, z - 1) <> -2) THEN
+      BEGIN
+        -- the real check: the middle's floor within a step below, and no corner more than a step below it
+        SELECT t.fraction, t.ez FROM trace_move(:e, 0, 0, 0, 0, 0, 0, (:x + :a) / 2, (:y + :b) / 2, :z, (:x + :a) / 2, (:y + :b) / 2, :z - 36, 1) t INTO frac, cur;
+        IF (frac = 1) THEN ok = 0;
+        ELSE
+        BEGIN
+          best = cur;
+          FOR SELECT IIF(r.k < 2, :x, :a), IIF(MOD(r.k, 2) = 0, :y, :b) FROM (SELECT 0 k FROM rdb$database UNION ALL SELECT 1 FROM rdb$database UNION ALL SELECT 2 FROM rdb$database UNION ALL SELECT 3 FROM rdb$database) r INTO bx, by_ DO
+          BEGIN
+            SELECT t.fraction, t.ez FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :bx, :by_, :z, :bx, :by_, :z - 36, 1) t INTO frac, ideal;
+            IF (frac < 1 AND ideal > best) THEN best = ideal;
+            IF (frac = 1 OR cur - ideal > 18) THEN ok = 0;
+          END
+        END
+      END
+    END
+    EXECUTE PROCEDURE qc_sg(1, ok);
+  END
   ELSE IF (n = 41) THEN                             -- pointcontents(v)
     EXECUTE PROCEDURE qc_sg(1, IIF(EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.world_model IS NOT NULL), point_contents(qc_g(4), qc_g(5), qc_g(6)), -1));
   ELSE IF (n = 43) THEN EXECUTE PROCEDURE qc_sg(1, ABS(qc_g(4)));
-  ELSE IF (n = 44) THEN                             -- aim(e, speed): straight ahead
-  BEGIN EXECUTE PROCEDURE qc_sg(1, qc_g(vm_fwd)); EXECUTE PROCEDURE qc_sg(2, qc_g(vm_fwd + 1)); EXECUTE PROCEDURE qc_sg(3, qc_g(vm_fwd + 2)); END
+  ELSE IF (n = 44) THEN                             -- aim(e, speed): PF_aim, straight ahead unless a target is within the autoaim cone
+  BEGIN
+    a = qc_g(vm_fwd); b = qc_g(vm_fwd + 1); c = qc_g(vm_fwd + 2);
+    IF (qc_on() = 1) THEN
+    BEGIN
+      e = CAST(qc_g(4) AS INTEGER);
+      SELECT d.x, d.y, d.z + 20 FROM ents d WHERE d.id = :e INTO x, y, z;
+      i = qc_fdef('takedamage');
+      SELECT t.hit_ent FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :x, :y, :z, :x + :a * 2048, :y + :b * 2048, :z + :c * 2048, 0) t INTO hit;
+      IF (hit IS NULL OR hit = 0 OR qc_f(hit, i) <> 2) THEN
+      BEGIN
+        best = 0.93e0; bent = 0;
+        FOR SELECT d.id, d.x + (d.minx + d.maxx) * 0.5e0, d.y + (d.miny + d.maxy) * 0.5e0, d.z + (d.minz + d.maxz) * 0.5e0 FROM ents d
+             WHERE d.id <> :e AND d.solid <> 0 AND qc_f(d.id, :i) = 2 INTO hit, bx, by_, bz DO
+        BEGIN
+          mv = SQRT((bx - x) * (bx - x) + (by_ - y) * (by_ - y) + (bz - z) * (bz - z));
+          IF (mv = 0) THEN CONTINUE;
+          cur = ((bx - x) * a + (by_ - y) * b + (bz - z) * c) / mv;
+          IF (cur < best) THEN CONTINUE;
+          SELECT t.hit_ent FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :x, :y, :z, :bx, :by_, :bz, 0) t INTO th;
+          IF (th = hit) THEN BEGIN best = cur; bent = hit; END
+        END
+        IF (bent > 0) THEN
+        BEGIN
+          SELECT d.x - :x, d.y - :y, d.z - (:z - 20) FROM ents d WHERE d.id = :bent INTO bx, by_, bz;
+          mv = bx * a + by_ * b + bz * c;
+          bx = a * mv; by_ = b * mv;
+          mv = SQRT(bx * bx + by_ * by_ + bz * bz);
+          IF (mv > 0) THEN BEGIN a = bx / mv; b = by_ / mv; c = bz / mv; END
+        END
+      END
+    END
+    EXECUTE PROCEDURE qc_sg(1, a); EXECUTE PROCEDURE qc_sg(2, b); EXECUTE PROCEDURE qc_sg(3, c);
+  END
   ELSE IF (n = 45) THEN                             -- cvar(name)
   BEGIN
     s = qc_str(CAST(qc_g(4) AS INTEGER));
@@ -479,7 +575,10 @@ BEGIN
   END
   ELSE IF (n = 47) THEN                             -- nextent(e)
     EXECUTE PROCEDURE qc_sg(1, COALESCE((SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > CAST(qc_g(4) AS INTEGER) ORDER BY d.id), 0));
-  ELSE IF (n = 48) THEN EXECUTE PROCEDURE qc_print('particle', qc_vtos(qc_g(4), qc_g(5), qc_g(6)));
+  ELSE IF (n = 48) THEN                             -- particle(org, dir, color, count): blood is colour 73
+  BEGIN
+    IF (qc_on() = 1) THEN EXECUTE PROCEDURE fx(IIF(qc_g(10) = 73, 3, 1), qc_g(4), qc_g(5), qc_g(6), qc_g(7), qc_g(8), qc_g(9), CAST(qc_g(13) AS INTEGER));
+  END
   ELSE IF (n = 49) THEN                             -- changeyaw(): self.angles_y towards ideal_yaw by yaw_speed
   BEGIN
     e = CAST(qc_g((SELECT v.g_self FROM qc_vm v WHERE v.id = 1)) AS INTEGER);
@@ -505,8 +604,43 @@ BEGIN
     END
     EXECUTE PROCEDURE qc_sg(1, a); EXECUTE PROCEDURE qc_sg(2, b); EXECUTE PROCEDURE qc_sg(3, 0);
   END
-  ELSE IF (n BETWEEN 52 AND 59) THEN BEGIN END       -- WriteByte … WriteEntity: no network
-  ELSE IF (n = 67) THEN BEGIN END                    -- movetogoal
+  ELSE IF (n BETWEEN 52 AND 59) THEN               -- WriteByte … WriteEntity: only temp entities matter, as fx_events
+  BEGIN
+    IF (qc_on() = 1) THEN
+    BEGIN
+      SELECT v.te_state, v.te_type, v.te_n FROM qc_vm v WHERE v.id = 1 INTO tst, tty, tn;
+      IF (n = 52 AND tst = 0 AND qc_g(7) = 23) THEN UPDATE qc_vm v SET v.te_state = 1 WHERE v.id = 1;     -- SVC_TEMPENTITY
+      ELSE IF (n = 52 AND tst = 1) THEN UPDATE qc_vm v SET v.te_state = 2, v.te_type = CAST(qc_g(7) AS SMALLINT), v.te_n = 0 WHERE v.id = 1;
+      ELSE IF (n = 56 AND tst = 2) THEN
+      BEGIN
+        UPDATE qc_vm v SET v.te_c0 = IIF(:tn = 0, qc_g(7), v.te_c0), v.te_c1 = IIF(:tn = 1, qc_g(7), v.te_c1), v.te_c2 = IIF(:tn = 2, qc_g(7), v.te_c2),
+                           v.te_c3 = IIF(:tn = 3, qc_g(7), v.te_c3), v.te_c4 = IIF(:tn = 4, qc_g(7), v.te_c4), v.te_c5 = IIF(:tn = 5, qc_g(7), v.te_c5),
+                           v.te_n = v.te_n + 1 WHERE v.id = 1;
+        IF (tn + 1 = IIF(tty IN (5, 6, 9), 6, 3)) THEN
+        BEGIN
+          -- TE_SPIKE, SUPERSPIKE, WIZSPIKE, KNIGHTSPIKE: a spike hit; GUNSHOT: a puff; EXPLOSION; TAREXPLOSION; the LIGHTNINGs: a beam; LAVASPLASH; TELEPORT
+          SELECT v.te_c0, v.te_c1, v.te_c2, v.te_c3, v.te_c4, v.te_c5 FROM qc_vm v WHERE v.id = 1 INTO x, y, z, a, b, c;
+          IF (tty IN (5, 6, 9)) THEN EXECUTE PROCEDURE fx(4, x, y, z, a, b, c, 0);
+          ELSE EXECUTE PROCEDURE fx(CASE tty WHEN 2 THEN 1 WHEN 3 THEN 2 WHEN 4 THEN 8 WHEN 10 THEN 7 WHEN 11 THEN 5 ELSE 6 END, x, y, z, 0, 0, 0, 0);
+          UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;
+        END
+      END
+      ELSE IF (n = 52 AND tst = 2) THEN UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;    -- a byte where a coordinate was due: give up
+    END
+  END
+  ELSE IF (n = 67) THEN                             -- movetogoal(dist): SV_MoveToGoal (step towards the goal, or a new chase direction)
+  BEGIN
+    IF (qc_on() = 1) THEN
+    BEGIN
+      oself = qc_g(gself); e = CAST(oself AS INTEGER);
+      IF (EXISTS (SELECT 1 FROM ents d WHERE d.id = :e AND BIN_AND(d.flags, 515) <> 0)) THEN
+      BEGIN
+        EXECUTE PROCEDURE move_to_goal(e, qc_g(4));
+        IF (EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXECUTE PROCEDURE qc_touch_triggers(e);
+        EXECUTE PROCEDURE qc_sg(gself, oself);
+      END
+    END
+  END
   ELSE IF (n = 69) THEN EXECUTE PROCEDURE qc_free(CAST(qc_g(4) AS INTEGER));                           -- makestatic
   ELSE IF (n = 70) THEN                             -- changelevel(map): the first one counts (svs.changelevel_issued)
   BEGIN

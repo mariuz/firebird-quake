@@ -102,6 +102,10 @@ jobs:
       - name: The page in QuakeC mode
         run: npm run test:qctic
 
+      # progs.dat's monsters on the engine: a grunt sees, shoots and dies; a dog runs at the player
+      - name: QuakeC monsters
+        run: npm run test:qcai
+
       - name: Headless screenshots
         run: npm run screenshots
 
