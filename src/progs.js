@@ -46,6 +46,15 @@ export class Progs {
         numparms: dv.getInt32(p + 24, true), parms,
       });
     }
+    // FTEQCC overlaps the locals of functions (Quake's VM saves a callee's locals on entry and restores
+    // them on exit, so they cannot clash): shared marks a function whose locals range overlaps another's
+    const ranged = this.functions.filter((f) => f.first_statement > 0 && f.locals > 0).sort((a, b) => a.parm_start - b.parm_start);
+    let maxEnd = -1, maxF = null;
+    for (const f of this.functions) f.shared = 0;
+    for (const f of ranged) {
+      if (f.parm_start < maxEnd) f.shared = maxF.shared = 1;
+      if (f.parm_start + f.locals > maxEnd) { maxEnd = f.parm_start + f.locals; maxF = f; }
+    }
     // strings: one row per NUL-terminated string, keyed by its offset (QC refers to a string by offset;
     // a reference into the middle of a string resolves by the preceding row in SQL)
     this.strings = [];

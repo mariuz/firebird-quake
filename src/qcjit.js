@@ -194,8 +194,12 @@ export class QcJit {
     const live = this.liveness(fid);
     const across = new Set();
     for (let i = first; i < last; i++) if (st[i][1] >= 51 && st[i][1] <= 59) for (const g of live[i + 1 - first]) across.add(g);
-    const private_ = (g) => g >= this.endSys && this.written[g] && !live[0].has(g)
-      && (this.owner[g] === fid || (!this.carried.has(g) && !across.has(g)));
+    // a function whose locals overlap others' (FTEQCC) gets its range saved and restored around every
+    // activation by the VM, so whatever it writes there is its own
+    const mine = new Set();
+    if (f.shared) for (let s = first; s <= last; s++) { const [, op, a, b, c] = st[s]; for (const g of operands(op, a, b, c).w) if (g >= f.parm_start && g < f.parm_start + f.locals) mine.add(g); }
+    const private_ = (g) => mine.has(g) || (g >= this.endSys && this.written[g] && !live[0].has(g)
+      && (this.owner[g] === fid || (!this.carried.has(g) && !across.has(g))));
 
     const kind = (g) => {
       if (g >= 1 && g <= 27) return 'reg';

@@ -385,7 +385,8 @@ CREATE TABLE qc_functions (
   file VARCHAR(64),
   numparms SMALLINT NOT NULL,
   p0 SMALLINT, p1 SMALLINT, p2 SMALLINT, p3 SMALLINT, p4 SMALLINT, p5 SMALLINT, p6 SMALLINT, p7 SMALLINT,
-  active INTEGER DEFAULT 0 NOT NULL,         -- activations on the call stack: locals are saved only when re-entered
+  shared SMALLINT DEFAULT 0 NOT NULL,        -- 1: its locals overlap another function's (FTEQCC): saved on every call
+  active INTEGER DEFAULT 0 NOT NULL,         -- activations on the call stack: locals are saved only when re-entered (or shared)
   calls INTEGER DEFAULT 0 NOT NULL,          -- times entered through the interpreter: the hot ones get compiled (src/qcjit.js)
   compiled SMALLINT DEFAULT 0 NOT NULL       -- 1: runs as its own procedure, through the dispatcher qc_inv<numparms>; -1: cannot be
 );

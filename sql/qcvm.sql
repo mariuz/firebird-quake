@@ -817,7 +817,7 @@ DECLARE pc INTEGER; DECLARE op SMALLINT; DECLARE a INTEGER; DECLARE b INTEGER; D
 DECLARE va DOUBLE PRECISION; DECLARE vb DOUBLE PRECISION; DECLARE x DOUBLE PRECISION; DECLARE k INTEGER; DECLARE act INTEGER;
 DECLARE e INTEGER; DECLARE o INTEGER; DECLARE addr INTEGER;
 DECLARE g_self INTEGER; DECLARE g_time INTEGER; DECLARE f_nt INTEGER; DECLARE f_think INTEGER; DECLARE f_frame INTEGER;
-DECLARE comp SMALLINT;
+DECLARE comp SMALLINT; DECLARE shr SMALLINT;
 DECLARE p0 DOUBLE PRECISION; DECLARE p1 DOUBLE PRECISION; DECLARE p2 DOUBLE PRECISION; DECLARE p3 DOUBLE PRECISION; DECLARE p4 DOUBLE PRECISION; DECLARE p5 DOUBLE PRECISION;
 DECLARE p6 DOUBLE PRECISION; DECLARE p7 DOUBLE PRECISION; DECLARE p8 DOUBLE PRECISION; DECLARE p9 DOUBLE PRECISION; DECLARE p10 DOUBLE PRECISION; DECLARE p11 DOUBLE PRECISION;
 DECLARE p12 DOUBLE PRECISION; DECLARE p13 DOUBLE PRECISION; DECLARE p14 DOUBLE PRECISION; DECLARE p15 DOUBLE PRECISION; DECLARE p16 DOUBLE PRECISION; DECLARE p17 DOUBLE PRECISION;
@@ -826,7 +826,7 @@ BEGIN
   n = 0;
   -- the function, one more call of it, and one more activation (builtins and compiled functions are not counted)
   UPDATE qc_functions f SET f.active = f.active + IIF(f.first_statement >= 0 AND f.compiled < 1, 1, 0), f.calls = f.calls + 1 WHERE f.id = :fnum
-    RETURNING f.first_statement, f.parm_start, f.locals, f.numparms, f.active, f.compiled INTO first, pstart, nlocals, k, act, comp;
+    RETURNING f.first_statement, f.parm_start, f.locals, f.numparms, f.active, f.compiled, f.shared INTO first, pstart, nlocals, k, act, comp, shr;
   IF (first IS NULL) THEN EXCEPTION qc_error 'call of function #' || fnum || ', which does not exist';
   IF (comp = 1) THEN                                -- compiled: its procedure, through the dispatcher of its arity
   BEGIN
@@ -858,9 +858,9 @@ BEGIN
     EXIT;
   END
   IF (depth > 64) THEN EXCEPTION qc_error 'stack overflow';
-  -- PR_EnterFunction: the locals saved (only when the function is already running further up the stack:
-  -- nobody else reads a function's locals), the parameters copied in
-  IF (nlocals > 0 AND act > 1) THEN
+  -- PR_EnterFunction: the locals saved (only when the function is already running further up the stack,
+  -- or when other functions' locals overlap its own, as FTEQCC lays them out), the parameters copied in
+  IF (nlocals > 0 AND (act > 1 OR shr = 1)) THEN
     INSERT INTO qc_localstack (depth, ofs, v) SELECT :depth, g.ofs, g.v FROM qc_globals g WHERE g.ofs >= :pstart AND g.ofs < :pstart + :nlocals;
   IF (k > 0) THEN
     MERGE INTO qc_globals g
@@ -959,7 +959,7 @@ BEGIN
     ELSE EXCEPTION qc_error 'bad opcode ' || op || ' at statement ' || (pc - 1);
   END
   -- PR_LeaveFunction: the locals back
-  IF (nlocals > 0 AND act > 1) THEN
+  IF (nlocals > 0 AND (act > 1 OR shr = 1)) THEN
   BEGIN
     MERGE INTO qc_globals g USING (SELECT l.ofs, l.v FROM qc_localstack l WHERE l.depth = :depth) l ON g.ofs = l.ofs
       WHEN MATCHED THEN UPDATE SET g.v = l.v;

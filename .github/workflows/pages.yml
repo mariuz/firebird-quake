@@ -109,6 +109,9 @@ jobs:
       - name: QuakeC compiled to PSQL
         run: npm run test:qcjit
 
+      - name: LibreQuake in QuakeC mode
+        run: npm run test:qclq
+
       - name: Headless screenshots
         run: npm run screenshots
 

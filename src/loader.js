@@ -28,7 +28,7 @@ const TABLES = {
   models: 'id:i name:s kind:s minx:d miny:d minz:d maxx:d maxy:d maxz:d hull0:i hull1:i hull2:i first_face:i num_faces:i nframes:i flags:i radius:d',
   anims: 'model_id:i anim:s first_frame:i frame_count:i',
   qc_statements: 'id:i op:i a:i b:i c:i',
-  qc_functions: 'id:i first_statement:i parm_start:i locals:i name:s file:s numparms:i p0:i p1:i p2:i p3:i p4:i p5:i p6:i p7:i',
+  qc_functions: 'id:i first_statement:i parm_start:i locals:i name:s file:s numparms:i p0:i p1:i p2:i p3:i p4:i p5:i p6:i p7:i shared:i',
   qc_defs: 'id:i kind:i type_:i ofs:i name:s',
   qc_strings: 'ofs:i s:s',
   qc_globals0: 'ofs:i v:d',
@@ -274,7 +274,7 @@ export async function loadProgs(db, pak, name = 'progs.dat') {
   const progs = new Progs(pak.buffer(name), name);
   await db.exec('DELETE FROM qc_parmmap; DELETE FROM qc_statements; DELETE FROM qc_functions; DELETE FROM qc_defs; DELETE FROM qc_strings; DELETE FROM qc_globals0; DELETE FROM qc_globals; DELETE FROM qc_fields; DELETE FROM qc_edicts; DELETE FROM qc_log; DELETE FROM qc_vm');
   await bulkLoad(db, 'qc_statements', progs.statements);
-  await bulkLoad(db, 'qc_functions', progs.functions.map((f) => [f.id, f.first_statement, f.parm_start, f.locals, f.name, f.file, f.numparms, ...f.parms]));
+  await bulkLoad(db, 'qc_functions', progs.functions.map((f) => [f.id, f.first_statement, f.parm_start, f.locals, f.name, f.file, f.numparms, ...f.parms, f.shared]));
   await bulkLoad(db, 'qc_defs', [...progs.globaldefs, ...progs.fielddefs].map((d, i) => [i, d.kind, d.type & 0x7fff, d.ofs, d.name]));
   // the loader turns newlines into spaces: keep QuakeC's newline as the two characters backslash-n, printed back as a newline
   await bulkLoad(db, 'qc_strings', progs.strings.map(([ofs, s]) => [ofs, s.replace(/\n/g, '\\n').replace(/\|/g, '/')]));
