@@ -330,3 +330,23 @@ node scripts/screenshot.mjs e2m6 docs/slimehall  --at=1904,-224,-402,0 --tics=8 
 node scripts/screenshot.mjs e2m6 docs/hellknight --at=1024,792,-482,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m6 docs/bluewindow --at=1240,1280,-994,270 --tics=8 --single --fast
 ```
+
+## E2M7, the Underearth
+
+![the temple front](temple-e2m7-0.png) ![the flooded hall and its lit arch](flooded-e2m7-0.png) ![a hell knight and an ogre in the gate hall](hellknight-e2m7-0.png) ![the skylit hall](skylights-e2m7-0.png) ![a hell knight on the covered bridge](bridge-e2m7-0.png) ![a scrag over an ogre](scrag-e2m7-0.png)
+
+1. the temple front at the start of the episode's secret level
+2. the flooded hall and its lit arch
+3. a hell knight and an ogre in the gate hall
+4. the skylit hall
+5. a hell knight coming over the covered bridge
+6. a scrag over an ogre's shoulder
+
+```bash
+node scripts/screenshot.mjs e2m7 docs/temple     --at=1084,-928,-74,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m7 docs/flooded    --at=1024,492,-226,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m7 docs/hellknight --at=1800,424,-102,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m7 docs/skylights  --at=920,520,-102,45 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m7 docs/bridge     --at=784,1816,-210,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m7 docs/scrag      --at=1200,1992,-162,270 --tics=8 --single --fast
+```
