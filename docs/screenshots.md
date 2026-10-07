@@ -292,3 +292,23 @@ node scripts/screenshot.mjs e2m4 docs/moat       --at=680,2200,302,45 --tics=8 -
 node scripts/screenshot.mjs e2m4 docs/fortgate   --at=2216,2184,-2,270 --tics=8 --single --fast
 node scripts/screenshot.mjs e2m4 docs/glass      --at=1024,1408,182,180 --tics=8 --single --fast
 ```
+
+## E2M5, the Wizard's Manse
+
+![an ogre under the orange windows](windows-e2m5-0.png) ![a fiend leaping in the pillared hall](fiend-e2m5-0.png) ![the water pool](pool-e2m5-0.png) ![the red carved gate](redgates-e2m5-0.png) ![the great hall](greathall-e2m5-0.png) ![the thunderbolt, over the flooded hall](thunderbolt-e2m5-0.png)
+
+1. an ogre under the manse's orange windows
+2. a fiend leaping in the pillared hall, an ogre below
+3. the water pool and the doorway beyond it
+4. the red carved gate
+5. the great hall and its steps
+6. the thunderbolt, picked up over the flooded hall
+
+```bash
+node scripts/screenshot.mjs e2m5 docs/windows     --at=704,704,-18,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m5 docs/fiend       --at=112,1408,30,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m5 docs/pool        --at=-600,2032,-106,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m5 docs/redgates    --at=-1024,3152,-42,225 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m5 docs/greathall   --at=-520,3160,-106,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m5 docs/thunderbolt --at=-672,1392,-74,270 --tics=8 --single --fast
+```
