@@ -370,3 +370,23 @@ node scripts/screenshot.mjs e3m1 docs/enforcer --at=-368,144,-130,90 --tics=8 --
 node scripts/screenshot.mjs e3m1 docs/keyroom  --at=-160,-752,-2,180 --tics=6 --single --fast
 node scripts/screenshot.mjs e3m1 docs/exitgate --at=2340,-420,0,270 --tics=4 --single --fast
 ```
+
+## E3M2, the Vaults of Zin
+
+![the crosses on the lava](banner-e3m2-0.png) ![the lava channel to the altar](lavaaltar-e3m2-0.png) ![an ogre and a fiend under the open sky](pinksky-e3m2-0.png) ![a zombie before the grid door](zombie-e3m2-0.png) ![the Quake banner doorway](lavawalk-e3m2-0.png) ![the exit slipgate to E3M3](exitgate-e3m2-0.png)
+
+1. the crosses standing on the lava, between the torches
+2. the lava channel running to the altar
+3. an ogre and a fiend under the open sky of the upper court
+4. a zombie before the grid door
+5. the doorway under the Quake banner
+6. the exit slipgate to E3M3, among its rune blocks
+
+```bash
+node scripts/screenshot.mjs e3m2 docs/banner    --at=-416,496,30,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m2 docs/lavaaltar --at=-72,-1216,-258,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m2 docs/pinksky   --at=32,-888,190,45 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m2 docs/zombie    --at=1008,8,-178,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m2 docs/lavawalk  --at=256,-1536,-258,0 --tics=8 --single --fast
+node scripts/screenshot.mjs e3m2 docs/exitgate  --at=1700,496,47,0 --tics=4 --single --fast
+```
