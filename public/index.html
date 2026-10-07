@@ -36,6 +36,10 @@
           <option value="high">320×200</option>
           <option value="low">160×100</option>
         </select></label>
+        <label title="What runs the game: the PSQL rewrite of the game code, or the original progs.dat in the QuakeC VM, also in PSQL (slower)">Logic <select id="logic">
+          <option value="psql">PSQL game</option>
+          <option value="qc">QuakeC VM (progs.dat)</option>
+        </select></label>
         <label title="How much of the renderer runs in SQL">Renderer <select id="renderer">
           <option value="fast">SQL picks faces, JS projects (fast)</option>
           <option value="sql">SQL projects every vertex</option>

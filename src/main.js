@@ -39,7 +39,8 @@ let lastFxId = 0;
 let finaleShown = false;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
-const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware' };
+const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql' };
+let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -149,7 +150,17 @@ async function startMap(name, newGame) {
   running = false;
   setStatus(`Loading ${name} into Firebird…`);
   const t0 = performance.now();
+  // QuakeC mode: the client's parms leave with it (SetChangeParms), the level is spawned by progs.dat's own spawn
+  // functions after the geometry is loaded, and the parms come back (sql/qcvm.sql: qc_change_parms, qc_begin_map)
+  const qc = settings.logic === 'qc';
+  if (qc && !newGame && progsLoaded) await db.exec('EXECUTE PROCEDURE qc_change_parms');
+  if (!qc) await db.exec('EXECUTE PROCEDURE qc_leave');
   const bsp = await loadMap(db, pak, res, name, { skill: settings.skill, newGame });
+  if (qc) {
+    if (!progsLoaded) { setStatus('Loading progs.dat into the QuakeC VM…'); await loadProgs(db, pak); progsLoaded = true; }
+    setStatus(`Spawning ${name} through QuakeC…`);
+    await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
+  }
   map = { name, bsp };
   renderer.setResources(res);
   renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
@@ -193,7 +204,8 @@ async function frame() {
     if (now - lastTic > 200) lastTic = now;
 
     let t = performance.now();
-    last = (await db.query('SELECT * FROM quake_tic(?, ?, ?, ?, ?, ?, ?, ?, ?)', readInput(tics), { rowMode: 'object' })).rows[0];
+    // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row
+    last = (await db.query(`SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`, readInput(tics), { rowMode: 'object' })).rows[0];
     perf.tic = performance.now() - t;
 
     if (last.EXIT_KIND === 1 && last.NEXT_MAP) {
@@ -352,7 +364,7 @@ function updateStats() {
   fpsN++;
   const now = performance.now();
   if (now - fpsT > 500) { fps = (fpsN * 1000) / (now - fpsT); fpsT = now; fpsN = 0; }
-  statsEl.textContent = `${fps.toFixed(1)} fps · quake_tic ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
+  statsEl.textContent = `${fps.toFixed(1)} fps · ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'} ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
 }
 
 // ── SQL console ─────────────────────────────────────────────────────────
@@ -404,6 +416,7 @@ async function openDatabase() {
 
 async function usePak(buffers, label) {
   running = false;
+  progsLoaded = false;
   pak = new PakSet(buffers.map((b) => new Pak(b)));     // pak0.pak, and pak1.pak if you own Quake
   const maps = pak.mapNames();
   if (!maps.length) throw new Error(`${label} has no maps`);
@@ -475,6 +488,11 @@ $('detail').addEventListener('change', async (e) => {
   await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov);
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
+});
+$('logic').value = settings.logic;
+$('logic').addEventListener('change', (e) => {
+  settings.logic = e.target.value; saveSettings();
+  if (map) startMap(map.name, true).catch((err) => setStatus(err.message, true));   // a new game under the other logic
 });
 $('renderer').value = settings.renderer;
 $('renderer').addEventListener('change', (e) => { settings.renderer = e.target.value; saveSettings(); });

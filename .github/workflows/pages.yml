@@ -98,6 +98,10 @@ jobs:
       - name: QuakeC on the engine's physics
         run: npm run test:qcplay
 
+      # The page's QuakeC mode: qc_tic's row, the intermission, and a level change carrying the parms
+      - name: The page in QuakeC mode
+        run: npm run test:qctic
+
       - name: Headless screenshots
         run: npm run screenshots
 

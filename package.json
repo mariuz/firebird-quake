@@ -21,6 +21,7 @@
     "test:e1m6": "node scripts/e1m6-test.mjs",
     "test:qcvm": "node scripts/qcvm-test.mjs",
     "test:qcplay": "node scripts/qcvm-play-test.mjs",
+    "test:qctic": "node scripts/qcvm-tic-test.mjs",
     "bench": "node scripts/bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"

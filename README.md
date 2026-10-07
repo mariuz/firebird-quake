@@ -187,8 +187,13 @@ through the same traces and pushers the PSQL game uses. A frame of E1M1 takes ab
 ![E1M1 in QuakeC mode: grunts and health boxes spawned and dropped by progs.dat](docs/qcvm-e1m1-0.png)
 
 `node scripts/screenshot.mjs e1m1 out --qc --at=1150,1030,-250,330 --tics=4 --single --fast` renders a
-QuakeC-mode frame. The page still plays the PSQL game; driving it from QuakeC mode is next on the
-roadmap.
+QuakeC-mode frame. **In the page**, the **Logic** setting switches between the PSQL game and
+**QuakeC VM (progs.dat)**: the level is spawned by progs.dat, every tic is `qc_tic`, which takes
+`quake_tic`'s input and returns its row from the QuakeC player's fields (centre prints, messages, the
+pickup flash, damage, the intermission and `changelevel` included), and a level change carries the
+player's parms (`SetChangeParms`, `DecodeLevelParms`) as Quake does. A tic costs about 25 ms there
+against 6 to 12 in the PSQL game, so the page keeps time with fewer frames per second; monsters stand
+until `walkmove`, `movetogoal` and `checkclient` arrive.
 
 ### The renderer is a query (`sql/render.sql`)
 
@@ -242,6 +247,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:e1m4` | the Grisly Grotto: two buttons open the underwater door; swim through, surface for the secret, water-jump onto the ledge, exit to E1M8 |
 | `npm run test:e1m6` | The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the silver doors stay shut, the exit to E1M7 |
 | `npm run test:qcplay` | QuakeC mode: E1M1 played by the original `progs.dat` on the engine's physics; the world settles, the player falls, walks with Quake's friction, opens a door through its trigger field, picks up shells by walking over them, fires a rocket that explodes against a wall, and a grunt appears in the renderer's frame query |
+| `npm run test:qctic` | the page's QuakeC mode: `qc_tic` returns `quake_tic`'s row from progs.dat's player through walking, firing, a pickup and a secret; the exit's intermission and `changelevel`; the level change carrying shells and health into E1M2 |
 | `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles, then E1M1 spawned by its QuakeC spawn functions, five frames of thinks, and the player connecting, firing, picking up shells and cheating |
 
 Tools for the same purpose:
