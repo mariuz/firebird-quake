@@ -16,6 +16,7 @@ import { qpic, Pak, PakSet, Wad2, loadPalette } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES, loadProgs } from '../src/loader.js';
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
+import { frameDlights, dlightAt } from '../src/dlights.js';
 import { png } from './png.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -111,6 +112,11 @@ async function shot(name) {
   for (const [s, v] of (await db.query('SELECT * FROM frame_lightstyles', [], arr)).rows) if (s < 64) styles[s] = v;
   const t1 = performance.now();
   renderer.beginFrame({ x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, fov: 90 });
+  // the dynamic lights, as the page has them (--explosion=x,y,z: one going off now); a fixed jitter
+  const boom = process.argv.find((a) => a.startsWith('--explosion='));
+  const explosions = boom ? [{ ...Object.fromEntries(boom.slice(12).split(',').map((v, i) => [['x', 'y', 'z'][i], Number(v)])), t0: last.TIME_ }] : [];
+  const dl = renderer.dlights = frameDlights({ ents, models: res.models, explosions, qc: qcMode, time: last.TIME_, rnd: () => 0.5,
+    player: { x: last.PX, y: last.PY, z: last.PZ, yaw: last.YAW, glow: !!(last.QUAD || last.INVINCIBLE) } });
   if (fast) renderer.drawFaceList(faces, styles, last.TIME_, new Map());
   else renderer.drawFaces(faces, styles, last.TIME_, new Map());
   if (compare) {
@@ -125,7 +131,7 @@ async function shot(name) {
     const [, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kind] = e;
     const m = res.models.get(mid);
     if (!m) continue;
-    if (kind.trim() === 'M') renderer.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw, roll], effects & 8 ? 255 : lightPoint(bsp, x, y, z + 8), { time: last.TIME_ });
+    if (kind.trim() === 'M') renderer.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw, roll], effects & 8 ? 255 : Math.min(255, lightPoint(bsp, x, y, z + 8) + dlightAt(dl, x, y, z)), { time: last.TIME_ });
     else if (kind.trim() === 'S') renderer.drawSprite(m.spr, frame, [x, y, z]);
   }
   const vm = last.INTERMISSION ? null : res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));

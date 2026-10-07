@@ -469,3 +469,22 @@ types out at eight characters a second under `gfx/finale.lmp`.
 node scripts/screenshot.mjs e1m1 docs/intermission --tics=60 --sql="EXECUTE PROCEDURE changelevel((SELECT FIRST 1 id FROM ents WHERE classname = 'trigger_changelevel'))" --single --fast
 node scripts/screenshot.mjs e1m7 docs/finale --qc --tics=20 --sql="EXECUTE PROCEDURE qc_sf(0, qc_fdef('model'), qc_newstr('maps/e1m7.bsp')); EXECUTE PROCEDURE qc_run('execute_changelevel', 0)" --tics=4 --sql="EXECUTE PROCEDURE qc_run('ExitIntermission', 1)" --tics=2 --single --fast
 ```
+
+## Dynamic lights
+
+The start of E1M1 three ways: unlit, with a rocket flying down the corridor (the model's `EF_ROCKET`
+light, 200 units), and with an explosion going off ahead (350 units). The faces a light reaches are
+rebuilt for the frame with the light added to their lightmap, as Quake's `R_AddDynamicLights` does;
+the shotgun in hand takes the light too.
+
+![unlit](dlight-off-e1m1-0.png) ![a rocket in flight](dlight-rocket-e1m1-0.png) ![an explosion](dlight-boom-e1m1-0.png)
+
+1. no dynamic light
+2. a rocket 150 units down the corridor
+3. an explosion 150 units ahead, at its brightest
+
+```bash
+node scripts/screenshot.mjs e1m1 docs/dlight-off    --tics=2 --single --fast
+node scripts/screenshot.mjs e1m1 docs/dlight-rocket --tics=2 --sql="EXECUTE PROCEDURE launch_rocket((SELECT ent_id FROM player), 480, -320, 110, 0, 1, 0, 1000, 100, 'progs/missile.mdl')" --tics=3 --single --fast
+node scripts/screenshot.mjs e1m1 docs/dlight-boom   --tics=2 --explosion=480,-200,70 --single --fast
+```

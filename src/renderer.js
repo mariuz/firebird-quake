@@ -8,6 +8,7 @@
 import { ANORMS } from './mdl.js';
 
 const SURF_CACHE_MAX = 2000;
+const NO_OFFSET = [0, 0, 0];
 
 export class Renderer {
   constructor(canvas, { palette, colormap }) {
@@ -18,6 +19,8 @@ export class Renderer {
     this.sinTable = new Float32Array(256);
     for (let i = 0; i < 256; i++) this.sinTable[i] = Math.sin((i / 256) * Math.PI * 2) * 8;
     this.surfCache = new Map();
+    this.dlights = [];           // this frame's dynamic lights: { x, y, z, radius, minlight } (cl_dlights)
+    this.entOrigin = new Map();  // brush model → its origin, from the face list (lights move into its frame)
     this.faceInfo = new Map();   // face id → { bsp, f, tex }
     this.models = null;
     this.particles = [];
@@ -54,7 +57,7 @@ export class Renderer {
   }
 
   // ─â”€ surface cache (R_DrawSurface) ─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€
-  surface(faceId, styles, time, frame) {
+  surface(faceId, styles, time, frame, ent = 0) {
     const info = this.faceInfo.get(faceId);
     if (!info) return null;
     const { bsp, f } = info;
@@ -73,6 +76,11 @@ export class Renderer {
       light = light * 7 + Math.round(v * 16);
     }
     key = faceId + ':' + light + ':' + tex.name;
+    // a face a dynamic light reaches is built for this frame alone, as Quake rebuilds its surface; a
+    // brush model's faces see the light moved into the model's frame (its origin from the face list)
+    const o = !this.dlights.length ? null : ent === 0 ? NO_OFFSET : this.entOrigin.get(ent);
+    const lit = o ? this.faceDlights(info, o) : null;
+    if (lit) return this.buildSurface(bsp, f, tex, styles, lit);
     let s = this.surfCache.get(key);
     if (s) return s;
     if (this.surfCache.size > SURF_CACHE_MAX) this.surfCache.clear();
@@ -81,7 +89,28 @@ export class Renderer {
     return s;
   }
 
-  buildSurface(bsp, f, tex, styles) {
+  // R_AddDynamicLights' setup: the lights near enough to this face's plane, each with the point under
+  // it in the face's lightmap coordinates
+  faceDlights(info, [ox, oy, oz]) {
+    const { bsp, f, ti } = info;
+    const pl = bsp.planes[f.plane];
+    let out = null;
+    for (const dl of this.dlights) {
+      const x = dl.x - ox, y = dl.y - oy, z = dl.z - oz;
+      const dist = x * pl.nx + y * pl.ny + z * pl.nz - pl.dist;
+      const rad = dl.radius - Math.abs(dist);
+      if (rad < dl.minlight) continue;
+      const ix = x - pl.nx * dist, iy = y - pl.ny * dist, iz = z - pl.nz * dist;
+      const ls = ix * ti.s[0] + iy * ti.s[1] + iz * ti.s[2] + ti.soff - f.texturemins[0];
+      const lt = ix * ti.t[0] + iy * ti.t[1] + iz * ti.t[2] + ti.toff - f.texturemins[1];
+      // nothing to do when the lit disc misses the face's rectangle
+      if (ls < -rad || lt < -rad || ls > f.extents[0] + rad || lt > f.extents[1] + rad) continue;
+      (out ??= []).push({ rad, minlight: rad - dl.minlight, ls, lt });
+    }
+    return out;
+  }
+
+  buildSurface(bsp, f, tex, styles, dlights = null) {
     const sw = Math.max(1, f.extents[0]);
     const sh = Math.max(1, f.extents[1]);
     const data = new Uint8Array(sw * sh);
@@ -98,6 +127,18 @@ export class Renderer {
       }
     } else {
       block.fill(f.lightofs === -1 ? 255 : 0); // -1: fullbright (no light data)
+    }
+    // R_AddDynamicLights: each light adds radius minus distance (in luxels of 16 texels, Quake's
+    // octagonal distance) where that is above its minimum light
+    if (dlights) for (const dl of dlights) {
+      for (let t = 0; t < lh; t++) {
+        const td = Math.abs(dl.lt - t * 16);
+        for (let u = 0; u < lw; u++) {
+          const sd = Math.abs(dl.ls - u * 16);
+          const d = sd > td ? sd + td / 2 : td + sd / 2;
+          if (d < dl.minlight) block[t * lw + u] += dl.rad - d;
+        }
+      }
     }
     const cm = this.colormap;
     const texw = tex.w, texh = tex.h, mip = tex.mips[0];
@@ -189,7 +230,7 @@ export class Renderer {
       }
       if (info.f.sky) this.fillPolygon(verts, null, 2, time);
       else {
-        const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0);
+        const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0, ent);
         if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
       }
     }
@@ -205,7 +246,9 @@ export class Renderer {
     const [fx, fy, fz] = view.fwd, [rx, ry, rz] = view.right, [ux, uy, uz] = view.up;
     const near = 4, sc = view.scale, cx = view.cx, cy = view.cy;
     const out = [];
+    this.entOrigin.clear();
     for (const [face, ent, ox, oy, oz] of rows) {
+      if (ent !== 0) this.entOrigin.set(ent, [ox, oy, oz]);
       const info = this.faceInfo.get(face);
       if (!info) continue;
       const { bsp, f, ti } = info;

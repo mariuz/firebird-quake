@@ -19,6 +19,7 @@ import qcvmSql from '../sql/qcvm.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
+import { frameDlights, dlightAt } from './dlights.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
@@ -42,6 +43,8 @@ let interWait = 0;         // the PSQL game's intermission: when it began (the s
 let finaleStart = 0;       // game time the finale's text began (QuakeC's svc_finale)
 let cdTrack = -1;          // the track svc_cdtrack asked for
 let lastDraw = null;       // the last frame's rows, drawn again under the intermission
+let muzzleUntil = 0;       // the player's muzzle flash lights the room until then (game time)
+let prevWeaponFrame = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql' };
@@ -232,6 +235,10 @@ async function frame() {
     // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row
     last = (await db.query(`SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`, readInput(tics), { rowMode: 'object' })).rows[0];
     perf.tic = performance.now() - t;
+    // EF_MUZZLEFLASH for the player: a shot starts the weapon's animation (the axe has no flash; the
+    // nailguns and the lightning gun cycle their frames, one shot a frame)
+    if (last.WEAPONFRAME !== prevWeaponFrame && last.WEAPONFRAME > 0 && last.WEAPON !== 4096 && (last.WEAPONFRAME === 1 || (last.WEAPON & (4 | 8 | 64)))) muzzleUntil = last.TIME_ + 0.1;
+    prevWeaponFrame = last.WEAPONFRAME;
     // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
     if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
 
@@ -320,6 +327,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   const r = renderer;
   const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, roll: last.DEAD ? 60 : 0, fov: settings.fov };
   r.beginFrame(view);
+  const dl = r.dlights = frameDlights({ ents, models: res.models, explosions, qc: settings.logic === 'qc', time,
+    player: { x: last.PX, y: last.PY, z: last.PZ, yaw: last.YAW, muzzle: muzzleUntil > time - 0.05 && !last.DEAD, glow: !!(last.QUAD || last.INVINCIBLE) } });
   const entFrames = new Map();
   for (const e of ents) if (e[12] === 'B') entFrames.set(e[0], e[2]);
   if (faces) {
@@ -336,7 +345,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
     const m = res.models.get(mid);
     if (!m) continue;
     if (kind === 'M') {
-      const light = effects & 8 ? 255 : Math.max(lightPoint(bsp, x, y, z + 8), effects & 4 ? 160 : 0);
+      const light = effects & 8 ? 255 : Math.min(255, Math.max(lightPoint(bsp, x, y, z + 8), effects & 4 ? 160 : 0) + dlightAt(dl, x, y, z));
       const spin = m.mdl.flags & 8 ? (time * 100) % 360 : 0;   // EF_ROTATE items spin
       r.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw + spin, roll], light, { time, alpha: alpha === 1 });
     } else if (kind === 'S') {
@@ -367,7 +376,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
     const vm = res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
     if (vm) {
       const bob = Math.sin(time * 8) * Math.min(1, Math.hypot(last.PX - (prevPos?.x ?? last.PX), last.PY - (prevPos?.y ?? last.PY)) / 8) * 1.5;
-      const light = Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32);
+      const light = Math.min(255, Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32) + dlightAt(dl, last.PX, last.PY, last.PZ));
       r.zb.fill(0, 0, r.w * r.h);   // the gun is always in front
       r.drawAlias(vm.mdl, Math.min(last.WEAPONFRAME, vm.mdl.frames.length - 1), 0, [last.PX, last.PY, last.VIEW_Z + 2 + bob], [-last.PITCH, last.YAW, 0], light, { near: 1, time });
     }

@@ -1805,6 +1805,8 @@ BEGIN
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   DELETE FROM sound_events s WHERE s.tic < :tic - 40;
   DELETE FROM fx_events f WHERE f.tic < :tic - 40;
+  -- SV_CleanupEnts: a muzzle flash lasts the frame it was sent in (the page lights it once)
+  UPDATE ents e SET e.effects = BIN_AND(e.effects, BIN_NOT(2)) WHERE BIN_AND(e.effects, 2) <> 0;
   va = (SELECT v.f_v_angle FROM qc_vm v WHERE v.id = 1);
   fa = qc_fdef('fixangle');
   vyaw = qc_f(1, va + 1);

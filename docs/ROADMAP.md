@@ -6,7 +6,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 ## The game
 
-- **Dynamic lights** (*JS*). Rockets, explosions, the muzzle flash and the quad glow light the world in Quake (`R_PushDlights`). The painter has no dynamic lights: the surface cache would need a per-frame overlay for the faces within a light's radius, or a cheaper per-span brightening.
+- ~~**Dynamic lights**~~ done (`src/dlights.js`, ARCHITECTURE section 10): rockets, explosions, the muzzle flashes and the powerup glows light the world and the models, the lit faces rebuilt for the frame as Quake's `R_AddDynamicLights` does. Left: the slow renderer (`frame_faces`) lights world faces only (its rows carry no brush model origin), and the PSQL game has no muzzle flash for monsters (its effects bits mean fullbright).
 - **Monster infighting** (*SQL*). `t_damage` sets the victim's enemy to the attacker, but the ogre-vs-knight logic of `combat.qc` (`T_Damage`'s `enemy` switch for monsters hurt by monsters, with the exceptions for same-class) is not complete. Verify and finish.
 - **Skill 3 (nightmare)** (*SQL/JS*): no attack-rate changes, no pain-skip; the page offers skills 0..2.
 - **Intermission** (*SQL*): the stats screen is drawn as Quake's (`Sbar_IntermissionOverlay`, `gfx/complete.lmp`, `gfx/inter.lmp`, the time, secrets and kills) until fire, in both modes; QuakeC mode also moves the view to an `info_intermission` camera, as progs.dat does. The PSQL game still shows it over the level's last frame: its `changelevel` would need `execute_changelevel`'s camera (the player moved to an `info_intermission`, its `mangle` as the view).

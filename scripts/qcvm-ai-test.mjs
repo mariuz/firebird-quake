@@ -56,11 +56,13 @@ const lookAt = async (id) => {
 };
 const ms = [];
 const fxSeen = new Set();
+const flashed = new Set();     // monsters whose EF_MUZZLEFLASH a row's frame would light
 const tic = async (o = {}) => {
   const t0 = performance.now();
   const r = await q1(`SELECT * FROM qc_tic(2, 0, 0, 0, 0, ${o.fire ?? 0}, 0, 1, 0)`);
   ms.push((performance.now() - t0) / 2);
   for (const f of await qa('SELECT DISTINCT kind FROM fx_events')) fxSeen.add(f.KIND);
+  for (const f of await qa('SELECT id FROM ents WHERE id > 1 AND BIN_AND(effects, 2) <> 0')) flashed.add(f.ID);
   return r;
 };
 // a standing spot in front of a monster (within its view), with a clear line of sight between the eyes
@@ -136,6 +138,8 @@ for (let i = 0; i < 80 && !(shot && r.HEALTH < 100 && dmgSeen); i++) {
 const g1 = await ent(grunt);
 assert(shot > 0 && r.HEALTH < 100, `army_fire: the grunt shoots the player after ${(shot * 0.1).toFixed(1)} s (health ${r.HEALTH})`);
 assert(dmgSeen, 'the damage reaches the row (DMG_TAKE) for the flash');
+assert(flashed.has(grunt), 'its muzzle flash (EF_MUZZLEFLASH) is on after the tic it fired in, for the page to light');
+
 assert(fxSeen.has(1) || fxSeen.has(3), `FireBullets' misses (TE_GUNSHOT) and hits (SpawnBlood's particles) become fx events (kinds ${[...fxSeen].sort().join(', ')})`);
 
 // ── the player shoots back, with the autoaim ─────────────────────────────
