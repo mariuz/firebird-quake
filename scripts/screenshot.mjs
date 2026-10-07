@@ -57,7 +57,13 @@ const tic = (args) => db.query('SELECT * FROM quake_tic(?, ?, ?, ?, ?, ?, ?, ?, 
 // --sql="stmt; stmt": run statements (wake a boss, open a door); --tics=N: let the world run N tics.
 // Both may repeat and are applied in the order given, so a scene can be staged in steps.
 for (const a of process.argv) {
-  if (a.startsWith('--sql=')) { for (const stmt of a.slice(6).split(';')) if (stmt.trim()) await db.exec(stmt.trim()); }
+  if (a.startsWith('--sql=')) {
+    for (const stmt of a.slice(6).split(';')) {
+      if (!stmt.trim()) continue;
+      if (/^\s*select/i.test(stmt)) await db.query(stmt.trim());   // a selectable procedure (spawn_monster) runs only when selected from
+      else await db.exec(stmt.trim());
+    }
+  }
   else if (a.startsWith('--tics=')) { const n = Number(a.slice(7)); for (let i = 0; i < n; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]); }
 }
 const arr = { rowMode: 'array' };

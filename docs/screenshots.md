@@ -186,21 +186,53 @@ node scripts/screenshot.mjs e1m8 docs/exit      --at=1400,-240,31,0 --tics=4 --s
 ## The registered monsters
 
 The enforcer, the hell knight, the vore, the spawn, the rotfish and Shub-Niggurath live in `pak1.pak`,
-the registered half of Quake, which the shareware episode does not include: the game logic for all six
-is in `sql/monsters.sql` and `npm run test:registered` runs them in E1M1 without their models, so there
-is nothing of them to draw here. If you own Quake, put `pak1.pak` beside `pak0.pak` in `public/pak/`
-(the page and the screenshot tool pick it up; the page's file picker also takes the two files together)
-and these commands render each one, spawned a few steps ahead of the player and given a second to
-notice him:
+the registered half of Quake, which the shareware episode does not include; `npm run test:registered`
+runs their game logic in E1M1 without their models. With a registered `pak1.pak` beside `pak0.pak` in
+`public/pak/` (the page and the screenshot tool pick it up; the page's file picker also takes the two
+files together) they can be drawn: here each is spawned a few steps ahead of the player in E1M1's slime
+hall and given a moment to notice him.
+
+![an enforcer](enforcer-e1m1-0.png) ![a hell knight](hell_knight-e1m1-0.png) ![a vore](shalrath-e1m1-0.png) ![a spawn: the black blob in front](tarbaby-e1m1-0.png) ![a rotfish, out of its water](fish-e1m1-0.png) ![Shub-Niggurath](oldone-e1m1-0.png)
+
+1. an enforcer
+2. a hell knight, sword raised
+3. a vore
+4. a spawn: the black blob bounding at the player
+5. a rotfish, flopping out of its water
+6. Shub-Niggurath, filling the hall
 
 ```bash
-node scripts/screenshot.mjs e1m1 docs/enforcer   --sql="EXECUTE PROCEDURE spawn_monster('enforcer', 250)"    --tics=20 --single --fast
-node scripts/screenshot.mjs e1m1 docs/hellknight --sql="EXECUTE PROCEDURE spawn_monster('hell_knight', 250)" --tics=20 --single --fast
-node scripts/screenshot.mjs e1m1 docs/vore       --sql="EXECUTE PROCEDURE spawn_monster('shalrath', 300)"    --tics=20 --single --fast
-node scripts/screenshot.mjs e1m1 docs/spawn      --sql="EXECUTE PROCEDURE spawn_monster('tarbaby', 200)"     --tics=10 --single --fast
-node scripts/screenshot.mjs e1m1 docs/rotfish    --sql="EXECUTE PROCEDURE spawn_monster('fish', 150)"        --tics=10 --single --fast
-node scripts/screenshot.mjs e1m1 docs/shub       --sql="EXECUTE PROCEDURE spawn_monster('oldone', 400)"      --tics=10 --single --fast
+node scripts/screenshot.mjs e1m1 docs/enforcer    --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('enforcer', 160)"    --tics=16 --single --fast
+node scripts/screenshot.mjs e1m1 docs/hell_knight --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('hell_knight', 160)" --tics=16 --single --fast
+node scripts/screenshot.mjs e1m1 docs/shalrath    --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('shalrath', 130)"    --tics=10 --single --fast
+node scripts/screenshot.mjs e1m1 docs/tarbaby     --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('tarbaby', 90)"      --tics=3  --single --fast
+node scripts/screenshot.mjs e1m1 docs/fish        --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('fish', 100)"        --tics=6  --single --fast
+node scripts/screenshot.mjs e1m1 docs/oldone      --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('oldone', 300)"      --tics=8  --single --fast
 ```
 
-Without `pak1.pak` the commands still run and the frame shows E1M1 with an invisible monster in it,
-which is also what the registered test sees.
+`spawn_monster` is a selectable procedure, so it is run with `SELECT`; the tool runs a `--sql`
+statement that starts with `SELECT` as a query and anything else as a statement. Without `pak1.pak`
+the commands still run and the frame shows the hall with an invisible monster in it, which is also
+what the registered test sees.
+
+## E2M1, the Installation
+
+The first level of the registered game, from the same `pak1.pak`.
+
+![the flooded entrance hall](entrance-e2m1-0.png) ![the control room](control-e2m1-0.png) ![an enforcer in the corridor](enforcer-e2m1-0.png) ![the gold key room](goldkey-e2m1-0.png) ![the pillared hall](pillars-e2m1-0.png) ![the exit room](exitroom-e2m1-0.png)
+
+1. the flooded entrance hall, a grunt on the far side
+2. the control room under its yellow lights
+3. an enforcer in the corridor, firing
+4. the gold key room with its red lights
+5. the pillared hall
+6. the exit room, its red machinery and the way to E2M2
+
+```bash
+node scripts/screenshot.mjs e2m1 docs/entrance --at=1632,-288,-2,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m1 docs/control  --at=944,1064,158,180 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m1 docs/enforcer --at=272,560,30,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m1 docs/goldkey  --at=1848,1320,78,270 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m1 docs/pillars  --at=576,216,-66,90 --tics=8 --single --fast
+node scripts/screenshot.mjs e2m1 docs/exitroom --at=60,-24,0,180 --tics=4 --single --fast
+```
