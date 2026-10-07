@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
-import { createSchema, loadProgs, SQL_FILES } from '../src/loader.js';
+import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -32,7 +32,7 @@ const setg = (ofs, v) => db.exec(`EXECUTE PROCEDURE qc_sg(${ofs}, ${v})`);
 const call = (name) => db.exec(`EXECUTE PROCEDURE qc_call(qc_fn('${name}'))`);
 const run = (name, self = 0) => db.exec(`EXECUTE PROCEDURE qc_run('${name}', ${self})`);
 const steps = () => q1('SELECT steps FROM qc_vm').then((r) => Number(r.STEPS));
-const fld = (ent, name) => q1(`SELECT qc_f(${ent}, qc_fdef('${name}')) v FROM rdb$database`).then((r) => r.V);
+const fld = (ent, name) => q1(`SELECT qc_f(${ent ?? -1}, qc_fdef('${name}')) v FROM rdb$database`).then((r) => r.V);
 const str = (ofs) => q1(`SELECT qc_str(${ofs}) s FROM rdb$database`).then((r) => r.S);
 const log = (kind) => qa(`SELECT msg FROM qc_log WHERE kind = '${kind}' ORDER BY id`).then((r) => r.map((x) => x.MSG));
 
@@ -109,6 +109,47 @@ const ls = await qa('SELECT style, pattern FROM lightstyles WHERE style < 12 ORD
 assert(ls.length >= 11 && ls[0].PATTERN.trim() === 'm' && /^mmnmmommommnonmmonqnmmo$/.test(ls[1].PATTERN.trim()), `worldspawn set the light styles (0 = "${ls[0].PATTERN.trim()}", 1 = "${ls[1].PATTERN.trim()}")`);
 assert((await log('error')).length === 0, 'with no builtin missing');
 console.log(`worldspawn: ${ds} statements in ${dt.toFixed(0)} ms (${(dt / ds * 1000).toFixed(0)} µs per statement)`);
+
+
+// ── E1M1 spawned through its QuakeC spawn functions, then five frames of thinks ─
+const res = await loadResources(db, pak);
+await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+const engineEnts = (await q1("SELECT COUNT(*) n FROM ents WHERE classname <> 'player'")).N;
+const mapEnts = (await q1('SELECT COUNT(*) n FROM map_ents')).N;
+await db.exec('EXECUTE PROCEDURE qc_reset');
+t0 = performance.now();
+const sp = await q1('SELECT * FROM qc_spawn_map(1, 1.0)');
+const spawnMs = performance.now() - t0;
+const live = (await q1('SELECT COUNT(*) n FROM qc_edicts WHERE free = 0')).N;
+const errs = await log('error');
+console.log(`qc_spawn_map: ${sp.SPAWNED} spawned, ${sp.SKIPPED} skipped, ${sp.FAILED} failed, ${live} edicts live, in ${(spawnMs / 1000).toFixed(1)} s (${await steps()} statements so far)`);
+assert(sp.FAILED === 0 && errs.length === 0, `every spawn function ran`);
+for (const m of errs.slice(0, 6)) console.log('   ', m);
+assert(sp.SPAWNED + sp.SKIPPED === mapEnts, `${mapEnts} map entities: ${sp.SPAWNED} spawned by QuakeC, ${sp.SKIPPED} dropped by skill or without a function`);
+assert(live > 100 && Math.abs(live - engineEnts) < engineEnts * 0.6, `${live} edicts stay (lights and other decoration remove themselves); the PSQL game keeps ${engineEnts}`);
+const wmsg = await str(await fld(0, 'message'));
+assert(wmsg === 'the Slipgate Complex', `worldspawn's message is "${wmsg}"`);
+const hist = await qa("SELECT qc_str(CAST(f.v AS INTEGER)) c, COUNT(*) n FROM qc_fields f JOIN qc_edicts d ON d.id = f.ent AND d.free = 0 WHERE f.ofs = qc_fdef('classname') GROUP BY 1 ORDER BY 2 DESC");
+console.log('   live:', hist.map((h) => `${h.C.trim()} ${h.N}`).join(', '));
+const fname = async (v) => (await q1(`SELECT name FROM qc_functions WHERE id = ${v ?? -1}`))?.NAME;
+const door = (await qa("SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) = 'door' ORDER BY f.ent"))[0]?.ENT;   // func_door renames itself "door"
+assert(door && (await fld(door, 'movetype')) === 7 && (await str(await fld(door, 'model'))).startsWith('*') && (await fld(door, 'size')) > 0, `a func_door became a "door", MOVETYPE_PUSH, with its brush model "${await str(await fld(door, 'model'))}" and the size from the model (${await fld(door, 'size')} wide)`);
+assert((await fname(await fld(door, 'use'))) === 'door_use' && (await fname(await fld(door, 'blocked'))) === 'door_blocked', 'with .use = door_use and .blocked = door_blocked');
+const army = (await qa("SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) = 'monster_army'"))[0]?.ENT;
+assert(army && (await fname(await fld(army, 'think'))) === 'walkmonster_start_go' && (await fld(army, 'nextthink')) > 0 && (await fld(army, 'health')) === 30, 'a monster_army waits for walkmonster_start_go (nextthink a random fraction, due next frame) with 30 health');
+const item = (await qa("SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) = 'item_shells'"))[0]?.ENT;
+assert(item && (await fname(await fld(item, 'think'))) === 'PlaceItem' && (await fname(await fld(item, 'touch'))) === 'ammo_touch', 'an item_shells waits for PlaceItem, with .touch = ammo_touch');
+const lights = await qa("SELECT d.id, qc_f(d.id, qc_fdef('targetname')) tn FROM qc_edicts d WHERE d.free = 0 AND EXISTS (SELECT 1 FROM qc_fields f WHERE f.ent = d.id AND f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) = 'light')");
+assert(lights.every((l) => l.TN !== 0), `untargeted lights removed themselves; ${lights.length} targeted ones stay`);
+t0 = performance.now();
+let thought = 0;
+for (let i = 1; i <= 5; i++) { const fr = await q1(`SELECT * FROM qc_frame(${(1 + i * 0.1).toFixed(1)}, 0.1)`); thought += fr.THOUGHT; assert(fr.FAILED === 0, `frame ${i}: ${fr.THOUGHT} thinks, none failed`); }
+console.log(`5 frames: ${thought} thinks in ${(performance.now() - t0).toFixed(0)} ms (${await steps()} statements in all)`);
+assert((await fld(item, 'solid')) === 1 && (await fld(item, 'nextthink')) === 0, 'PlaceItem ran: the shells are SOLID_TRIGGER and think no more');
+const armyThink = await fname(await fld(army, 'think'));
+assert(/^army_stand/.test(armyThink) && (await fld(army, 'frame')) >= 0 && (await fld(army, 'takedamage')) === 2 && (await fld(army, 'yaw_speed')) === 20, `walkmonster_start_go ran: the grunt stands (think ${armyThink}, OP_STATE), takes damage, yaw speed 20`);
+assert((await fld(door, 'nextthink')) === 0 && (await fld(door, 'owner')) >= 0, 'LinkDoors ran for the doors');
+assert((await log('error')).length === 0, 'no builtin missing in five frames of thinks');
 
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');

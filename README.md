@@ -171,10 +171,12 @@ and field definitions, strings, the global image) into tables, and `QC_CALL` is 
 with one branch per opcode, the locals saved on a stack table, parameters copied into the callee's
 locals, recursion for calls, entity fields as rows addressed by `OP_ADDRESS`, and forty of the
 builtins (`makevectors`, `setorigin`, `spawn`, `find`, `traceline` against the loaded world, `ftos`,
-`lightstyle`, the prints into `qc_log`...). It runs the shareware `progs.dat`'s `worldspawn` at about
-100 us per statement; in the page, `await quake.loadProgs()` then
-`quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)")`. It is not yet wired to the tic: see the
-roadmap.
+`lightstyle`, the prints into `qc_log`...). It runs the shareware `progs.dat`: `qc_spawn_map` spawns
+E1M1 through its 336 spawn functions in a second, and `qc_frame` runs `StartFrame` and the due
+thinks, so items place themselves, monsters stand and doors link. In the page, `await
+quake.loadProgs()` then `quake.sql('SELECT * FROM qc_spawn_map(1, 1.0)')` and
+`quake.sql('SELECT * FROM qc_frame(1.1, 0.1)')`. The player and the touches are not wired yet: see
+the roadmap.
 
 ### The renderer is a query (`sql/render.sql`)
 
@@ -227,7 +229,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:e1m3` | the Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, fall and rise, throw flesh, and die only when gibbed |
 | `npm run test:e1m4` | the Grisly Grotto: two buttons open the underwater door; swim through, surface for the secret, water-jump onto the ledge, exit to E1M8 |
 | `npm run test:e1m6` | The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the silver doors stay shut, the exit to E1M7 |
-| `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles |
+| `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles, then E1M1 spawned by its QuakeC spawn functions and five frames of thinks |
 
 Tools for the same purpose:
 

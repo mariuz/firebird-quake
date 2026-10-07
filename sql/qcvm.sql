@@ -197,9 +197,10 @@ BEGIN
     EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_model FROM qc_vm v WHERE v.id = 1), qc_g(7));
     mid = (SELECT FIRST 1 m.id FROM models m WHERE m.name = :s);
     EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_modelindex FROM qc_vm v WHERE v.id = 1), COALESCE(mid, IIF(s = '', 0, 1)));
-    IF (mid IS NOT NULL) THEN
+    x = NULL;
+    IF (mid IS NOT NULL) THEN SELECT m.minx, m.miny, m.minz, m.maxx, m.maxy, m.maxz FROM models m WHERE m.id = :mid INTO x, y, z, ex, ey, ez;
+    IF (x IS NOT NULL) THEN                        -- brush models carry their bounds; alias models get theirs from setsize
     BEGIN
-      SELECT m.minx, m.miny, m.minz, m.maxx, m.maxy, m.maxz FROM models m WHERE m.id = :mid INTO x, y, z, ex, ey, ez;
       EXECUTE PROCEDURE qc_sf(e, vm_mi, x); EXECUTE PROCEDURE qc_sf(e, vm_mi + 1, y); EXECUTE PROCEDURE qc_sf(e, vm_mi + 2, z);
       EXECUTE PROCEDURE qc_sf(e, vm_ma, ex); EXECUTE PROCEDURE qc_sf(e, vm_ma + 1, ey); EXECUTE PROCEDURE qc_sf(e, vm_ma + 2, ez);
       EXECUTE PROCEDURE qc_sf(e, vm_sz, ex - x); EXECUTE PROCEDURE qc_sf(e, vm_sz + 1, ey - y); EXECUTE PROCEDURE qc_sf(e, vm_sz + 2, ez - z);
@@ -474,6 +475,133 @@ BEGIN
   IF (f IS NULL) THEN EXCEPTION qc_error 'no function ' || name;
   EXECUTE PROCEDURE qc_sg((SELECT v.g_self FROM qc_vm v WHERE v.id = 1), COALESCE(self_, 0));
   EXECUTE PROCEDURE qc_call(f);
+END^
+
+
+-- ── the map's entities, spawned by their QuakeC functions (ED_LoadFromFile) ─
+
+CREATE OR ALTER PROCEDURE qc_set_str (ent INTEGER, fofs INTEGER, s VARCHAR(2048) CHARACTER SET ASCII)
+AS
+BEGIN
+  IF (s IS NULL OR s = '' OR fofs IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE qc_sf(ent, fofs, qc_newstr(s));
+END^
+
+CREATE OR ALTER PROCEDURE qc_set_num (ent INTEGER, fofs INTEGER, v DOUBLE PRECISION)
+AS
+BEGIN
+  IF (v IS NULL OR fofs IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE qc_sf(ent, fofs, v);
+END^
+
+-- Every map_ents row (less those the skill or deathmatch flags drop) becomes an edict with its keys
+-- in the fields the progs declare, then its classname's function runs with self set. worldspawn is
+-- edict 0. A spawn function that raises loses its edict and leaves a row in qc_log.
+CREATE OR ALTER PROCEDURE qc_spawn_map (skill SMALLINT, t DOUBLE PRECISION)
+RETURNS (spawned INTEGER, failed INTEGER, skipped INTEGER)
+AS
+DECLARE mid INTEGER; DECLARE cls VARCHAR(40); DECLARE sf INTEGER; DECLARE e INTEGER; DECLARE f INTEGER; DECLARE skillbit INTEGER;
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
+DECLARE f_cls INTEGER; DECLARE f_tn INTEGER; DECLARE f_tg INTEGER; DECLARE f_kt INTEGER; DECLARE f_model INTEGER; DECLARE f_org INTEGER; DECLARE f_ang INTEGER;
+DECLARE f_sf INTEGER; DECLARE f_msg INTEGER; DECLARE f_wait INTEGER; DECLARE f_delay INTEGER; DECLARE f_speed INTEGER; DECLARE f_lip INTEGER; DECLARE f_health INTEGER;
+DECLARE f_light INTEGER; DECLARE f_style INTEGER; DECLARE f_sounds INTEGER; DECLARE f_dmg INTEGER; DECLARE f_height INTEGER; DECLARE f_count INTEGER; DECLARE f_map INTEGER; DECLARE f_noise INTEGER; DECLARE f_wt INTEGER;
+DECLARE tn VARCHAR(40); DECLARE tg VARCHAR(40); DECLARE kt VARCHAR(40); DECLARE mdl VARCHAR(40); DECLARE msg VARCHAR(200); DECLARE mp VARCHAR(32); DECLARE nz VARCHAR(64);
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE ang DOUBLE PRECISION; DECLARE mp_ DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mr DOUBLE PRECISION;
+DECLARE wt DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE sp DOUBLE PRECISION; DECLARE lp DOUBLE PRECISION; DECLARE hl INTEGER; DECLARE li INTEGER; DECLARE st INTEGER; DECLARE so INTEGER; DECLARE dm INTEGER; DECLARE hg DOUBLE PRECISION; DECLARE cn INTEGER; DECLARE wtype INTEGER;
+BEGIN
+  spawned = 0; failed = 0; skipped = 0;
+  skillbit = CASE skill WHEN 0 THEN 256 WHEN 1 THEN 512 ELSE 1024 END;
+  SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
+  f_cls = qc_fdef('classname'); f_tn = qc_fdef('targetname'); f_tg = qc_fdef('target'); f_kt = qc_fdef('killtarget'); f_model = qc_fdef('model');
+  f_org = qc_fdef('origin'); f_ang = qc_fdef('angles'); f_sf = qc_fdef('spawnflags'); f_msg = qc_fdef('message'); f_wait = qc_fdef('wait'); f_delay = qc_fdef('delay');
+  f_speed = qc_fdef('speed'); f_lip = qc_fdef('lip'); f_health = qc_fdef('health'); f_light = qc_fdef('light_lev'); f_style = qc_fdef('style'); f_sounds = qc_fdef('sounds');
+  f_dmg = qc_fdef('dmg'); f_height = qc_fdef('height'); f_count = qc_fdef('count'); f_map = qc_fdef('map'); f_noise = qc_fdef('noise'); f_wt = qc_fdef('worldtype');
+  EXECUTE PROCEDURE qc_sg(g_time, t);
+  EXECUTE PROCEDURE qc_sg(g_other, 0);
+  FOR SELECT m.id, m.classname, m.spawnflags, m.targetname, m.target, m.killtarget, m.model, m.ox, m.oy, m.oz, m.angle, m.mpitch, m.myaw, m.mroll,
+             m.message, m.wait_, m.delay, m.speed, m.lip, m.health, m.light, m.style, m.sounds, m.dmg, m.height, m.count_, m.map, m.noise, m.worldtype
+      FROM map_ents m ORDER BY IIF(m.classname = 'worldspawn', 0, 1), m.id
+      INTO mid, cls, sf, tn, tg, kt, mdl, ox, oy, oz, ang, mp_, my, mr, msg, wt, dl, sp, lp, hl, li, st, so, dm, hg, cn, mp, nz, wtype DO
+  BEGIN
+    IF (cls <> 'worldspawn' AND BIN_AND(sf, skillbit) <> 0) THEN BEGIN skipped = skipped + 1; CONTINUE; END
+    f = qc_fn(cls);
+    IF (f IS NULL) THEN
+    BEGIN
+      EXECUTE PROCEDURE qc_print('dprint', 'No spawn function for: ' || cls);
+      skipped = skipped + 1;
+      CONTINUE;
+    END
+    e = IIF(cls = 'worldspawn', 0, qc_spawn());
+    EXECUTE PROCEDURE qc_set_str(e, f_cls, cls);
+    EXECUTE PROCEDURE qc_set_str(e, f_tn, tn); EXECUTE PROCEDURE qc_set_str(e, f_tg, tg); EXECUTE PROCEDURE qc_set_str(e, f_kt, kt);
+    EXECUTE PROCEDURE qc_set_str(e, f_model, mdl); EXECUTE PROCEDURE qc_set_str(e, f_msg, msg); EXECUTE PROCEDURE qc_set_str(e, f_map, mp); EXECUTE PROCEDURE qc_set_str(e, f_noise, nz);
+    EXECUTE PROCEDURE qc_set_num(e, f_org, ox); EXECUTE PROCEDURE qc_set_num(e, f_org + 1, oy); EXECUTE PROCEDURE qc_set_num(e, f_org + 2, oz);
+    IF (ang IS NOT NULL) THEN EXECUTE PROCEDURE qc_set_num(e, f_ang + 1, ang);               -- "angle" is angles '0 angle 0'
+    IF (mp_ IS NOT NULL) THEN BEGIN EXECUTE PROCEDURE qc_set_num(e, f_ang, mp_); EXECUTE PROCEDURE qc_set_num(e, f_ang + 1, my); EXECUTE PROCEDURE qc_set_num(e, f_ang + 2, mr); END
+    EXECUTE PROCEDURE qc_set_num(e, f_sf, sf);
+    EXECUTE PROCEDURE qc_set_num(e, f_wait, wt); EXECUTE PROCEDURE qc_set_num(e, f_delay, dl); EXECUTE PROCEDURE qc_set_num(e, f_speed, sp); EXECUTE PROCEDURE qc_set_num(e, f_lip, lp);
+    EXECUTE PROCEDURE qc_set_num(e, f_health, hl); EXECUTE PROCEDURE qc_set_num(e, f_light, li); EXECUTE PROCEDURE qc_set_num(e, f_style, st); EXECUTE PROCEDURE qc_set_num(e, f_sounds, so);
+    EXECUTE PROCEDURE qc_set_num(e, f_dmg, dm); EXECUTE PROCEDURE qc_set_num(e, f_height, hg); EXECUTE PROCEDURE qc_set_num(e, f_count, cn); EXECUTE PROCEDURE qc_set_num(e, f_wt, wtype);
+    EXECUTE PROCEDURE qc_sg(g_self, e);
+    BEGIN
+      EXECUTE PROCEDURE qc_call(f);
+      spawned = spawned + 1;
+    WHEN ANY DO
+    BEGIN
+      failed = failed + 1;
+      UPDATE qc_vm v SET v.depth = 0 WHERE v.id = 1;
+      DELETE FROM qc_localstack;
+      EXECUTE PROCEDURE qc_print('error', 'spawn of ' || cls || ' (map entity ' || mid || ') failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+      IF (e > 0) THEN EXECUTE PROCEDURE qc_free(e);
+    END
+    END
+  END
+  SUSPEND;
+END^
+
+-- ── a server frame (SV_Physics, the QuakeC half): StartFrame, then every think that is due ──
+CREATE OR ALTER PROCEDURE qc_frame (t DOUBLE PRECISION, dt DOUBLE PRECISION)
+RETURNS (thought INTEGER, failed INTEGER)
+AS
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE g_ft INTEGER; DECLARE f_nt INTEGER; DECLARE f_think INTEGER;
+DECLARE e INTEGER; DECLARE nt DOUBLE PRECISION; DECLARE f INTEGER; DECLARE last INTEGER;
+BEGIN
+  thought = 0; failed = 0;
+  SELECT v.g_self, v.g_other, v.g_time, v.g_frametime, v.f_nextthink, v.f_think FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, g_ft, f_nt, f_think;
+  EXECUTE PROCEDURE qc_sg(g_time, t);
+  EXECUTE PROCEDURE qc_sg(g_ft, dt);
+  EXECUTE PROCEDURE qc_sg(g_self, 0); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('StartFrame');
+  IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  -- the thinks due in this frame, in edict order; a think may spawn or free others, so walk by id
+  last = -1;
+  WHILE (1 = 1) DO
+  BEGIN
+    e = NULL;
+    SELECT FIRST 1 d.id FROM qc_edicts d JOIN qc_fields n ON n.ent = d.id AND n.ofs = :f_nt
+      WHERE d.free = 0 AND d.id > :last AND n.v > 0 AND n.v <= :t + 0.0005 ORDER BY d.id INTO e;
+    IF (e IS NULL) THEN LEAVE;
+    last = e;
+    nt = qc_f(e, f_nt);
+    f = CAST(qc_f(e, f_think) AS INTEGER);
+    EXECUTE PROCEDURE qc_sf(e, f_nt, 0);
+    IF (f = 0) THEN CONTINUE;
+    EXECUTE PROCEDURE qc_sg(g_time, nt);            -- the think runs at its own time, as SV_RunThink does
+    EXECUTE PROCEDURE qc_sg(g_self, e); EXECUTE PROCEDURE qc_sg(g_other, 0);
+    BEGIN
+      EXECUTE PROCEDURE qc_call(f);
+      thought = thought + 1;
+    WHEN ANY DO
+    BEGIN
+      failed = failed + 1;
+      UPDATE qc_vm v SET v.depth = 0 WHERE v.id = 1;
+      DELETE FROM qc_localstack;
+      EXECUTE PROCEDURE qc_print('error', 'think of edict ' || e || ' (' || COALESCE((SELECT q.name FROM qc_functions q WHERE q.id = :f), '?') || ') failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+    END
+    END
+  END
+  EXECUTE PROCEDURE qc_sg(g_time, t);
+  SUSPEND;
 END^
 
 SET TERM ; ^
