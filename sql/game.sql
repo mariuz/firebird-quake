@@ -25,6 +25,9 @@ CREATE OR ALTER PROCEDURE train_next (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE t_radius_damage (inflictor INTEGER, attacker INTEGER, damage INTEGER, ignore INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE player_fire (btn SMALLINT) AS BEGIN END^
+-- the QuakeC VM's callbacks (sql/qcvm.sql): SV_Impact and a pusher's .blocked, in QuakeC mode
+CREATE OR ALTER PROCEDURE qc_impact (e1 INTEGER, e2 INTEGER) AS BEGIN END^
+CREATE OR ALTER PROCEDURE qc_blocked (eid INTEGER, other INTEGER) AS BEGIN END^
 
 -- ── utilities ─────────────────────────────────────────────────────────────
 CREATE OR ALTER PROCEDURE snd (eid INTEGER, chan SMALLINT, name VARCHAR(64), vol DOUBLE PRECISION, attn DOUBLE PRECISION)
@@ -363,6 +366,11 @@ CREATE OR ALTER PROCEDURE mover_blocked (eid INTEGER, other INTEGER)
 AS
 DECLARE cls VARCHAR(40); DECLARE st SMALLINT; DECLARE dmg INTEGER; DECLARE wt DOUBLE PRECISION;
 BEGIN
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_blocked(eid, other);
+    EXIT;
+  END
   SELECT e.classname, e.mv_state, e.dmg, e.wait_ FROM ents e WHERE e.id = :eid INTO cls, st, dmg, wt;
   EXECUTE PROCEDURE t_damage(other, eid, eid, dmg);
   IF (cls = 'func_door' AND wt >= 0) THEN
@@ -1144,6 +1152,11 @@ AS
 DECLARE c1 VARCHAR(40); DECLARE c2 VARCHAR(40); DECLARE own INTEGER; DECLARE dmg INTEGER; DECLARE td2 SMALLINT;
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE hp2 INTEGER;
 BEGIN
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_impact(e1, e2);
+    EXIT;
+  END
   SELECT e.classname, e.owner_id, e.dmg, e.x, e.y, e.z, e.vz FROM ents e WHERE e.id = :e1 INTO c1, own, dmg, x, y, z, vz;
   IF (e2 > 0) THEN SELECT e.classname, e.takedamage, e.health FROM ents e WHERE e.id = :e2 INTO c2, td2, hp2;
   ELSE BEGIN c2 = 'worldspawn'; td2 = 0; END

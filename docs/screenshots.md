@@ -434,3 +434,17 @@ node scripts/screenshot.mjs e3m3 docs/fiend    --at=880,-256,30,0 --tics=8 --sin
 node scripts/screenshot.mjs e3m3 docs/ogre     --at=1632,280,-98,90 --tics=8 --single --fast
 node scripts/screenshot.mjs e3m3 docs/exitgate --at=1700,400,-97,0 --tics=4 --single --fast
 ```
+
+## QuakeC mode
+
+E1M1 spawned by the original `progs.dat` and run by `qc_server_frame` on the engine's physics: the grunts
+and the health boxes on the bridge were placed and dropped to the floor by their own QuakeC, and the
+status bar reads the QuakeC player's fields. The grunts stand because `checkclient` and `movetogoal` are
+not implemented yet (the roadmap's next builtins).
+
+![E1M1 in QuakeC mode](qcvm-e1m1-0.png)
+
+```bash
+node scripts/screenshot.mjs e1m1 docs/qcvm --qc --at=1150,1030,-250,330 --tics=4 --single --fast
+```
+

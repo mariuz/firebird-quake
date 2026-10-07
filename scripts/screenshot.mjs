@@ -5,6 +5,7 @@
 //   node scripts/screenshot.mjs [map] [out-prefix]
 //   node scripts/screenshot.mjs e1m1 docs/shot      → docs/shot-e1m1-0.png …
 //   options: --at=x,y,z,yaw  --sql="stmt; stmt"  --tics=N  (both repeatable, applied in order)  --single  --fast  --compare  --gallery
+//            --qc (QuakeC mode: progs.dat spawns the map and runs the frames)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,7 +13,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak, PakSet, Wad2, loadPalette } from '../src/pak.js';
-import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+import { createSchema, loadResources, loadMap, SQL_FILES, loadProgs } from '../src/loader.js';
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
 import { png } from './png.mjs';
@@ -46,14 +47,42 @@ renderer.setResources(res);
 renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
 const hud = new Hud(new Wad2(pak.get('gfx.wad')));
 
+// --qc: QuakeC mode. The map is spawned by progs.dat's own spawn functions and every tic is a QuakeC server
+// frame (qc_server_frame) on the engine's physics; the status bar reads the QuakeC player's fields.
+const qcMode = process.argv.includes('--qc');
+const qc = { t: 1.0, pitch: 0, yaw: 0 };
+if (qcMode) {
+  await loadProgs(db, pak);
+  await db.exec('EXECUTE PROCEDURE qc_enter');
+  await db.query('SELECT * FROM qc_spawn_map(1, 1.0)');
+  await db.exec('EXECUTE PROCEDURE qc_client_connect(1.0)');
+  qc.yaw = (await db.query('SELECT yaw FROM ents WHERE id = 1')).rows[0].YAW;
+}
+
 // --at x,y,z,yaw: start the shots from a given spot (for looking at things)
 const at = process.argv.find((a) => a.startsWith('--at='));
 if (at) {
   const [x, y, z, yaw] = at.slice(5).split(',').map(Number);
+  qc.yaw = yaw;
   await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, yaw = ${yaw}, vx = 0, vy = 0, vz = 0 WHERE id = (SELECT ent_id FROM player)`);
   await db.exec('EXECUTE PROCEDURE link_ent((SELECT ent_id FROM player))');
 }
-const tic = (args) => db.query('SELECT * FROM quake_tic(?, ?, ?, ?, ?, ?, ?, ?, ?)', args, { rowMode: 'object' }).then((r) => r.rows[0]);
+const psqlTic = (args) => db.query('SELECT * FROM quake_tic(?, ?, ?, ?, ?, ?, ?, ?, ?)', args, { rowMode: 'object' }).then((r) => r.rows[0]);
+// QuakeC mode: the same arguments (tics, forward, side, yaw and pitch change, fire, jump, run, impulse) as 0.05 s
+// server frames, and a row shaped like QUAKE_TIC's for the shot and the status bar
+const qcTic = async ([tics, fwd, side, dyaw, dpitch, fire, jump, run, imp]) => {
+  qc.yaw += dyaw; qc.pitch = Math.max(-70, Math.min(80, qc.pitch + dpitch));
+  for (let i = 0; i < tics; i++) {
+    await db.query(`SELECT * FROM qc_server_frame(${qc.t}, 0.05, ${fwd * (run ? 400 : 200)}, ${side * 350}, 0, ${qc.pitch}, ${qc.yaw}, ${fire}, ${jump}, ${i === 0 ? imp : 0})`);
+    qc.t = Math.round((qc.t + 0.05) * 1000) / 1000;
+  }
+  const f = (n) => `qc_f(1, qc_fdef('${n}'))`;
+  const r = (await db.query(`SELECT e.x px, e.y py, e.z pz, e.z + 22 view_z, e.yaw, p.pitch, ${f('weapon')} weapon, ${f('health')} health, ${f('armorvalue')} armorvalue,
+      ${f('items')} items, ${f('ammo_shells')} shells, ${f('ammo_nails')} nails, ${f('ammo_rockets')} rockets, ${f('ammo_cells')} cells
+    FROM ents e CROSS JOIN player p WHERE e.id = 1 AND p.id = 1`, [], { rowMode: 'object' })).rows[0];
+  return { ...r, TIME_: qc.t, DMG_TIME: -1 };
+};
+const tic = qcMode ? qcTic : psqlTic;
 // --sql="stmt; stmt": run statements (wake a boss, open a door); --tics=N: let the world run N tics.
 // Both may repeat and are applied in the order given, so a scene can be staged in steps.
 for (const a of process.argv) {

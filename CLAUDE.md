@@ -14,6 +14,7 @@ npm run check                  # compile every sql/*.sql against the engine (fir
 npm test                       # SQL smoke test on E1M1
 npm run test:boss | test:registered | test:e1m2 … test:e1m8   # the scene tests, one level each
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
+npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
 npm run bench                  # timings of a tic, the traces, a monster think, the frame queries
 npm run serve                  # http://localhost:8080/ (add --coi for browsers without service workers)
 node scripts/screenshot.mjs <map> <prefix> --at=x,y,z,yaw --sql="…" --tics=N --single --fast   # a posed frame
@@ -31,7 +32,7 @@ git-ignored and must never be committed; a registered `pak1.pak` is local only.
 - Compare think times with a tolerance (`nextthink <= :t + 1e-6`).
 - Selectable procedures (`spawn_monster`) run only through `SELECT * FROM`.
 - Sources are UTF-8; the working copy is CRLF (git `autocrlf`), the repository LF. Do not re-encode files.
-- Commit messages are one descriptive sentence in plain words, then the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. The owner commits with `git -c user.email="mapopa@gmail.com" -c user.name="Popa Adrian Marius"`.
+- Commit messages are one descriptive sentence in plain words, then a `Co-Authored-By` trailer naming the model that did the work (since 2026-10-07 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; earlier commits name Claude Fable 5.1). The owner commits with `git -c user.email="mapopa@gmail.com" -c user.name="Popa Adrian Marius"`.
 - After every change: run the affected tests, commit, push to `main`, and watch CI (`gh run watch <id> --exit-status`); the push deploys the site.
 
 ## When a test is flaky

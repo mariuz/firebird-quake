@@ -94,6 +94,10 @@ jobs:
       - name: The QuakeC VM
         run: npm run test:qcvm
 
+      # QuakeC mode: E1M1 played by the original progs.dat on the engine's physics
+      - name: QuakeC on the engine's physics
+        run: npm run test:qcplay
+
       - name: Headless screenshots
         run: npm run screenshots
 

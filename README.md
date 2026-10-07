@@ -175,9 +175,20 @@ builtins (`makevectors`, `setorigin`, `spawn`, `find`, `traceline` against the l
 E1M1 through its 336 spawn functions in a second, and `qc_frame` runs `StartFrame` and the due
 thinks, so items place themselves, monsters stand and doors link; `qc_client_connect` and
 `qc_player_frame` run the player's own code, so the shotgun fires through `FireBullets` and a box of
-shells is picked up through `ammo_touch`. In the page, `await quake.loadProgs()` then
-`quake.sql('SELECT * FROM qc_spawn_map(1, 1.0)')`, `quake.sql('SELECT * FROM qc_frame(1.1, 0.1)')`.
-The engine's physics do not drive these edicts yet: see the roadmap.
+shells is picked up through `ammo_touch`.
+
+**QuakeC mode** (`qc_enter`) puts the original game on the engine: every edict's engine fields (origin,
+velocity, angles, box, solid, movetype, flags, frame, model…) live in its `ents` row, the VM's field
+access is routed there, and `qc_server_frame` is `Host_ServerFrame`: the client's friction and
+acceleration, `StartFrame`, then each edict's physics by movetype (pushers on their own clock, toss
+and missiles, falling monsters, the player's walk with its step), the touches delivered to QuakeC
+through the same traces and pushers the PSQL game uses. A frame of E1M1 takes about 40 ms.
+
+![E1M1 in QuakeC mode: grunts and health boxes spawned and dropped by progs.dat](docs/qcvm-e1m1-0.png)
+
+`node scripts/screenshot.mjs e1m1 out --qc --at=1150,1030,-250,330 --tics=4 --single --fast` renders a
+QuakeC-mode frame. The page still plays the PSQL game; driving it from QuakeC mode is next on the
+roadmap.
 
 ### The renderer is a query (`sql/render.sql`)
 
@@ -230,6 +241,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:e1m3` | the Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, fall and rise, throw flesh, and die only when gibbed |
 | `npm run test:e1m4` | the Grisly Grotto: two buttons open the underwater door; swim through, surface for the secret, water-jump onto the ledge, exit to E1M8 |
 | `npm run test:e1m6` | The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the silver doors stay shut, the exit to E1M7 |
+| `npm run test:qcplay` | QuakeC mode: E1M1 played by the original `progs.dat` on the engine's physics; the world settles, the player falls, walks with Quake's friction, opens a door through its trigger field, picks up shells by walking over them, fires a rocket that explodes against a wall, and a grunt appears in the renderer's frame query |
 | `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles, then E1M1 spawned by its QuakeC spawn functions, five frames of thinks, and the player connecting, firing, picking up shells and cheating |
 
 Tools for the same purpose:

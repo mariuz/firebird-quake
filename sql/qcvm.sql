@@ -31,16 +31,74 @@ BEGIN
   UPDATE OR INSERT INTO qc_globals (ofs, v) VALUES (:ofs, :v) MATCHING (ofs);
 END^
 
+CREATE OR ALTER FUNCTION qc_str (ofs INTEGER) RETURNS VARCHAR(2048) CHARACTER SET ASCII AS BEGIN RETURN ''; END^   -- defined below
+
+-- A field of an edict. In QuakeC mode (qc_engine_fields filled by qc_enter) the engine's own fields
+-- of every edict but the world live in its ents row; everything else is a qc_fields row.
 CREATE OR ALTER FUNCTION qc_f (ent INTEGER, ofs INTEGER) RETURNS DOUBLE PRECISION
 AS
+DECLARE c SMALLINT; DECLARE v DOUBLE PRECISION;
 BEGIN
+  IF (ent > 0) THEN
+  BEGIN
+    SELECT m.col FROM qc_engine_fields m WHERE m.ofs = :ofs INTO c;
+    IF (c IS NOT NULL AND c <> 40) THEN
+    BEGIN
+      SELECT CASE :c
+          WHEN 1 THEN e.x WHEN 2 THEN e.y WHEN 3 THEN e.z WHEN 4 THEN e.vx WHEN 5 THEN e.vy WHEN 6 THEN e.vz
+          WHEN 7 THEN e.pitch WHEN 8 THEN e.yaw WHEN 9 THEN e.roll WHEN 10 THEN e.avel_yaw
+          WHEN 11 THEN e.minx WHEN 12 THEN e.miny WHEN 13 THEN e.minz WHEN 14 THEN e.maxx WHEN 15 THEN e.maxy WHEN 16 THEN e.maxz
+          WHEN 17 THEN e.solid WHEN 18 THEN e.movetype WHEN 19 THEN e.flags WHEN 20 THEN e.frame WHEN 21 THEN e.skin WHEN 22 THEN e.effects
+          WHEN 23 THEN COALESCE(e.model_id, 0) WHEN 24 THEN e.ltime WHEN 25 THEN e.waterlevel WHEN 26 THEN e.watertype WHEN 27 THEN COALESCE(e.owner_id, 0)
+          -- SV_LinkEdict's absolute box: items grow by 15 sideways, everything else by 1
+          WHEN 31 THEN e.x + e.minx - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 32 THEN e.y + e.miny - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 33 THEN e.z + e.minz - 1
+          WHEN 34 THEN e.x + e.maxx + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 35 THEN e.y + e.maxy + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 36 THEN e.z + e.maxz + 1
+          WHEN 37 THEN e.maxx - e.minx WHEN 38 THEN e.maxy - e.miny WHEN 39 THEN e.maxz - e.minz
+        END FROM ents e WHERE e.id = :ent INTO v;
+      RETURN COALESCE(v, 0);
+    END
+  END
   RETURN COALESCE((SELECT f.v FROM qc_fields f WHERE f.ent = :ent AND f.ofs = :ofs), 0);
 END^
 
 CREATE OR ALTER PROCEDURE qc_sf (ent INTEGER, ofs INTEGER, v DOUBLE PRECISION)
 AS
+DECLARE c SMALLINT;
 BEGIN
+  IF (ent > 0) THEN
+  BEGIN
+    SELECT m.col FROM qc_engine_fields m WHERE m.ofs = :ofs INTO c;
+    IF (c = 40) THEN                                -- .model: the server sends only entities with a model string
+      UPDATE ents e SET e.model_id = IIF(qc_str(CAST(:v AS INTEGER)) = '', NULL,
+                                         COALESCE((SELECT FIRST 1 m.id FROM models m WHERE m.name = qc_str(CAST(:v AS INTEGER))), e.model_id))
+        WHERE e.id = :ent;
+    ELSE IF (c IS NOT NULL) THEN
+    BEGIN
+      IF (c < 30) THEN                              -- 31..39 are computed from the box
+        UPDATE ents e SET
+          e.x = IIF(:c = 1, :v, e.x), e.y = IIF(:c = 2, :v, e.y), e.z = IIF(:c = 3, :v, e.z),
+          e.vx = IIF(:c = 4, :v, e.vx), e.vy = IIF(:c = 5, :v, e.vy), e.vz = IIF(:c = 6, :v, e.vz),
+          e.pitch = IIF(:c = 7, :v, e.pitch), e.yaw = IIF(:c = 8, :v, e.yaw), e.roll = IIF(:c = 9, :v, e.roll), e.avel_yaw = IIF(:c = 10, :v, e.avel_yaw),
+          e.minx = IIF(:c = 11, :v, e.minx), e.miny = IIF(:c = 12, :v, e.miny), e.minz = IIF(:c = 13, :v, e.minz),
+          e.maxx = IIF(:c = 14, :v, e.maxx), e.maxy = IIF(:c = 15, :v, e.maxy), e.maxz = IIF(:c = 16, :v, e.maxz),
+          e.solid = IIF(:c = 17, CAST(:v AS SMALLINT), e.solid), e.movetype = IIF(:c = 18, CAST(:v AS SMALLINT), e.movetype),
+          e.flags = IIF(:c = 19, CAST(:v AS INTEGER), e.flags), e.frame = IIF(:c = 20, CAST(:v AS INTEGER), e.frame),
+          e.skin = IIF(:c = 21, CAST(:v AS INTEGER), e.skin), e.effects = IIF(:c = 22, CAST(:v AS INTEGER), e.effects),
+          e.model_id = IIF(:c = 23, NULLIF(CAST(:v AS INTEGER), 0), e.model_id), e.ltime = IIF(:c = 24, :v, e.ltime),
+          e.waterlevel = IIF(:c = 25, CAST(:v AS SMALLINT), e.waterlevel), e.watertype = IIF(:c = 26, CAST(:v AS INTEGER), e.watertype),
+          e.owner_id = IIF(:c = 27, CAST(:v AS INTEGER), e.owner_id)
+        WHERE e.id = :ent;
+      EXIT;
+    END
+  END
   UPDATE OR INSERT INTO qc_fields (ent, ofs, v) VALUES (:ent, :ofs, :v) MATCHING (ent, ofs);
+END^
+
+-- is the VM in QuakeC mode (it owns ents)?
+CREATE OR ALTER FUNCTION qc_on () RETURNS SMALLINT
+AS
+BEGIN
+  RETURN IIF(EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1), 1, 0);
 END^
 
 -- a string by offset: its own row, or the tail of the string that contains it (QC shares suffixes)
@@ -123,6 +181,11 @@ BEGIN
     UPDATE qc_edicts d SET d.free = 0 WHERE d.id = :e;
     DELETE FROM qc_fields f WHERE f.ent = :e;
   END
+  IF (qc_on() = 1) THEN
+  BEGIN
+    DELETE FROM ents x WHERE x.id = :e;
+    INSERT INTO ents (id, classname) VALUES (:e, 'qc');
+  END
   RETURN e;
 END^
 
@@ -132,6 +195,7 @@ BEGIN
   IF (ent <= 0) THEN EXIT;
   UPDATE qc_edicts d SET d.free = 1 WHERE d.id = :ent;
   DELETE FROM qc_fields f WHERE f.ent = :ent;
+  IF (qc_on() = 1) THEN DELETE FROM ents x WHERE x.id = :ent;
 END^
 
 -- the global image restored, the world and the player's edicts, the VM's cached offsets
@@ -147,6 +211,11 @@ BEGIN
   DELETE FROM qc_log;
   INSERT INTO qc_edicts (id, free) VALUES (0, 0);     -- world
   INSERT INTO qc_edicts (id, free) VALUES (1, 0);     -- the player (maxclients = 1)
+  IF (qc_on() = 1) THEN
+  BEGIN
+    DELETE FROM ents;
+    INSERT INTO ents (id, classname) VALUES (1, 'player');
+  END
   DELETE FROM qc_vm;
   INSERT INTO qc_vm (id, g_self, g_other, g_world, g_time, g_frametime, g_vfwd, g_vup, g_vright,
     g_trace_allsolid, g_trace_startsolid, g_trace_fraction, g_trace_endpos, g_trace_plane_normal, g_trace_plane_dist, g_trace_ent, g_trace_inopen, g_trace_inwater,
@@ -154,6 +223,52 @@ BEGIN
   VALUES (1, qc_gdef('self'), qc_gdef('other'), qc_gdef('world'), qc_gdef('time'), qc_gdef('frametime'), qc_gdef('v_forward'), qc_gdef('v_up'), qc_gdef('v_right'),
     qc_gdef('trace_allsolid'), qc_gdef('trace_startsolid'), qc_gdef('trace_fraction'), qc_gdef('trace_endpos'), qc_gdef('trace_plane_normal'), qc_gdef('trace_plane_dist'), qc_gdef('trace_ent'), qc_gdef('trace_inopen'), qc_gdef('trace_inwater'),
     qc_fdef('origin'), qc_fdef('mins'), qc_fdef('maxs'), qc_fdef('size'), qc_fdef('absmin'), qc_fdef('absmax'), qc_fdef('model'), qc_fdef('modelindex'), qc_fdef('classname'), qc_fdef('chain'), qc_fdef('angles'), qc_fdef('ideal_yaw'), qc_fdef('yaw_speed'), qc_fdef('nextthink'), qc_fdef('think'), qc_fdef('frame'));
+  UPDATE qc_vm v SET v.f_touch = qc_fdef('touch'), v.f_blocked = qc_fdef('blocked'), v.f_v_angle = qc_fdef('v_angle'), v.f_avelocity = qc_fdef('avelocity'),
+    v.f_gravity = qc_fdef('gravity'), v.f_teleport_time = qc_fdef('teleport_time'), v.f_punchangle = qc_fdef('punchangle'),
+    v.f_groundentity = qc_fdef('groundentity'), v.f_view_ofs = qc_fdef('view_ofs'), v.f_health = qc_fdef('health')
+  WHERE v.id = 1;
+END^
+
+CREATE OR ALTER PROCEDURE qc_route (ofs INTEGER, col SMALLINT)
+AS
+BEGIN
+  IF (ofs IS NOT NULL) THEN UPDATE OR INSERT INTO qc_engine_fields (ofs, col) VALUES (:ofs, :col) MATCHING (ofs);
+END^
+
+-- QuakeC mode: the VM owns ents. The engine's fields are routed to ents columns, the PSQL game's
+-- entities are wiped (the map's geometry stays), and the camera follows edict 1.
+CREATE OR ALTER PROCEDURE qc_enter
+AS
+DECLARE o INTEGER;
+BEGIN
+  IF (NOT EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.world_model IS NOT NULL)) THEN EXCEPTION qc_error 'QuakeC mode needs a loaded map';
+  UPDATE game g SET g.qc_mode = 1 WHERE g.id = 1;
+  DELETE FROM qc_engine_fields;
+  o = qc_fdef('origin');    EXECUTE PROCEDURE qc_route(o, 1); EXECUTE PROCEDURE qc_route(o + 1, 2); EXECUTE PROCEDURE qc_route(o + 2, 3);
+  o = qc_fdef('velocity');  EXECUTE PROCEDURE qc_route(o, 4); EXECUTE PROCEDURE qc_route(o + 1, 5); EXECUTE PROCEDURE qc_route(o + 2, 6);
+  o = qc_fdef('angles');    EXECUTE PROCEDURE qc_route(o, 7); EXECUTE PROCEDURE qc_route(o + 1, 8); EXECUTE PROCEDURE qc_route(o + 2, 9);
+  o = qc_fdef('avelocity'); EXECUTE PROCEDURE qc_route(o + 1, 10);
+  o = qc_fdef('mins');      EXECUTE PROCEDURE qc_route(o, 11); EXECUTE PROCEDURE qc_route(o + 1, 12); EXECUTE PROCEDURE qc_route(o + 2, 13);
+  o = qc_fdef('maxs');      EXECUTE PROCEDURE qc_route(o, 14); EXECUTE PROCEDURE qc_route(o + 1, 15); EXECUTE PROCEDURE qc_route(o + 2, 16);
+  EXECUTE PROCEDURE qc_route(qc_fdef('solid'), 17); EXECUTE PROCEDURE qc_route(qc_fdef('movetype'), 18); EXECUTE PROCEDURE qc_route(qc_fdef('flags'), 19);
+  EXECUTE PROCEDURE qc_route(qc_fdef('frame'), 20); EXECUTE PROCEDURE qc_route(qc_fdef('skin'), 21); EXECUTE PROCEDURE qc_route(qc_fdef('effects'), 22);
+  EXECUTE PROCEDURE qc_route(qc_fdef('modelindex'), 23); EXECUTE PROCEDURE qc_route(qc_fdef('ltime'), 24);
+  EXECUTE PROCEDURE qc_route(qc_fdef('waterlevel'), 25); EXECUTE PROCEDURE qc_route(qc_fdef('watertype'), 26); EXECUTE PROCEDURE qc_route(qc_fdef('owner'), 27);
+  o = qc_fdef('absmin');    EXECUTE PROCEDURE qc_route(o, 31); EXECUTE PROCEDURE qc_route(o + 1, 32); EXECUTE PROCEDURE qc_route(o + 2, 33);
+  o = qc_fdef('absmax');    EXECUTE PROCEDURE qc_route(o, 34); EXECUTE PROCEDURE qc_route(o + 1, 35); EXECUTE PROCEDURE qc_route(o + 2, 36);
+  o = qc_fdef('size');      EXECUTE PROCEDURE qc_route(o, 37); EXECUTE PROCEDURE qc_route(o + 1, 38); EXECUTE PROCEDURE qc_route(o + 2, 39);
+  EXECUTE PROCEDURE qc_route(qc_fdef('model'), 40);
+  EXECUTE PROCEDURE qc_reset;
+  DELETE FROM vis_faces;
+  UPDATE viewcfg c SET c.vis_leaf = NULL;
+  UPDATE player p SET p.ent_id = 1, p.view_ofs = 22, p.stepz = 0, p.punchangle = 0 WHERE p.id = 1;
+END^
+
+CREATE OR ALTER PROCEDURE qc_leave
+AS
+BEGIN
+  UPDATE game g SET g.qc_mode = 0 WHERE g.id = 1;
+  DELETE FROM qc_engine_fields;
 END^
 
 -- ── builtins (pr_cmds.c) ────────────────────────────────────────────────
@@ -190,6 +305,7 @@ BEGIN
     EXECUTE PROCEDURE qc_sf(e, vm_fo, qc_g(7)); EXECUTE PROCEDURE qc_sf(e, vm_fo + 1, qc_g(8)); EXECUTE PROCEDURE qc_sf(e, vm_fo + 2, qc_g(9));
     EXECUTE PROCEDURE qc_sf(e, vm_amin, qc_g(7) + qc_f(e, vm_mi)); EXECUTE PROCEDURE qc_sf(e, vm_amin + 1, qc_g(8) + qc_f(e, vm_mi + 1)); EXECUTE PROCEDURE qc_sf(e, vm_amin + 2, qc_g(9) + qc_f(e, vm_mi + 2));
     EXECUTE PROCEDURE qc_sf(e, vm_amax, qc_g(7) + qc_f(e, vm_ma)); EXECUTE PROCEDURE qc_sf(e, vm_amax + 1, qc_g(8) + qc_f(e, vm_ma + 1)); EXECUTE PROCEDURE qc_sf(e, vm_amax + 2, qc_g(9) + qc_f(e, vm_ma + 2));
+    IF (e > 0 AND qc_on() = 1) THEN EXECUTE PROCEDURE link_ent(e);
   END
   ELSE IF (n = 3) THEN                              -- setmodel(e, model): the model's bounds when it is loaded
   BEGIN
@@ -205,6 +321,7 @@ BEGIN
       EXECUTE PROCEDURE qc_sf(e, vm_ma, ex); EXECUTE PROCEDURE qc_sf(e, vm_ma + 1, ey); EXECUTE PROCEDURE qc_sf(e, vm_ma + 2, ez);
       EXECUTE PROCEDURE qc_sf(e, vm_sz, ex - x); EXECUTE PROCEDURE qc_sf(e, vm_sz + 1, ey - y); EXECUTE PROCEDURE qc_sf(e, vm_sz + 2, ez - z);
     END
+    IF (e > 0 AND qc_on() = 1) THEN EXECUTE PROCEDURE link_ent(e);
   END
   ELSE IF (n = 4) THEN                              -- setsize(e, mins, maxs)
   BEGIN
@@ -214,11 +331,15 @@ BEGIN
     EXECUTE PROCEDURE qc_sf(e, vm_sz, qc_g(10) - qc_g(7)); EXECUTE PROCEDURE qc_sf(e, vm_sz + 1, qc_g(11) - qc_g(8)); EXECUTE PROCEDURE qc_sf(e, vm_sz + 2, qc_g(12) - qc_g(9));
     EXECUTE PROCEDURE qc_sf(e, vm_amin, qc_f(e, vm_fo) + qc_g(7)); EXECUTE PROCEDURE qc_sf(e, vm_amin + 1, qc_f(e, vm_fo + 1) + qc_g(8)); EXECUTE PROCEDURE qc_sf(e, vm_amin + 2, qc_f(e, vm_fo + 2) + qc_g(9));
     EXECUTE PROCEDURE qc_sf(e, vm_amax, qc_f(e, vm_fo) + qc_g(10)); EXECUTE PROCEDURE qc_sf(e, vm_amax + 1, qc_f(e, vm_fo + 1) + qc_g(11)); EXECUTE PROCEDURE qc_sf(e, vm_amax + 2, qc_f(e, vm_fo + 2) + qc_g(12));
+    IF (e > 0 AND qc_on() = 1) THEN EXECUTE PROCEDURE link_ent(e);
   END
   ELSE IF (n = 6) THEN BEGIN END                    -- break
   ELSE IF (n = 7) THEN EXECUTE PROCEDURE qc_sg(1, RAND());                                            -- random()
-  ELSE IF (n = 8) THEN                              -- sound(e, channel, sample, volume, attenuation)
+  ELSE IF (n = 8) THEN                              -- sound(e, channel, sample, volume, attenuation): logged, and played in QuakeC mode
+  BEGIN
     EXECUTE PROCEDURE qc_print('sound', TRIM(qc_ftos(qc_g(4))) || ' ' || TRIM(qc_ftos(qc_g(7))) || ' ' || qc_str(CAST(qc_g(10) AS INTEGER)) || ' ' || TRIM(qc_ftos(qc_g(13))) || ' ' || TRIM(qc_ftos(qc_g(16))));
+    IF (qc_on() = 1) THEN EXECUTE PROCEDURE snd(CAST(qc_g(4) AS INTEGER), CAST(qc_g(7) AS SMALLINT), SUBSTRING(qc_str(CAST(qc_g(10) AS INTEGER)) FROM 1 FOR 64), qc_g(13), qc_g(16));
+  END
   ELSE IF (n = 9) THEN                              -- normalize(v)
   BEGIN
     a = SQRT(qc_g(4) * qc_g(4) + qc_g(5) * qc_g(5) + qc_g(6) * qc_g(6));
@@ -239,11 +360,15 @@ BEGIN
   END
   ELSE IF (n = 14) THEN EXECUTE PROCEDURE qc_sg(1, qc_spawn());                                        -- spawn()
   ELSE IF (n = 15) THEN EXECUTE PROCEDURE qc_free(CAST(qc_g(4) AS INTEGER));                           -- remove(e)
-  ELSE IF (n = 16) THEN                             -- traceline(v1, v2, nomonsters, forent): against the loaded world, if any
+  ELSE IF (n = 16) THEN                             -- traceline(v1, v2, nomonsters, forent): the world, and in QuakeC mode the entities too
   BEGIN
     frac = 1; ex = qc_g(7); ey = qc_g(8); ez = qc_g(9); nx = 0; ny = 0; nz = 0; hit = 0; alls = 0; starts = 0; inw = 0;
     wm = (SELECT g.world_model FROM game g WHERE g.id = 1);
-    IF (wm IS NOT NULL) THEN
+    IF (qc_on() = 1) THEN
+      SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inwater, t.hit_ent
+        FROM trace_move(CAST(qc_g(13) AS INTEGER), 0, 0, 0, 0, 0, 0, qc_g(4), qc_g(5), qc_g(6), qc_g(7), qc_g(8), qc_g(9), CAST(qc_g(10) AS SMALLINT)) t
+        INTO frac, ex, ey, ez, nx, ny, nz, alls, starts, inw, hit;
+    ELSE IF (wm IS NOT NULL) THEN
     BEGIN
       SELECT m.hull0 FROM models m WHERE m.id = :wm INTO head;
       SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inwater
@@ -293,7 +418,25 @@ BEGIN
     EXECUTE PROCEDURE qc_sf(e, vm_fo, qc_f(e, vm_fo) + COS(a) * b); EXECUTE PROCEDURE qc_sf(e, vm_fo + 1, qc_f(e, vm_fo + 1) + SIN(a) * b);
     EXECUTE PROCEDURE qc_sg(1, 1);
   END
-  ELSE IF (n = 34) THEN EXECUTE PROCEDURE qc_sg(1, 1);                                                  -- droptofloor(): stays put
+  ELSE IF (n = 34) THEN                             -- droptofloor(): down to 256 units onto what is below
+  BEGIN
+    IF (qc_on() = 0) THEN EXECUTE PROCEDURE qc_sg(1, 1);
+    ELSE
+    BEGIN
+      e = CAST(qc_g((SELECT v.g_self FROM qc_vm v WHERE v.id = 1)) AS INTEGER);
+      SELECT d.x, d.y, d.z, d.minx, d.miny, d.minz, d.maxx, d.maxy, d.maxz FROM ents d WHERE d.id = :e INTO x, y, z, a, b, c, nx, ny, nz;
+      SELECT t.fraction, t.ex, t.ey, t.ez, t.allsolid, t.hit_ent FROM trace_move(:e, :a, :b, :c, :nx, :ny, :nz, :x, :y, :z, :x, :y, :z - 256, 0) t
+        INTO frac, ex, ey, ez, alls, hit;
+      IF (frac = 1 OR alls = 1) THEN EXECUTE PROCEDURE qc_sg(1, 0);
+      ELSE
+      BEGIN
+        UPDATE ents d SET d.x = :ex, d.y = :ey, d.z = :ez, d.flags = BIN_OR(d.flags, 512) WHERE d.id = :e;
+        EXECUTE PROCEDURE link_ent(e);
+        EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_groundentity FROM qc_vm v WHERE v.id = 1), hit);
+        EXECUTE PROCEDURE qc_sg(1, 1);
+      END
+    END
+  END
   ELSE IF (n = 35) THEN                             -- lightstyle(style, value)
     UPDATE OR INSERT INTO lightstyles (style, pattern) VALUES (CAST(qc_g(4) AS INTEGER), qc_str(CAST(qc_g(7) AS INTEGER))) MATCHING (style);
   ELSE IF (n = 36) THEN EXECUTE PROCEDURE qc_sg(1, IIF(qc_g(4) > 0, FLOOR(qc_g(4) + 0.5e0), CEIL(qc_g(4) - 0.5e0)));   -- rint
@@ -308,7 +451,7 @@ BEGIN
   ELSE IF (n = 45) THEN                             -- cvar(name)
   BEGIN
     s = qc_str(CAST(qc_g(4) AS INTEGER));
-    EXECUTE PROCEDURE qc_sg(1, CASE s WHEN 'skill' THEN COALESCE((SELECT g.skill FROM game g WHERE g.id = 1), 1) WHEN 'sv_gravity' THEN 800 WHEN 'sv_maxspeed' THEN 320 WHEN 'sv_friction' THEN 4 WHEN 'sv_accelerate' THEN 10 WHEN 'sv_stopspeed' THEN 100 WHEN 'sv_nostep' THEN 0 WHEN 'registered' THEN COALESCE((SELECT g.registered FROM game g WHERE g.id = 1), 0) ELSE 0 END);
+    EXECUTE PROCEDURE qc_sg(1, CASE s WHEN 'skill' THEN COALESCE((SELECT g.skill FROM game g WHERE g.id = 1), 1) WHEN 'sv_gravity' THEN COALESCE((SELECT g.gravity FROM game g WHERE g.id = 1), 800) WHEN 'sv_maxspeed' THEN 320 WHEN 'sv_friction' THEN 4 WHEN 'sv_accelerate' THEN 10 WHEN 'sv_stopspeed' THEN 100 WHEN 'sv_nostep' THEN 0 WHEN 'registered' THEN COALESCE((SELECT g.registered FROM game g WHERE g.id = 1), 0) ELSE 0 END);
   END
   ELSE IF (n = 47) THEN                             -- nextent(e)
     EXECUTE PROCEDURE qc_sg(1, COALESCE((SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > CAST(qc_g(4) AS INTEGER) ORDER BY d.id), 0));
@@ -342,7 +485,12 @@ BEGIN
   ELSE IF (n = 67) THEN BEGIN END                    -- movetogoal
   ELSE IF (n = 69) THEN EXECUTE PROCEDURE qc_free(CAST(qc_g(4) AS INTEGER));                           -- makestatic
   ELSE IF (n = 70) THEN EXECUTE PROCEDURE qc_print('changelevel', qc_str(CAST(qc_g(4) AS INTEGER)));
-  ELSE IF (n = 72) THEN EXECUTE PROCEDURE qc_print('cvar_set', qc_str(CAST(qc_g(4) AS INTEGER)) || ' ' || qc_str(CAST(qc_g(7) AS INTEGER)));
+  ELSE IF (n = 72) THEN                             -- cvar_set(name, value): sv_gravity is the one the progs set
+  BEGIN
+    s = qc_str(CAST(qc_g(4) AS INTEGER)); s2 = qc_str(CAST(qc_g(7) AS INTEGER));
+    EXECUTE PROCEDURE qc_print('cvar_set', s || ' ' || s2);
+    IF (s = 'sv_gravity') THEN UPDATE game g SET g.gravity = CAST(:s2 AS DOUBLE PRECISION) WHERE g.id = 1;
+  END
   ELSE IF (n = 73) THEN EXECUTE PROCEDURE qc_print('centerprint', qc_str(CAST(qc_g(7) AS INTEGER)));
   ELSE IF (n = 74) THEN EXECUTE PROCEDURE qc_print('ambientsound', qc_str(CAST(qc_g(7) AS INTEGER)));
   ELSE IF (n = 78) THEN BEGIN END                    -- setspawnparms
@@ -629,6 +777,11 @@ BEGIN
   EXECUTE PROCEDURE qc_sg(g_other, 0);
   UPDATE qc_edicts d SET d.free = 0 WHERE d.id = 1;
   DELETE FROM qc_fields x WHERE x.ent = 1;
+  IF (qc_on() = 1) THEN
+  BEGIN
+    DELETE FROM ents x WHERE x.id = 1;
+    INSERT INTO ents (id, classname) VALUES (1, 'player');
+  END
   EXECUTE PROCEDURE qc_set_str(1, qc_fdef('netname'), 'player');
   EXECUTE PROCEDURE qc_sg(g_self, 1);
   f = qc_fn('SetNewParms'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
@@ -654,6 +807,442 @@ BEGIN
   f = qc_fn('PlayerPreThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
   EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('PlayerPostThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+END^
+
+
+-- ── the server's physics on QuakeC edicts (sv_phys.c, sv_user.c), in QuakeC mode ──
+
+-- SV_Impact: both sides' touch, when they are solid. Called by the physics through impact().
+CREATE OR ALTER PROCEDURE qc_impact (e1 INTEGER, e2 INTEGER)
+AS
+DECLARE f INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE f_touch INTEGER; DECLARE svt DOUBLE PRECISION;
+BEGIN
+  SELECT v.g_self, v.g_other, v.g_time, v.f_touch, v.sv_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, f_touch, svt;
+  EXECUTE PROCEDURE qc_sg(g_time, svt);
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.solid <> 0)) THEN
+  BEGIN
+    f = CAST(qc_f(e1, f_touch) AS INTEGER);
+    IF (f <> 0) THEN BEGIN EXECUTE PROCEDURE qc_sg(g_self, e1); EXECUTE PROCEDURE qc_sg(g_other, e2); EXECUTE PROCEDURE qc_call(f); END
+  END
+  IF (e2 > 0 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :e2 AND e.solid <> 0)) THEN
+  BEGIN
+    f = CAST(qc_f(e2, f_touch) AS INTEGER);
+    IF (f <> 0) THEN BEGIN EXECUTE PROCEDURE qc_sg(g_self, e2); EXECUTE PROCEDURE qc_sg(g_other, e1); EXECUTE PROCEDURE qc_call(f); END
+  END
+END^
+
+-- a pusher's .blocked, called by push_move() through mover_blocked()
+CREATE OR ALTER PROCEDURE qc_blocked (eid INTEGER, other INTEGER)
+AS
+DECLARE f INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE svt DOUBLE PRECISION;
+BEGIN
+  SELECT v.g_self, v.g_other, v.g_time, v.sv_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, svt;
+  f = CAST(qc_f(eid, (SELECT v.f_blocked FROM qc_vm v WHERE v.id = 1)) AS INTEGER);
+  IF (f = 0) THEN EXIT;
+  EXECUTE PROCEDURE qc_sg(g_time, svt); EXECUTE PROCEDURE qc_sg(g_self, eid); EXECUTE PROCEDURE qc_sg(g_other, other);
+  EXECUTE PROCEDURE qc_call(f);
+END^
+
+-- SV_TouchLinks: every trigger whose absolute box meets the entity's gets touched by it
+CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER)
+AS
+DECLARE x0 DOUBLE PRECISION; DECLARE y0 DOUBLE PRECISION; DECLARE z0 DOUBLE PRECISION;
+DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION;
+DECLARE sol SMALLINT; DECLARE tr INTEGER; DECLARE f INTEGER;
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE f_touch INTEGER; DECLARE svt DOUBLE PRECISION;
+BEGIN
+  SELECT d.solid, d.x + d.minx - IIF(BIN_AND(d.flags, 256) <> 0, 15, 1), d.y + d.miny - IIF(BIN_AND(d.flags, 256) <> 0, 15, 1), d.z + d.minz - 1,
+         d.x + d.maxx + IIF(BIN_AND(d.flags, 256) <> 0, 15, 1), d.y + d.maxy + IIF(BIN_AND(d.flags, 256) <> 0, 15, 1), d.z + d.maxz + 1
+    FROM ents d WHERE d.id = :e INTO sol, x0, y0, z0, x1, y1, z1;
+  IF (sol IS NULL OR sol = 0) THEN EXIT;
+  SELECT v.g_self, v.g_other, v.g_time, v.f_touch, v.sv_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, f_touch, svt;
+  FOR SELECT t.id FROM ents t
+       WHERE t.solid = 1 AND t.id <> :e
+         AND t.x + t.maxx + IIF(BIN_AND(t.flags, 256) <> 0, 15, 1) >= :x0 AND t.x + t.minx - IIF(BIN_AND(t.flags, 256) <> 0, 15, 1) <= :x1
+         AND t.y + t.maxy + IIF(BIN_AND(t.flags, 256) <> 0, 15, 1) >= :y0 AND t.y + t.miny - IIF(BIN_AND(t.flags, 256) <> 0, 15, 1) <= :y1
+         AND t.z + t.maxz + 1 >= :z0 AND t.z + t.minz - 1 <= :z1
+       ORDER BY t.id
+       INTO tr DO
+  BEGIN
+    IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;              -- removed by an earlier touch
+    IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :tr AND d.solid = 1)) THEN CONTINUE;
+    f = CAST(qc_f(tr, f_touch) AS INTEGER);
+    IF (f = 0) THEN CONTINUE;
+    EXECUTE PROCEDURE qc_sg(g_time, svt); EXECUTE PROCEDURE qc_sg(g_self, tr); EXECUTE PROCEDURE qc_sg(g_other, e);
+    EXECUTE PROCEDURE qc_call(f);
+  END
+END^
+
+-- SV_RunThink: the think, if it is due in this frame, at its own time; alive = 0 if it removed itself
+CREATE OR ALTER PROCEDURE qc_run_think (e INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
+RETURNS (alive SMALLINT)
+AS
+DECLARE nt DOUBLE PRECISION; DECLARE f INTEGER;
+DECLARE f_nt INTEGER; DECLARE f_think INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
+BEGIN
+  alive = 1;
+  SELECT v.f_nextthink, v.f_think, v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO f_nt, f_think, g_self, g_other, g_time;
+  nt = qc_f(e, f_nt);
+  IF (nt <= 0 OR nt > t + dt + 1e-6) THEN EXIT;
+  IF (nt < t) THEN nt = t;
+  EXECUTE PROCEDURE qc_sf(e, f_nt, 0);
+  f = CAST(qc_f(e, f_think) AS INTEGER);
+  EXECUTE PROCEDURE qc_sg(g_time, nt); EXECUTE PROCEDURE qc_sg(g_self, e); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  IF (f <> 0) THEN EXECUTE PROCEDURE qc_call(f);
+  alive = IIF(EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :e AND d.free = 0), 1, 0);
+END^
+
+-- SV_CheckVelocity
+CREATE OR ALTER PROCEDURE qc_clamp_velocity (e INTEGER)
+AS
+BEGIN
+  UPDATE ents d SET d.vx = MAXVALUE(-2000, MINVALUE(2000, d.vx)), d.vy = MAXVALUE(-2000, MINVALUE(2000, d.vy)), d.vz = MAXVALUE(-2000, MINVALUE(2000, d.vz))
+    WHERE d.id = :e AND (ABS(d.vx) > 2000 OR ABS(d.vy) > 2000 OR ABS(d.vz) > 2000);
+END^
+
+-- SV_AddGravity, with the entity's own gravity scale (0 = 1)
+CREATE OR ALTER PROCEDURE qc_add_gravity (e INTEGER, dt DOUBLE PRECISION)
+AS
+DECLARE gs DOUBLE PRECISION;
+BEGIN
+  gs = qc_f(e, (SELECT v.f_gravity FROM qc_vm v WHERE v.id = 1));
+  IF (gs = 0) THEN gs = 1;
+  UPDATE ents d SET d.vz = d.vz - :gs * (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE d.id = :e;
+END^
+
+-- SV_Physics_Pusher: the move runs on the pusher's own clock (ltime), and so does its think
+CREATE OR ALTER PROCEDURE qc_physics_pusher (e INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
+AS
+DECLARE oldlt DOUBLE PRECISION; DECLARE lt DOUBLE PRECISION; DECLARE thinktime DOUBLE PRECISION; DECLARE movetime DOUBLE PRECISION; DECLARE f INTEGER;
+DECLARE f_nt INTEGER; DECLARE f_think INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
+BEGIN
+  SELECT v.f_nextthink, v.f_think, v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO f_nt, f_think, g_self, g_other, g_time;
+  SELECT d.ltime FROM ents d WHERE d.id = :e INTO oldlt;
+  thinktime = qc_f(e, f_nt);
+  IF (thinktime < oldlt + dt) THEN
+  BEGIN
+    movetime = thinktime - oldlt;
+    IF (movetime < 0) THEN movetime = 0;
+  END
+  ELSE movetime = dt;
+  IF (movetime > 0) THEN EXECUTE PROCEDURE push_move(e, movetime);
+  SELECT d.ltime FROM ents d WHERE d.id = :e INTO lt;
+  IF (lt IS NULL) THEN EXIT;
+  IF (thinktime > oldlt AND thinktime <= lt + 1e-6) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_sf(e, f_nt, 0);
+    f = CAST(qc_f(e, f_think) AS INTEGER);
+    EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, e); EXECUTE PROCEDURE qc_sg(g_other, 0);
+    IF (f <> 0) THEN EXECUTE PROCEDURE qc_call(f);
+  END
+END^
+
+-- SV_Physics_Toss for TOSS, BOUNCE, FLY and FLYMISSILE (after the think)
+CREATE OR ALTER PROCEDURE qc_toss (e INTEGER, dt DOUBLE PRECISION)
+AS
+DECLARE mt SMALLINT; DECLARE fl INTEGER;
+DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
+DECLARE f DOUBLE PRECISION; DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE hit INTEGER; DECLARE cb SMALLINT;
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE fav INTEGER;
+BEGIN
+  SELECT d.movetype, d.flags FROM ents d WHERE d.id = :e INTO mt, fl;
+  IF (mt IS NULL OR BIN_AND(fl, 512) <> 0) THEN EXIT;
+  EXECUTE PROCEDURE qc_clamp_velocity(e);
+  IF (mt IN (6, 10)) THEN EXECUTE PROCEDURE qc_add_gravity(e, dt);
+  fav = (SELECT v.f_avelocity FROM qc_vm v WHERE v.id = 1);
+  UPDATE ents d SET d.pitch = d.pitch + qc_f(:e, :fav) * :dt, d.yaw = d.yaw + d.avel_yaw * :dt, d.roll = d.roll + qc_f(:e, :fav + 2) * :dt WHERE d.id = :e;
+  SELECT d.vx, d.vy, d.vz FROM ents d WHERE d.id = :e INTO vx, vy, vz;
+  EXECUTE PROCEDURE push_entity(e, vx * dt, vy * dt, vz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;   -- impact() runs the touches
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;
+  EXECUTE PROCEDURE link_ent(e);
+  EXECUTE PROCEDURE qc_touch_triggers(e);
+  IF (f = 1 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;
+  -- the touch may have changed the velocity and the movetype: use them as they are now
+  SELECT d.movetype, d.vx, d.vy, d.vz FROM ents d WHERE d.id = :e INTO mt, vx, vy, vz;
+  EXECUTE PROCEDURE clip_velocity(vx, vy, vz, nx, ny, nz, IIF(mt = 10, 1.5e0, 1)) RETURNING_VALUES ox, oy, oz, cb;
+  IF (nz > 0.7e0 AND (oz < 60 OR mt <> 10)) THEN
+  BEGIN
+    UPDATE ents d SET d.flags = BIN_OR(d.flags, 512), d.vx = 0, d.vy = 0, d.vz = 0, d.avel_yaw = 0 WHERE d.id = :e;
+    EXECUTE PROCEDURE qc_sf(e, fav, 0); EXECUTE PROCEDURE qc_sf(e, fav + 2, 0);
+    EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_groundentity FROM qc_vm v WHERE v.id = 1), hit);
+  END
+  ELSE UPDATE ents d SET d.vx = :ox, d.vy = :oy, d.vz = :oz WHERE d.id = :e;
+END^
+
+-- SV_Physics_Step: monsters fall when nothing holds them, then think
+CREATE OR ALTER PROCEDURE qc_physics_step (e INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
+AS
+DECLARE fl INTEGER; DECLARE vz DOUBLE PRECISION; DECLARE hitsound SMALLINT; DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE alive SMALLINT;
+BEGIN
+  SELECT d.flags, d.vz FROM ents d WHERE d.id = :e INTO fl, vz;
+  IF (BIN_AND(fl, 515) = 0) THEN                    -- not FL_ONGROUND, FL_FLY or FL_SWIM
+  BEGIN
+    hitsound = IIF(vz < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
+    EXECUTE PROCEDURE qc_add_gravity(e, dt);
+    EXECUTE PROCEDURE qc_clamp_velocity(e);
+    EXECUTE PROCEDURE fly_move(e, dt) RETURNING_VALUES blk, hit;
+    IF (EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN
+    BEGIN
+      EXECUTE PROCEDURE link_ent(e);
+      EXECUTE PROCEDURE qc_touch_triggers(e);
+      IF (hitsound = 1 AND EXISTS (SELECT 1 FROM ents d WHERE d.id = :e AND BIN_AND(d.flags, 512) <> 0)) THEN
+        EXECUTE PROCEDURE snd(e, 0, 'demon/dland2.wav', 1, 1);
+    END
+  END
+  EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+END^
+
+-- SV_ClientThink (sv_user.c): the input into the client's fields, its view angles, and its movement
+-- intent: ground friction and acceleration, air acceleration, or swimming
+CREATE OR ALTER PROCEDURE qc_client_think (t DOUBLE PRECISION, dt DOUBLE PRECISION, fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION,
+  pitch DOUBLE PRECISION, yaw DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, impulse SMALLINT)
+AS
+DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE wl SMALLINT; DECLARE onground SMALLINT;
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
+DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
+DECLARE fpa INTEGER; DECLARE a0 DOUBLE PRECISION; DECLARE a1 DOUBLE PRECISION; DECLARE a2 DOUBLE PRECISION; DECLARE len DOUBLE PRECISION; DECLARE len2 DOUBLE PRECISION;
+DECLARE ap DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
+DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION;
+DECLARE wx DOUBLE PRECISION; DECLARE wy DOUBLE PRECISION; DECLARE wz DOUBLE PRECISION; DECLARE ws DOUBLE PRECISION;
+DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION;
+DECLARE speed DOUBLE PRECISION; DECLARE newspeed DOUBLE PRECISION; DECLARE control DOUBLE PRECISION; DECLARE friction DOUBLE PRECISION;
+DECLARE cur DOUBLE PRECISION; DECLARE addspeed DOUBLE PRECISION; DECLARE accelspeed DOUBLE PRECISION; DECLARE wishspd DOUBLE PRECISION;
+DECLARE tf DOUBLE PRECISION; DECLARE va INTEGER;
+BEGIN
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN EXIT;
+  -- SV_ReadClientMove: the buttons, the impulse, the view angles
+  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button0'), fire);
+  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button2'), jump);
+  IF (impulse <> 0) THEN EXECUTE PROCEDURE qc_sf(1, qc_fdef('impulse'), impulse);
+  va = (SELECT v.f_v_angle FROM qc_vm v WHERE v.id = 1);
+  EXECUTE PROCEDURE qc_sf(1, va, pitch); EXECUTE PROCEDURE qc_sf(1, va + 1, yaw); EXECUTE PROCEDURE qc_sf(1, va + 2, 0);
+  SELECT d.movetype, d.flags, d.waterlevel, d.x, d.y, d.z, d.minz, d.vx, d.vy, d.vz FROM ents d WHERE d.id = 1 INTO mt, fl, wl, px, py, pz, mnz, vx, vy, vz;
+  IF (mt = 0) THEN EXIT;
+  onground = IIF(BIN_AND(fl, 512) <> 0, 1, 0);
+  -- DropPunchAngle
+  fpa = (SELECT v.f_punchangle FROM qc_vm v WHERE v.id = 1);
+  a0 = qc_f(1, fpa); a1 = qc_f(1, fpa + 1); a2 = qc_f(1, fpa + 2);
+  len = SQRT(a0 * a0 + a1 * a1 + a2 * a2);
+  IF (len > 0) THEN
+  BEGIN
+    len2 = MAXVALUE(0, len - 10 * dt);
+    EXECUTE PROCEDURE qc_sf(1, fpa, a0 * len2 / len); EXECUTE PROCEDURE qc_sf(1, fpa + 1, a1 * len2 / len); EXECUTE PROCEDURE qc_sf(1, fpa + 2, a2 * len2 / len);
+  END
+  IF (qc_f(1, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) <= 0) THEN EXIT;
+  -- the body turns with the view; the model's pitch is a third of it
+  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0 WHERE d.id = 1;
+  IF (wl >= 2 AND mt <> 8) THEN
+  BEGIN
+    -- SV_WaterMove: the full view direction, drifting down without input
+    ap = pitch * 0.0174532925e0; ay = yaw * 0.0174532925e0;
+    fx = COS(ap) * COS(ay); fy = COS(ap) * SIN(ay); fz = -SIN(ap); rx = SIN(ay); ry = -COS(ay);
+    wx = fx * fmove + rx * smove; wy = fy * fmove + ry * smove; wz = fz * fmove;
+    IF (fmove = 0 AND smove = 0 AND upmove = 0) THEN wz = wz - 60; ELSE wz = wz + upmove;
+    ws = SQRT(wx * wx + wy * wy + wz * wz);
+    IF (ws > 320) THEN BEGIN wx = wx * 320 / ws; wy = wy * 320 / ws; wz = wz * 320 / ws; ws = 320; END
+    ws = ws * 0.7e0;
+    speed = SQRT(vx * vx + vy * vy + vz * vz);
+    IF (speed > 0) THEN
+    BEGIN
+      newspeed = MAXVALUE(0, speed - dt * speed * 4);
+      vx = vx * newspeed / speed; vy = vy * newspeed / speed; vz = vz * newspeed / speed;
+    END
+    ELSE newspeed = 0;
+    IF (ws > 0) THEN
+    BEGIN
+      addspeed = ws - newspeed;
+      IF (addspeed > 0) THEN
+      BEGIN
+        len = SQRT(wx * wx + wy * wy + wz * wz);
+        accelspeed = MINVALUE(addspeed, 10 * ws * dt);
+        vx = vx + accelspeed * wx / len; vy = vy + accelspeed * wy / len; vz = vz + accelspeed * wz / len;
+      END
+    END
+  END
+  ELSE
+  BEGIN
+    -- SV_AirMove: the body's angles (pitch a third of the view's), the wish velocity flat
+    IF (t < qc_f(1, (SELECT v.f_teleport_time FROM qc_vm v WHERE v.id = 1)) AND fmove < 0) THEN fmove = 0;
+    ap = -pitch / 3 * 0.0174532925e0; ay = yaw * 0.0174532925e0;
+    fx = COS(ap) * COS(ay); fy = COS(ap) * SIN(ay); rx = SIN(ay); ry = -COS(ay);
+    wx = fx * fmove + rx * smove; wy = fy * fmove + ry * smove; wz = IIF(mt <> 3, upmove, 0);
+    ws = SQRT(wx * wx + wy * wy + wz * wz);
+    IF (ws > 0) THEN BEGIN dx = wx / ws; dy = wy / ws; dz = wz / ws; END ELSE BEGIN dx = 0; dy = 0; dz = 0; END
+    IF (ws > 320) THEN BEGIN wx = wx * 320 / ws; wy = wy * 320 / ws; wz = wz * 320 / ws; ws = 320; END
+    IF (mt = 8) THEN BEGIN vx = wx; vy = wy; vz = wz; END
+    ELSE IF (onground = 1) THEN
+    BEGIN
+      -- SV_UserFriction: double friction at an edge
+      speed = SQRT(vx * vx + vy * vy);
+      IF (speed > 0) THEN
+      BEGIN
+        SELECT r.fraction FROM trace_move(1, 0, 0, 0, 0, 0, 0, :px + :vx / :speed * 16, :py + :vy / :speed * 16, :pz + :mnz,
+                                             :px + :vx / :speed * 16, :py + :vy / :speed * 16, :pz + :mnz - 34, 1) r INTO tf;
+        friction = IIF(tf = 1, 8, 4);
+        control = IIF(speed < 100, 100, speed);
+        newspeed = MAXVALUE(0, speed - dt * control * friction) / speed;
+        vx = vx * newspeed; vy = vy * newspeed; vz = vz * newspeed;
+      END
+      -- SV_Accelerate
+      cur = vx * dx + vy * dy + vz * dz;
+      addspeed = ws - cur;
+      IF (addspeed > 0) THEN
+      BEGIN
+        accelspeed = MINVALUE(addspeed, 10 * dt * ws);
+        vx = vx + accelspeed * dx; vy = vy + accelspeed * dy; vz = vz + accelspeed * dz;
+      END
+    END
+    ELSE
+    BEGIN
+      -- SV_AirAccelerate: at most 30 units/s of wish, but the push of the full wish speed
+      wishspd = MINVALUE(30, ws);
+      cur = vx * dx + vy * dy + vz * dz;
+      addspeed = wishspd - cur;
+      IF (addspeed > 0) THEN
+      BEGIN
+        accelspeed = MINVALUE(addspeed, 10 * ws * dt);
+        vx = vx + accelspeed * dx; vy = vy + accelspeed * dy; vz = vz + accelspeed * dz;
+      END
+    END
+  END
+  UPDATE ents d SET d.vx = :vx, d.vy = :vy, d.vz = :vz WHERE d.id = 1;
+END^
+
+-- SV_Physics_Client: PlayerPreThink, the think, gravity unless swimming or water-jumping, the walk with
+-- its step, the triggers touched, PlayerPostThink
+CREATE OR ALTER PROCEDURE qc_physics_client (t DOUBLE PRECISION, dt DOUBLE PRECISION)
+AS
+DECLARE f INTEGER; DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE alive SMALLINT; DECLARE wl SMALLINT; DECLARE wt INTEGER;
+DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
+BEGIN
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN EXIT;
+  SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('PlayerPreThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  EXECUTE PROCEDURE qc_clamp_velocity(1);
+  SELECT d.movetype FROM ents d WHERE d.id = 1 INTO mt;
+  IF (mt = 3) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+    IF (alive = 0) THEN EXIT;
+    EXECUTE PROCEDURE check_water(1) RETURNING_VALUES wl, wt;
+    UPDATE ents d SET d.waterlevel = :wl, d.watertype = :wt WHERE d.id = 1;
+    SELECT d.flags FROM ents d WHERE d.id = 1 INTO fl;
+    IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(1, dt);
+    EXECUTE PROCEDURE walk_move(1, dt);
+  END
+  ELSE IF (mt IN (6, 10)) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+    IF (alive = 1) THEN EXECUTE PROCEDURE qc_toss(1, dt);
+  END
+  ELSE IF (mt = 5) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+    EXECUTE PROCEDURE fly_move(1, dt) RETURNING_VALUES blk, hit;
+  END
+  ELSE IF (mt = 8) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+    UPDATE ents d SET d.x = d.x + d.vx * :dt, d.y = d.y + d.vy * :dt, d.z = d.z + d.vz * :dt WHERE d.id = 1;
+  END
+  ELSE EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1)) THEN EXIT;
+  EXECUTE PROCEDURE link_ent(1);
+  IF (mt <> 8) THEN EXECUTE PROCEDURE qc_touch_triggers(1);
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('PlayerPostThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+END^
+
+-- one edict's physics, by movetype (SV_Physics' switch)
+CREATE OR ALTER PROCEDURE qc_physics_ent (e INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
+AS
+DECLARE mt SMALLINT; DECLARE alive SMALLINT; DECLARE fav INTEGER;
+BEGIN
+  IF (e = 1) THEN BEGIN EXECUTE PROCEDURE qc_physics_client(t, dt); EXIT; END
+  SELECT d.movetype FROM ents d WHERE d.id = :e INTO mt;
+  IF (e = 0 OR mt IS NULL OR mt IN (0, 3)) THEN EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+  ELSE IF (mt = 7) THEN EXECUTE PROCEDURE qc_physics_pusher(e, t, dt);
+  ELSE IF (mt = 4) THEN EXECUTE PROCEDURE qc_physics_step(e, t, dt);
+  ELSE IF (mt IN (5, 6, 9, 10)) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+    IF (alive = 1) THEN EXECUTE PROCEDURE qc_toss(e, dt);
+  END
+  ELSE IF (mt = 8) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+    IF (alive = 1) THEN
+    BEGIN
+      fav = (SELECT v.f_avelocity FROM qc_vm v WHERE v.id = 1);
+      UPDATE ents d SET d.x = d.x + d.vx * :dt, d.y = d.y + d.vy * :dt, d.z = d.z + d.vz * :dt,
+                        d.pitch = d.pitch + qc_f(:e, :fav) * :dt, d.yaw = d.yaw + d.avel_yaw * :dt, d.roll = d.roll + qc_f(:e, :fav + 2) * :dt WHERE d.id = :e;
+      EXECUTE PROCEDURE link_ent(e);
+    END
+  END
+  ELSE EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+END^
+
+-- A server frame in QuakeC mode (Host_ServerFrame): the client's move, StartFrame, then every edict's
+-- physics in edict order, from time t for dt seconds. The client's input: forward, side and up move
+-- (Quake units per second, 400 forward when running), the view pitch and yaw, fire, jump, the impulse.
+-- An edict whose QuakeC raises is logged and skipped for the frame.
+CREATE OR ALTER PROCEDURE qc_server_frame (t DOUBLE PRECISION, dt DOUBLE PRECISION, fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION,
+  pitch DOUBLE PRECISION, yaw DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, impulse SMALLINT)
+RETURNS (ran INTEGER, failed INTEGER)
+AS
+DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE g_ft INTEGER; DECLARE f_nt INTEGER; DECLARE f INTEGER;
+DECLARE e INTEGER; DECLARE last INTEGER; DECLARE fpa INTEGER;
+BEGIN
+  ran = 0; failed = 0;
+  IF (qc_on() = 0) THEN EXCEPTION qc_error 'qc_server_frame needs QuakeC mode (qc_enter)';
+  UPDATE qc_vm v SET v.sv_time = :t WHERE v.id = 1;
+  UPDATE game g SET g.tic = g.tic + 1, g.time_ = :t WHERE g.id = 1;
+  SELECT v.g_self, v.g_other, v.g_time, v.g_frametime, v.f_nextthink FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, g_ft, f_nt;
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_ft, dt);
+  BEGIN
+    EXECUTE PROCEDURE qc_client_think(t, dt, fmove, smove, upmove, pitch, yaw, fire, jump, impulse);
+  WHEN ANY DO
+    EXECUTE PROCEDURE qc_print('error', 'client think failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+  END
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 0); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  f = qc_fn('StartFrame');
+  IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  -- the edicts that may have something to do: the world and the client, a pending think, a moving
+  -- pusher, anything flying, anything falling
+  last = -1;
+  WHILE (1 = 1) DO
+  BEGIN
+    e = NULL;
+    SELECT FIRST 1 d.id FROM qc_edicts d
+      WHERE d.free = 0 AND d.id > :last AND (
+        d.id <= 1
+        OR EXISTS (SELECT 1 FROM qc_fields n WHERE n.ent = d.id AND n.ofs = :f_nt AND n.v > 0)
+        OR EXISTS (SELECT 1 FROM ents x WHERE x.id = d.id AND (
+             (x.movetype IN (7, 5, 9, 8) AND (x.vx <> 0 OR x.vy <> 0 OR x.vz <> 0))
+          OR (x.movetype IN (6, 10) AND BIN_AND(x.flags, 512) = 0)
+          OR (x.movetype = 4 AND BIN_AND(x.flags, 515) = 0))))
+      ORDER BY d.id INTO e;
+    IF (e IS NULL) THEN LEAVE;
+    last = e;
+    BEGIN
+      EXECUTE PROCEDURE qc_physics_ent(e, t, dt);
+      ran = ran + 1;
+    WHEN ANY DO
+    BEGIN
+      failed = failed + 1;
+      UPDATE qc_vm v SET v.depth = 0 WHERE v.id = 1;
+      DELETE FROM qc_localstack;
+      EXECUTE PROCEDURE qc_print('error', 'edict ' || e || ' failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+    END
+    END
+  END
+  -- the camera: the view pitch and the punch
+  fpa = (SELECT v.f_punchangle FROM qc_vm v WHERE v.id = 1);
+  UPDATE player p SET p.pitch = :pitch, p.punchangle = qc_f(1, :fpa) WHERE p.id = 1;
+  EXECUTE PROCEDURE qc_sg(g_time, t + dt);
+  SUSPEND;
 END^
 
 SET TERM ; ^
