@@ -73,7 +73,7 @@ export class Progs {
       if (isInt[i]) v = n;
       else if (Number.isFinite(f) && (f === 0 || Math.abs(f) >= 1e-30)) v = f;
       else v = n;                       // an untyped slot whose bits are not a sane float: an integer
-      if (v !== 0) this.globals.push([i, v]);
+      this.globals.push([i, v]);              // every slot, so the VM's writes are plain UPDATEs
     }
   }
 

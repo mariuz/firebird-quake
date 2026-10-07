@@ -40,7 +40,7 @@ const log = (kind) => qa(`SELECT msg FROM qc_log WHERE kind = '${kind}' ORDER BY
 const n = await q1('SELECT (SELECT COUNT(*) FROM qc_statements) s, (SELECT COUNT(*) FROM qc_functions) f, (SELECT COUNT(*) FROM qc_defs WHERE kind = 0) g, (SELECT COUNT(*) FROM qc_defs WHERE kind = 1) e, (SELECT COUNT(*) FROM qc_strings) st, (SELECT COUNT(*) FROM qc_globals) gl FROM rdb$database');
 assert(n.S === progs.statements.length && n.F === progs.functions.length, `progs.dat version 6, crc ${progs.crc}: ${n.S} statements, ${n.F} functions`);
 assert(n.G === progs.globaldefs.length && n.E === progs.fielddefs.length, `${n.G} global and ${n.E} field definitions`);
-assert(n.ST === progs.strings.length && n.GL === progs.globals.length, `${n.ST} strings, ${n.GL} non-zero globals`);
+assert(n.ST === progs.strings.length && n.GL === progs.globals.length, `${n.ST} strings, ${n.GL} globals`);
 assert((await str(0)) === '' && (await q1("SELECT qc_fn('main') f FROM rdb$database")).F > 0, 'main() is a function');
 const vm = await q1('SELECT * FROM qc_vm');
 assert(vm.G_SELF > 0 && vm.G_TIME > 0 && vm.F_ORIGIN >= 0 && vm.F_NEXTTHINK > 0, `the VM knows self (${vm.G_SELF}), time (${vm.G_TIME}), .origin (${vm.F_ORIGIN}), .nextthink (${vm.F_NEXTTHINK})`);

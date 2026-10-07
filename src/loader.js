@@ -32,6 +32,7 @@ const TABLES = {
   qc_defs: 'id:i kind:i type_:i ofs:i name:s',
   qc_strings: 'ofs:i s:s',
   qc_globals0: 'ofs:i v:d',
+  qc_parmmap: 'fnum:i dst:i src:i',
   map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d mpitch:d myaw:d mroll:d spawnflags:i message:s wait_:d delay:d speed:d lip:d health:i light:i style:i sounds:i dmg:i height:d count_:i map:s noise:s worldtype:i',
 };
 
@@ -271,13 +272,21 @@ function animationsOf(mdl, name) {
  */
 export async function loadProgs(db, pak, name = 'progs.dat') {
   const progs = new Progs(pak.buffer(name), name);
-  await db.exec('DELETE FROM qc_statements; DELETE FROM qc_functions; DELETE FROM qc_defs; DELETE FROM qc_strings; DELETE FROM qc_globals0; DELETE FROM qc_globals; DELETE FROM qc_fields; DELETE FROM qc_edicts; DELETE FROM qc_log; DELETE FROM qc_vm');
+  await db.exec('DELETE FROM qc_parmmap; DELETE FROM qc_statements; DELETE FROM qc_functions; DELETE FROM qc_defs; DELETE FROM qc_strings; DELETE FROM qc_globals0; DELETE FROM qc_globals; DELETE FROM qc_fields; DELETE FROM qc_edicts; DELETE FROM qc_log; DELETE FROM qc_vm');
   await bulkLoad(db, 'qc_statements', progs.statements);
   await bulkLoad(db, 'qc_functions', progs.functions.map((f) => [f.id, f.first_statement, f.parm_start, f.locals, f.name, f.file, f.numparms, ...f.parms]));
   await bulkLoad(db, 'qc_defs', [...progs.globaldefs, ...progs.fielddefs].map((d, i) => [i, d.kind, d.type & 0x7fff, d.ofs, d.name]));
   // the loader turns newlines into spaces: keep QuakeC's newline as the two characters backslash-n, printed back as a newline
   await bulkLoad(db, 'qc_strings', progs.strings.map(([ofs, s]) => [ofs, s.replace(/\n/g, '\\n').replace(/\|/g, '/')]));
   await bulkLoad(db, 'qc_globals0', progs.globals);
+  // where each function's parameters go: callee slot ← OFS_PARM0 + 3·i + j (PR_EnterFunction), one MERGE per call
+  const parmmap = [];
+  for (const f of progs.functions) {
+    if (f.first_statement < 0) continue;
+    let o = f.parm_start;
+    for (let i = 0; i < f.numparms; i++) for (let j = 0; j < f.parms[i]; j++) parmmap.push([f.id, o++, 4 + i * 3 + j]);
+  }
+  await bulkLoad(db, 'qc_parmmap', parmmap);
   await db.exec('EXECUTE PROCEDURE qc_reset');
   return progs;
 }

@@ -384,7 +384,8 @@ CREATE TABLE qc_functions (
   name VARCHAR(64),                      -- function 0 has none
   file VARCHAR(64),
   numparms SMALLINT NOT NULL,
-  p0 SMALLINT, p1 SMALLINT, p2 SMALLINT, p3 SMALLINT, p4 SMALLINT, p5 SMALLINT, p6 SMALLINT, p7 SMALLINT
+  p0 SMALLINT, p1 SMALLINT, p2 SMALLINT, p3 SMALLINT, p4 SMALLINT, p5 SMALLINT, p6 SMALLINT, p7 SMALLINT,
+  active INTEGER DEFAULT 0 NOT NULL          -- activations on the call stack: locals are saved only when re-entered
 );
 CREATE INDEX qc_functions_name ON qc_functions (name);
 CREATE TABLE qc_defs (
@@ -400,6 +401,13 @@ CREATE TABLE qc_strings (
   s VARCHAR(2048) CHARACTER SET ASCII              -- NULL is the empty string (the loader reads '' as NULL)
 );
 CREATE TABLE qc_globals0 (ofs INTEGER NOT NULL PRIMARY KEY, v DOUBLE PRECISION NOT NULL);
+-- a function's parameters: callee slot dst ← src (OFS_PARM0 + 3·i + j)
+CREATE TABLE qc_parmmap (
+  fnum INTEGER NOT NULL,
+  dst INTEGER NOT NULL,
+  src INTEGER NOT NULL,
+  PRIMARY KEY (fnum, dst)
+);
 CREATE TABLE qc_globals (ofs INTEGER NOT NULL PRIMARY KEY, v DOUBLE PRECISION NOT NULL);
 CREATE TABLE qc_edicts (
   id INTEGER NOT NULL PRIMARY KEY,
@@ -453,7 +461,9 @@ CREATE TABLE qc_vm (
   f_teleport_time INTEGER, f_punchangle INTEGER, f_groundentity INTEGER, f_view_ofs INTEGER, f_health INTEGER,
   -- a temp entity being written (WriteByte SVC_TEMPENTITY, its type, then its coordinates)
   te_state SMALLINT DEFAULT 0 NOT NULL, te_type SMALLINT DEFAULT 0 NOT NULL, te_n SMALLINT DEFAULT 0 NOT NULL,
-  te_c0 DOUBLE PRECISION, te_c1 DOUBLE PRECISION, te_c2 DOUBLE PRECISION, te_c3 DOUBLE PRECISION, te_c4 DOUBLE PRECISION, te_c5 DOUBLE PRECISION
+  te_c0 DOUBLE PRECISION, te_c1 DOUBLE PRECISION, te_c2 DOUBLE PRECISION, te_c3 DOUBLE PRECISION, te_c4 DOUBLE PRECISION, te_c5 DOUBLE PRECISION,
+  -- checkclient's client: the PVS of its eye, kept for 0.1 s (sv.lastcheck, sv.lastchecktime)
+  check_time DOUBLE PRECISION, check_pvs VARCHAR(2048) CHARACTER SET ASCII
 );
 CREATE GLOBAL TEMPORARY TABLE qc_localstack (
   depth INTEGER NOT NULL,

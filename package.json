@@ -24,6 +24,7 @@
     "test:qctic": "node scripts/qcvm-tic-test.mjs",
     "test:qcai": "node scripts/qcvm-ai-test.mjs",
     "bench": "node scripts/bench.mjs",
+    "bench:qc": "node scripts/qcvm-bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"
   },
