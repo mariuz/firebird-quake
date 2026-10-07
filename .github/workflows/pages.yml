@@ -106,6 +106,9 @@ jobs:
       - name: QuakeC monsters
         run: npm run test:qcai
 
+      - name: QuakeC compiled to PSQL
+        run: npm run test:qcjit
+
       - name: Headless screenshots
         run: npm run screenshots
 

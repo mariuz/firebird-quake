@@ -18,6 +18,7 @@ import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
 import { Pak, Wad2, loadPalette, PakSet } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
+import { QcJit } from './qcjit.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
@@ -41,6 +42,8 @@ let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql' };
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
+let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
+let jitTics = 0;
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -157,9 +160,17 @@ async function startMap(name, newGame) {
   if (!qc) await db.exec('EXECUTE PROCEDURE qc_leave');
   const bsp = await loadMap(db, pak, res, name, { skill: settings.skill, newGame });
   if (qc) {
-    if (!progsLoaded) { setStatus('Loading progs.dat into the QuakeC VM…'); await loadProgs(db, pak); progsLoaded = true; }
+    if (!progsLoaded) {
+      setStatus('Loading progs.dat into the QuakeC VM…');
+      jit = new QcJit(db, await loadProgs(db, pak));
+      await jit.init();
+      progsLoaded = true;
+    }
     setStatus(`Spawning ${name} through QuakeC…`);
     await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
+    // the functions the spawn ran more than once, compiled to procedures (the rest follow as they get hot)
+    setStatus('Compiling QuakeC to PSQL…');
+    await jit.compileHot({ min: 2, max: 32 });
   }
   map = { name, bsp };
   renderer.setResources(res);
@@ -207,6 +218,8 @@ async function frame() {
     // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row
     last = (await db.query(`SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`, readInput(tics), { rowMode: 'object' })).rows[0];
     perf.tic = performance.now() - t;
+    // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
+    if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
 
     if (last.EXIT_KIND === 1 && last.NEXT_MAP) {
       const next = last.NEXT_MAP.toLowerCase();
@@ -364,7 +377,7 @@ function updateStats() {
   fpsN++;
   const now = performance.now();
   if (now - fpsT > 500) { fps = (fpsN * 1000) / (now - fpsT); fpsT = now; fpsN = 0; }
-  statsEl.textContent = `${fps.toFixed(1)} fps · ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'} ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
+  statsEl.textContent = `${fps.toFixed(1)} fps · ${settings.logic === 'qc' ? `qc_tic (${jit?.compiled.size ?? 0} functions compiled)` : 'quake_tic'} ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
 }
 
 // ── SQL console ─────────────────────────────────────────────────────────
@@ -441,7 +454,7 @@ async function boot() {
     db = await openDatabase();
     // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last;
     // the QuakeC VM: await quake.loadProgs(); await quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)"); await quake.sql('SELECT * FROM qc_log')
-    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
+    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get jit() { return jit; }, get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
     // which game data the site serves: the shareware pak, the registered pak1.pak beside it, LibreQuake
     // (public/pak/lq1/, `npm run fetch-pak -- --librequake`), or the shareware pak with LibreQuake's
     // pak1.pak, which gives the registered monsters free models

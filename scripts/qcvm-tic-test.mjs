@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+import { QcJit } from '../src/qcjit.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -57,7 +58,13 @@ const psqlRow = await q1('SELECT * FROM quake_tic(1, 0, 0, 0, 0, 0, 0, 1, 0)');
 // ── E1M1 in QuakeC mode, as the page starts it ─────────────────────────────
 await db.exec('EXECUTE PROCEDURE qc_leave');
 await loadMap(db, pak, res, 'e1m1', { skill: 1 });
-await loadProgs(db, pak);
+const progs = await loadProgs(db, pak);
+if (process.env.QCJIT === 'all') {                 // every function compiled to its own procedure
+  const jit = new QcJit(db, progs);
+  await jit.init();
+  await jit.compileAll();
+  console.log(`compiled ${jit.compiled.size} functions in ${(jit.ms / 1000).toFixed(1)} s`);
+}
 await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
 let r = await qcTic();
 assert(JSON.stringify(Object.keys(r)) === JSON.stringify(Object.keys(psqlRow)), `qc_tic returns QUAKE_TIC's ${Object.keys(r).length} columns, in order`);

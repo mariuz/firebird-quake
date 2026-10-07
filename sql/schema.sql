@@ -385,7 +385,9 @@ CREATE TABLE qc_functions (
   file VARCHAR(64),
   numparms SMALLINT NOT NULL,
   p0 SMALLINT, p1 SMALLINT, p2 SMALLINT, p3 SMALLINT, p4 SMALLINT, p5 SMALLINT, p6 SMALLINT, p7 SMALLINT,
-  active INTEGER DEFAULT 0 NOT NULL          -- activations on the call stack: locals are saved only when re-entered
+  active INTEGER DEFAULT 0 NOT NULL,         -- activations on the call stack: locals are saved only when re-entered
+  calls INTEGER DEFAULT 0 NOT NULL,          -- times entered through the interpreter: the hot ones get compiled (src/qcjit.js)
+  compiled SMALLINT DEFAULT 0 NOT NULL       -- 1: runs as its own procedure, through the dispatcher qc_inv<numparms>; -1: cannot be
 );
 CREATE INDEX qc_functions_name ON qc_functions (name);
 CREATE TABLE qc_defs (
@@ -400,6 +402,7 @@ CREATE TABLE qc_strings (
   ofs INTEGER NOT NULL PRIMARY KEY,      -- negative: a string made at run time (ftos, vtos)
   s VARCHAR(2048) CHARACTER SET ASCII              -- NULL is the empty string (the loader reads '' as NULL)
 );
+CREATE DESCENDING INDEX qc_strings_down ON qc_strings (ofs);   -- the string containing an offset: the nearest below
 CREATE TABLE qc_globals0 (ofs INTEGER NOT NULL PRIMARY KEY, v DOUBLE PRECISION NOT NULL);
 -- a function's parameters: callee slot dst ← src (OFS_PARM0 + 3·i + j)
 CREATE TABLE qc_parmmap (

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+import { QcJit } from '../src/qcjit.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -19,7 +20,13 @@ await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 const res = await loadResources(db, pak);
 await loadMap(db, pak, res, 'e1m1', { skill: 1 });
-await loadProgs(db, pak);
+const progs = await loadProgs(db, pak);
+if (process.env.QCJIT === 'all') {                 // every function compiled to its own procedure
+  const jit = new QcJit(db, progs);
+  await jit.init();
+  await jit.compileAll();
+  console.log(`compiled ${jit.compiled.size} functions in ${(jit.ms / 1000).toFixed(1)} s`);
+}
 const q1 = (s) => db.query(s).then((r) => r.rows[0]);
 const steps = () => q1('SELECT steps FROM qc_vm').then((r) => Number(r.STEPS));
 const out = {};

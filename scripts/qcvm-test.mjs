@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+import { QcJit } from '../src/qcjit.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -24,6 +25,12 @@ await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 let t0 = performance.now();
 const progs = await loadProgs(db, pak);
+if (process.env.QCJIT === 'all') {                 // every function compiled to its own procedure
+  const jit = new QcJit(db, progs);
+  await jit.init();
+  await jit.compileAll();
+  console.log(`compiled ${jit.compiled.size} functions in ${(jit.ms / 1000).toFixed(1)} s`);
+}
 console.log(`progs.dat loaded in ${(performance.now() - t0).toFixed(0)} ms`);
 const q1 = (s, p = []) => db.query(s, p).then((r) => r.rows[0]);
 const qa = (s, p = []) => db.query(s, p).then((r) => r.rows);

@@ -195,9 +195,14 @@ player's parms (`SetChangeParms`, `DecodeLevelParms`) as Quake does. The monster
 through `checkclient` (the PVS from eye to eye), walk and chase through `walkmove` and `movetogoal`
 (the engine's `SV_movestep` family), and the gunshots, blood, explosions and lightning they and the
 player make arrive as effects from the progs' temp-entity messages. The interpreter runs a statement in
-about 13.5 µs (one joined query and one `UPDATE`), and a server frame of E1M1 takes about 37 ms with the
-monsters asleep and 43 ms with grunts awake (`npm run bench:qc`), against 6 to 12 ms for the PSQL game's
-tic, so the page keeps time with fewer frames per second.
+about 13.5 µs (one joined query and one `UPDATE`); on top of it, **QuakeC is compiled to PSQL**
+(`src/qcjit.js`): the functions a level calls most become stored procedures of their own, with the
+temporaries, locals and parameters in PSQL variables, constants as literals and jumps as nested
+labelled loops, a few between frames while the game runs. The compiled code runs about six times
+faster than the interpreter, and a server frame of E1M1 takes about 22 ms with the monsters asleep
+and 25 to 30 ms with grunts awake (36 and 43 interpreted: `npm run bench:qc`, `QCJIT=all` to compile
+everything first), against 6 to 12 ms for the PSQL game's tic; what is left is mostly the engine's
+own work (the traces of the monsters' steps).
 
 ![E1M1 in QuakeC mode: a grunt from the bridge runs at the player, aiming](docs/qcvm-ai-e1m1-0.png)
 
@@ -254,6 +259,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:e1m6` | The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the silver doors stay shut, the exit to E1M7 |
 | `npm run test:qcplay` | QuakeC mode: E1M1 played by the original `progs.dat` on the engine's physics; the world settles, the player falls, walks with Quake's friction, opens a door through its trigger field, picks up shells by walking over them, fires a rocket that explodes against a wall, and a grunt appears in the renderer's frame query |
 | `npm run test:qctic` | the page's QuakeC mode: `qc_tic` returns `quake_tic`'s row from progs.dat's player through walking, firing, a pickup and a secret; the exit's intermission and `changelevel`; the level change carrying shells and health into E1M2 |
+| `npm run test:qcjit` | QuakeC compiled to PSQL: every function of id's `progs.dat` and of LibreQuake's compiles to a procedure; the self-contained ones give the interpreter's results and globals on the same arguments; E1M1 plays while the hottest functions get compiled between tics, the grunts hunt the player and the shotgun fires |
 | `npm run test:qcai` | progs.dat's monsters on the engine: `checkclient` lets a grunt see the player, it shoots him (with the gunshot and blood effects), the player kills it with the autoaim, and a dog runs at him through `movetogoal` |
 | `npm run test:qcvm` | the QuakeC VM in PSQL runs the real `progs.dat`: `anglemod`, the builtins, `SetNewParms`/`DecodeLevelParms` through entity fields, `InitBodyQue`, `worldspawn` and its light styles, then E1M1 spawned by its QuakeC spawn functions, five frames of thinks, and the player connecting, firing, picking up shells and cheating |
 
@@ -277,6 +283,7 @@ sql/weapons.sql    the player's tic: movement, firing, impulses
 sql/monsters.sql   the AI, the pushers, the think and physics loops, QUAKE_TIC, INIT_MAP
 sql/render.sql     visibility and projection
 sql/qcvm.sql       the QuakeC VM: progs.dat as tables, the interpreter, the builtins
+src/qcjit.js       QuakeC compiled to PSQL: a stored procedure per hot function, the dispatchers
 src/loader.js      BSP and MDL to tables, the generated bulk loaders
 src/main.js        the page: input, the game loop, settings, the console
 src/renderer.js    the painter
