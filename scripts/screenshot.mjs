@@ -12,7 +12,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
-import { Pak, PakSet, Wad2, loadPalette } from '../src/pak.js';
+import { qpic, Pak, PakSet, Wad2, loadPalette } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES, loadProgs } from '../src/loader.js';
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
@@ -45,7 +45,7 @@ const renderer = new Renderer(stubCanvas, { palette: loadPalette(pak.get('gfx/pa
 renderer.setSize(W, H);
 renderer.setResources(res);
 renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
-const hud = new Hud(new Wad2(pak.get('gfx.wad')));
+const hud = new Hud(new Wad2(pak.get('gfx.wad')), (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
 
 // --qc: QuakeC mode. The map is spawned by progs.dat's own spawn functions and every tic is a QuakeC server
 // frame (qc_server_frame) on the engine's physics; the status bar reads the QuakeC player's fields.
@@ -78,8 +78,10 @@ const qcTic = async ([tics, fwd, side, dyaw, dpitch, fire, jump, run, imp]) => {
   }
   const f = (n) => `qc_f(1, qc_fdef('${n}'))`;
   const r = (await db.query(`SELECT e.x px, e.y py, e.z pz, e.z + 22 view_z, e.yaw, p.pitch, ${f('weapon')} weapon, ${f('health')} health, ${f('armorvalue')} armorvalue,
-      ${f('items')} items, ${f('ammo_shells')} shells, ${f('ammo_nails')} nails, ${f('ammo_rockets')} rockets, ${f('ammo_cells')} cells
-    FROM ents e CROSS JOIN player p WHERE e.id = 1 AND p.id = 1`, [], { rowMode: 'object' })).rows[0];
+      ${f('items')} items, ${f('ammo_shells')} shells, ${f('ammo_nails')} nails, ${f('ammo_rockets')} rockets, ${f('ammo_cells')} cells,
+      g.intermission, g.completed_time, g.finale_text, CAST(qc_g(qc_gdef('killed_monsters')) AS INTEGER) killed, CAST(qc_g(qc_gdef('total_monsters')) AS INTEGER) total_monsters,
+      CAST(qc_g(qc_gdef('found_secrets')) AS INTEGER) found_secrets, CAST(qc_g(qc_gdef('total_secrets')) AS INTEGER) total_secrets
+    FROM ents e CROSS JOIN player p CROSS JOIN game g WHERE e.id = 1 AND p.id = 1 AND g.id = 1`, [], { rowMode: 'object' })).rows[0];
   return { ...r, TIME_: qc.t, DMG_TIME: -1 };
 };
 const tic = qcMode ? qcTic : psqlTic;
@@ -126,9 +128,12 @@ async function shot(name) {
     if (kind.trim() === 'M') renderer.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw, roll], effects & 8 ? 255 : lightPoint(bsp, x, y, z + 8), { time: last.TIME_ });
     else if (kind.trim() === 'S') renderer.drawSprite(m.spr, frame, [x, y, z]);
   }
-  const vm = res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
+  const vm = last.INTERMISSION ? null : res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
   if (vm) { renderer.zb.fill(0); renderer.drawAlias(vm.mdl, 0, 0, [last.PX, last.PY, last.VIEW_Z + 2], [-last.PITCH, last.YAW, 0], Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32), { near: 1 }); }
-  hud.draw(renderer, last, last.TIME_);
+  // the intermission's stats or the finale's text (all of it typed) in place of the status bar, as the page does
+  if (last.INTERMISSION === 2) hud.drawFinale(renderer, last.FINALE_TEXT ?? '', 1e3);
+  else if (last.INTERMISSION === 1) hud.drawIntermission(renderer, last);
+  else hud.draw(renderer, last, last.TIME_);
   renderer.present();
   const t2 = performance.now();
   const nf = fast ? faces.length : new Set(faces.map((r) => r[0])).size;

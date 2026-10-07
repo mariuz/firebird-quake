@@ -16,7 +16,7 @@ import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
-import { Pak, Wad2, loadPalette, PakSet } from './pak.js';
+import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
 import { Renderer, lightPoint } from './renderer.js';
@@ -38,6 +38,10 @@ let lastTic = 0;
 let lastSoundId = 0;
 let lastFxId = 0;
 let finaleShown = false;
+let interWait = 0;         // the PSQL game's intermission: when it began (the stats stay until fire)
+let finaleStart = 0;       // game time the finale's text began (QuakeC's svc_finale)
+let cdTrack = -1;          // the track svc_cdtrack asked for
+let lastDraw = null;       // the last frame's rows, drawn again under the intermission
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql' };
@@ -177,6 +181,7 @@ async function startMap(name, newGame) {
   renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
   renderer.particles = [];
   beams = []; explosions = [];
+  interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null;
   audio.setAmbients(bsp.entities);
   const world = bsp.entities.find((e) => e.classname === 'worldspawn');
   audio.playMusic(Number(world?.sounds ?? 0));
@@ -214,6 +219,15 @@ async function frame() {
     lastTic += tics * TIC_MS;
     if (now - lastTic > 200) lastTic = now;
 
+    // the PSQL game's intermission: no more tics; the last frame and the stats, until fire after two seconds
+    if (interWait) {
+      const [, , , , , fire, jump] = readInput(tics);
+      if (lastDraw) drawFrame(lastDraw.faces, lastDraw.ents, lastDraw.styles, last.TIME_, 0);
+      if ((fire || jump) && now - interWait > 2000) { interWait = 0; await nextLevel(); }
+      nextFrame();
+      return;
+    }
+
     let t = performance.now();
     // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row
     last = (await db.query(`SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`, readInput(tics), { rowMode: 'object' })).rows[0];
@@ -221,14 +235,14 @@ async function frame() {
     // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
     if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
 
+    // what progs.dat told the client: the finale's text starts typing; svc_cdtrack changes the music
+    if (last.INTERMISSION === 2 && !finaleStart) finaleStart = last.TIME_;
+    if (last.CDTRACK >= 0 && last.CDTRACK !== cdTrack) { cdTrack = last.CDTRACK; audio.playMusic(cdTrack); }
+
     if (last.EXIT_KIND === 1 && last.NEXT_MAP) {
-      const next = last.NEXT_MAP.toLowerCase();
-      setStatus(`${map.name} completed — kills ${last.KILLED}/${last.TOTAL_MONSTERS}, secrets ${last.FOUND_SECRETS}/${last.TOTAL_SECRETS}`);
-      await new Promise((r) => setTimeout(r, 2000));
-      if (pak.has(`maps/${next}.bsp`)) await startMap(next, false);
-      else { setStatus(`${next} is not in this pak (shareware ends here)`); await new Promise((r) => setTimeout(r, 2500)); await startMap('start', false); }
-      nextFrame();
-      return;
+      // QuakeC mode has shown its intermission and waited for fire already; the PSQL game shows it now
+      if (settings.logic === 'qc') { await nextLevel(); nextFrame(); return; }
+      interWait = performance.now();
     }
     if (last.FINALE === 1 && !finaleShown) {
       // Shub-Niggurath is dead: the ending, then back to the start map
@@ -267,6 +281,7 @@ async function frame() {
 
     t = performance.now();
     drawFrame(faces, ents, styleMap, last.TIME_, tics * 0.05);
+    lastDraw = { faces, ents, styles: styleMap };
     perf.draw = performance.now() - t;
     updateStats();
   } catch (err) {
@@ -276,6 +291,14 @@ async function frame() {
     return;
   }
   nextFrame();
+}
+
+// the level is over (changelevel): the next map, carrying the player, or the start map past the pak's last
+async function nextLevel() {
+  const next = last.NEXT_MAP.toLowerCase();
+  setStatus(`${map.name} completed — kills ${last.KILLED}/${last.TOTAL_MONSTERS}, secrets ${last.FOUND_SECRETS}/${last.TOTAL_SECRETS}`);
+  if (pak.has(`maps/${next}.bsp`)) await startMap(next, false);
+  else { setStatus(`${next} is not in this pak (shareware ends here)`); await new Promise((r) => setTimeout(r, 2500)); await startMap('start', false); }
 }
 
 function handleFx(rows, time) {
@@ -340,7 +363,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   r.runParticles(dt, time);
   r.drawParticles();
   // the weapon in hand (depth hack: drawn over everything near)
-  if (!last.DEAD && last.WEAPON && VIEW_MODELS[last.WEAPON]) {
+  if (!last.DEAD && !last.INTERMISSION && last.WEAPON && VIEW_MODELS[last.WEAPON]) {
     const vm = res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
     if (vm) {
       const bob = Math.sin(time * 8) * Math.min(1, Math.hypot(last.PX - (prevPos?.x ?? last.PX), last.PY - (prevPos?.y ?? last.PY)) / 8) * 1.5;
@@ -352,8 +375,11 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   prevPos = { x: last.PX, y: last.PY };
 
   // 2D
-  hud.draw(r, last, time);
-  if (last.CPRINT) hud.drawCenter(r, last.CPRINT, Math.floor(r.h * 0.35));
+  // the intermission (the stats, or the finale's text) replaces the status bar, as in Sbar_Draw
+  if (last.INTERMISSION === 2) hud.drawFinale(r, last.FINALE_TEXT ?? '', time - finaleStart);
+  else if (last.INTERMISSION === 1) hud.drawIntermission(r, last);
+  else hud.draw(r, last, time);
+  if (last.CPRINT && !last.INTERMISSION) hud.drawCenter(r, last.CPRINT, Math.floor(r.h * 0.35));
   if (last.MSG) r.drawString(hud.conchars, last.MSG, 0, 0);
   if (last.DEAD) hud.drawCenter(r, 'you died\n\npress fire to restart', 60);
   // the palette blend: damage, bonus, water
@@ -441,7 +467,7 @@ async function usePak(buffers, label) {
   renderer = new Renderer(canvas, { palette, colormap });
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
-  hud = new Hud(wad);
+  hud = new Hud(wad, (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
   audio.setPak(pak);
   $('map').innerHTML = maps.map((m) => `<option>${m}</option>`).join('');
   $('pakname').textContent = label;

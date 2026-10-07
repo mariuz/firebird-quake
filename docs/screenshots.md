@@ -452,3 +452,20 @@ node scripts/screenshot.mjs e1m1 docs/qcvm    --qc --at=1150,1030,-250,330 --tic
 node scripts/screenshot.mjs e1m1 docs/qcvm-ai --qc --at=1150,1030,-250,330 --tics=20 --single --fast
 ```
 
+## The intermission and the finale
+
+The end of a level, as Quake's status bar code draws it (`Sbar_IntermissionOverlay`): the time,
+the secrets and the kills over the view, until fire. The PSQL game shows it over the last frame when
+`changelevel` fires; in QuakeC mode progs.dat sends `svc_intermission` from the `info_intermission`
+camera. After E1M7, `ExitIntermission` sends `svc_cdtrack` and `svc_finale`, whose text the page
+types out at eight characters a second under `gfx/finale.lmp`.
+
+![the intermission after E1M1](intermission-e1m1-0.png) ![the end of the shareware episode, after E1M7](finale-e1m7-0.png)
+
+1. E1M1 completed: the stats over the last frame
+2. after E1M7, in QuakeC mode: the finale's text (here all of it) over the intermission camera's view
+
+```bash
+node scripts/screenshot.mjs e1m1 docs/intermission --tics=60 --sql="EXECUTE PROCEDURE changelevel((SELECT FIRST 1 id FROM ents WHERE classname = 'trigger_changelevel'))" --single --fast
+node scripts/screenshot.mjs e1m7 docs/finale --qc --tics=20 --sql="EXECUTE PROCEDURE qc_sf(0, qc_fdef('model'), qc_newstr('maps/e1m7.bsp')); EXECUTE PROCEDURE qc_run('execute_changelevel', 0)" --tics=4 --sql="EXECUTE PROCEDURE qc_run('ExitIntermission', 1)" --tics=2 --single --fast
+```

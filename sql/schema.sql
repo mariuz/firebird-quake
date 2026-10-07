@@ -29,7 +29,13 @@ CREATE TABLE game (
   registered     SMALLINT DEFAULT 0 NOT NULL,           -- pak1 present: all four episodes
   gravity        DOUBLE PRECISION DEFAULT 800 NOT NULL, -- sv_gravity: 100 on Ziggurat Vertigo
   finale         SMALLINT DEFAULT 0 NOT NULL,           -- Shub-Niggurath is dead
-  qc_mode        SMALLINT DEFAULT 0 NOT NULL            -- 1: the QuakeC VM owns ents (sql/qcvm.sql, qc_enter)
+  qc_mode        SMALLINT DEFAULT 0 NOT NULL,           -- 1: the QuakeC VM owns ents (sql/qcvm.sql, qc_enter)
+  -- what progs.dat tells the client (QuakeC mode): svc_intermission (1, the stats) or svc_finale
+  -- (2, its text), the time the level was completed, and svc_cdtrack's track (-1: the map's own)
+  intermission   SMALLINT DEFAULT 0 NOT NULL,
+  completed_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  finale_text    VARCHAR(1024),
+  cdtrack        SMALLINT DEFAULT -1 NOT NULL
 );
 
 CREATE TABLE viewcfg (

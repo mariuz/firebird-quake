@@ -192,7 +192,8 @@ through the same traces and pushers the PSQL game uses. A frame of E1M1 takes ab
 QuakeC-mode frame. **In the page**, the **Logic** setting switches between the PSQL game and
 **QuakeC VM (progs.dat)**: the level is spawned by progs.dat, every tic is `qc_tic`, which takes
 `quake_tic`'s input and returns its row from the QuakeC player's fields (centre prints, messages, the
-pickup flash, damage, the intermission and `changelevel` included), and a level change carries the
+pickup flash, damage, the intermission's stats screen, the episode's finale text and `changelevel`
+included), and a level change carries the
 player's parms (`SetChangeParms`, `DecodeLevelParms`) as Quake does. The monsters see the player
 through `checkclient` (the PVS from eye to eye), walk and chase through `walkmove` and `movetogoal`
 (the engine's `SV_movestep` family), and the gunshots, blood, explosions and lightning they and the

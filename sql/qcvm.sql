@@ -727,12 +727,31 @@ BEGIN
     END
     EXECUTE PROCEDURE qc_sg(1, a); EXECUTE PROCEDURE qc_sg(2, b); EXECUTE PROCEDURE qc_sg(3, 0);
   END
-  ELSE IF (n BETWEEN 52 AND 59) THEN               -- WriteByte … WriteEntity: only temp entities matter, as fx_events
+  ELSE IF (n BETWEEN 52 AND 59) THEN               -- WriteByte … WriteEntity: temp entities (as fx_events), and the client messages the page shows
   BEGIN
     IF (qc_on() = 1) THEN
     BEGIN
       SELECT v.te_state, v.te_type, v.te_n FROM qc_vm v WHERE v.id = 1 INTO tst, tty, tn;
       IF (n = 52 AND tst = 0 AND qc_g(7) = 23) THEN UPDATE qc_vm v SET v.te_state = 1 WHERE v.id = 1;     -- SVC_TEMPENTITY
+      ELSE IF (n = 52 AND tst = 0 AND qc_g(7) = 30) THEN                                                   -- SVC_INTERMISSION: the stats
+        UPDATE game g SET g.intermission = 1, g.completed_time = (SELECT v.sv_time FROM qc_vm v WHERE v.id = 1) WHERE g.id = 1;
+      ELSE IF (n = 52 AND tst = 0 AND qc_g(7) = 31) THEN                                                   -- SVC_FINALE: a string follows
+      BEGIN
+        UPDATE qc_vm v SET v.te_state = 10 WHERE v.id = 1;
+        UPDATE game g SET g.intermission = 2, g.finale_text = '', g.completed_time = IIF(g.intermission = 0, (SELECT v.sv_time FROM qc_vm v WHERE v.id = 1), g.completed_time) WHERE g.id = 1;
+      END
+      ELSE IF (n = 58 AND tst = 10) THEN                                                                   -- the finale's text
+      BEGIN
+        UPDATE game g SET g.finale_text = SUBSTRING(REPLACE(qc_str(CAST(qc_g(7) AS INTEGER)), '\n', ASCII_CHAR(10)) FROM 1 FOR 1024) WHERE g.id = 1;
+        UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;
+      END
+      ELSE IF (n = 52 AND tst = 0 AND qc_g(7) = 32) THEN UPDATE qc_vm v SET v.te_state = 11 WHERE v.id = 1;   -- SVC_CDTRACK: the track, then the loop track
+      ELSE IF (n = 52 AND tst = 11) THEN
+      BEGIN
+        UPDATE game g SET g.cdtrack = CAST(qc_g(7) AS SMALLINT) WHERE g.id = 1;
+        UPDATE qc_vm v SET v.te_state = 12 WHERE v.id = 1;
+      END
+      ELSE IF (n = 52 AND tst = 12) THEN UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;
       ELSE IF (n = 52 AND tst = 1) THEN UPDATE qc_vm v SET v.te_state = 2, v.te_type = CAST(qc_g(7) AS SMALLINT), v.te_n = 0 WHERE v.id = 1;
       ELSE IF (n = 56 AND tst = 2) THEN
       BEGIN
@@ -1751,7 +1770,7 @@ BEGIN
   mn = (SELECT g.map_name FROM game g WHERE g.id = 1);
   EXECUTE PROCEDURE qc_sg(qc_gdef('mapname'), qc_newstr(mn));
   EXECUTE PROCEDURE qc_sf(0, qc_fdef('model'), qc_newstr('maps/' || mn || '.bsp'));
-  UPDATE game g SET g.time_ = 1.0, g.tic = 0, g.next_map = NULL, g.exit_kind = 0 WHERE g.id = 1;
+  UPDATE game g SET g.time_ = 1.0, g.tic = 0, g.next_map = NULL, g.exit_kind = 0, g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1 WHERE g.id = 1;
   UPDATE player p SET p.msg = NULL, p.msg_time = 0, p.cprint = NULL, p.cprint_time = 0, p.bonus_time = -10, p.dmg_time = -10,
                       p.dmg_take = 0, p.dmg_save = 0, p.pitch = 0, p.punchangle = 0, p.view_ofs = 22, p.stepz = 0 WHERE p.id = 1;
   SELECT r.spawned, r.failed, r.skipped FROM qc_spawn_map(:skill, 1.0) r INTO a, b, c;
@@ -1776,7 +1795,8 @@ RETURNS (
   dead SMALLINT, exit_kind SMALLINT, next_map VARCHAR(32), killed INTEGER, total_monsters INTEGER,
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
-  amb_water INTEGER, amb_sky INTEGER, finale SMALLINT)
+  amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE r INTEGER; DECLARE fl INTEGER;
 DECLARE vyaw DOUBLE PRECISION; DECLARE vpitch DOUBLE PRECISION; DECLARE va INTEGER; DECLARE fa INTEGER;
@@ -1824,12 +1844,14 @@ BEGIN
          p.dmg_time, p.bonus_time, IIF(qc_f(1, qc_fdef('deadflag')) > 0, 1, 0), g.exit_kind, g.next_map,
          CAST(qc_g(qc_gdef('killed_monsters')) AS INTEGER), CAST(qc_g(qc_gdef('total_monsters')) AS INTEGER),
          CAST(qc_g(qc_gdef('found_secrets')) AS INTEGER), CAST(qc_g(qc_gdef('total_secrets')) AS INTEGER),
-         e.waterlevel, e.watertype, g.map_name, g.level_msg, g.finale, e.leaf, COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0)
+         e.waterlevel, e.watertype, g.map_name, g.level_msg, g.finale, e.leaf, COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0),
+         g.intermission, g.completed_time, g.finale_text, g.cdtrack
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = 1 LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_time, bonus_time, dead, exit_kind, next_map,
-         killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, finale, leaf, amb_water, amb_sky;
+         killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, finale, leaf, amb_water, amb_sky,
+         intermission, completed_time, finale_text, cdtrack;
   invincible = IIF(BIN_AND(items, 1048576) <> 0, 1, 0); quad = IIF(BIN_AND(items, 4194304) <> 0, 1, 0);
   invisible = IIF(BIN_AND(items, 524288) <> 0, 1, 0); suit = IIF(BIN_AND(items, 2097152) <> 0, 1, 0);
   SUSPEND;

@@ -1035,7 +1035,8 @@ RETURNS (
   dead SMALLINT, exit_kind SMALLINT, next_map VARCHAR(32), killed INTEGER, total_monsters INTEGER,
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
-  amb_water INTEGER, amb_sky INTEGER, finale SMALLINT)
+  amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
@@ -1058,13 +1059,13 @@ BEGIN
          g.found_secrets, g.total_secrets, e.waterlevel, e.watertype, g.map_name, g.level_msg,
          IIF(p.invincible_finished > g.time_, 1, 0), IIF(p.super_damage_finished > g.time_, 1, 0),
          IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf,
-         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale
+         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale, g.intermission, g.completed_time, g.finale_text, g.cdtrack
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, time_, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_take, dmg_save, dmg_time, bonus_time, dead, exit_kind, next_map,
          killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf,
-         amb_water, amb_sky, finale;
+         amb_water, amb_sky, finale, intermission, completed_time, finale_text, cdtrack;
   UPDATE player p SET p.dmg_take = 0, p.dmg_save = 0 WHERE p.id = 1 AND p.dmg_time < :time_ - 0.05e0;
   SUSPEND;
 END^
@@ -1076,6 +1077,7 @@ DECLARE i INTEGER;
 BEGIN
   UPDATE game g SET g.tic = 0, g.time_ = 0, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
          g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
+         g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1,
          g.gravity = IIF(LOWER(:map_name) = 'e1m8', 100, 800) WHERE g.id = 1;   -- worldspawn: Ziggurat Vertigo has low gravity
   -- switchable lights back to their patterns
   DELETE FROM lightstyles l WHERE l.style >= 32;

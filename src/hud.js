@@ -5,8 +5,14 @@ const IT = { SHOTGUN: 1, SUPER_SHOTGUN: 2, NAILGUN: 4, SUPER_NAILGUN: 8, GRENADE
   KEY1: 131072, KEY2: 262144, INVISIBILITY: 524288, INVULNERABILITY: 1048576, SUIT: 2097152, QUAD: 4194304 };
 
 export class Hud {
-  constructor(wad) {
+  // wad: gfx.wad; lmp(name): a picture of its own in the pak (gfx/complete.lmp …), or null
+  constructor(wad, lmp = () => null) {
     this.pic = (n) => wad.pic(n);
+    this.complete = lmp('gfx/complete.lmp');
+    this.inter = lmp('gfx/inter.lmp');
+    this.finale = lmp('gfx/finale.lmp');
+    this.colon = wad.pic('NUM_COLON');
+    this.slash = wad.pic('NUM_SLASH');
     this.conchars = wad.pic('CONCHARS');
     this.nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => wad.pic(`NUM_${i}`));
     this.anums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => wad.pic(`ANUM_${i}`));
@@ -108,6 +114,39 @@ export class Hud {
     if (ai >= 0) {
       r.drawPic(this.ammo[ai], sbx + 224, y);
       this.drawNum(r, sbx + 248, y, cnt, 3, cnt <= 10 ? 1 : 0);
+    }
+  }
+
+  // Sbar_IntermissionOverlay: the level's time, secrets and kills over the view (Quake's 320-wide layout)
+  drawIntermission(r, hud) {
+    const x = Math.max(0, (r.w - 320) >> 1);
+    r.drawPic(this.complete, x + 64, 24);
+    r.drawPic(this.inter, x, 56);
+    const t = Math.max(0, Math.floor(hud.COMPLETED_TIME ?? 0));
+    this.drawNum(r, x + 160, 64, Math.floor(t / 60), 3, 0);
+    r.drawPic(this.colon, x + 234, 64);
+    r.drawPic(this.nums[Math.floor((t % 60) / 10)], x + 246, 64);
+    r.drawPic(this.nums[t % 10], x + 266, 64);
+    this.drawNum(r, x + 160, 104, hud.FOUND_SECRETS, 3, 0);
+    r.drawPic(this.slash, x + 232, 104);
+    this.drawNum(r, x + 240, 104, hud.TOTAL_SECRETS, 3, 0);
+    this.drawNum(r, x + 160, 144, hud.KILLED, 3, 0);
+    r.drawPic(this.slash, x + 232, 144);
+    this.drawNum(r, x + 240, 144, hud.TOTAL_MONSTERS, 3, 0);
+  }
+
+  // Sbar_FinaleOverlay and the finale's centre print: the picture, then the text typed out at eight
+  // characters a second (scr_printspeed), each line centred
+  drawFinale(r, text, elapsed) {
+    if (this.finale) r.drawPic(this.finale, (r.w - this.finale.w) >> 1, 16);
+    const lines = text.split('\n');
+    let remaining = Math.floor(elapsed * 8);
+    let y = lines.length <= 4 ? Math.floor(r.h * 0.35) : 48;
+    for (const line of lines) {
+      if (remaining <= 0) break;
+      r.drawString(this.conchars, line.slice(0, remaining), (r.w - line.length * 8) >> 1, y);
+      remaining -= line.length + 1;
+      y += 8;
     }
   }
 

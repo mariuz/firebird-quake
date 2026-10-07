@@ -118,6 +118,7 @@ r = await qcTic(4);
 const camera = await qa("SELECT ox, oy, oz FROM map_ents WHERE classname = 'info_intermission'");
 const atCamera = camera.some((c) => Math.abs(c.OX - r.PX) < 1 && Math.abs(c.OY - r.PY) < 1 && Math.abs(c.OZ - r.PZ) < 1);
 assert(atCamera && Math.abs(r.VIEW_Z - r.PZ) < 0.01 && r.EXIT_KIND === 0, 'touching the exit: execute_changelevel moves the view to an info_intermission (view_ofs 0) and waits');
+assert(r.INTERMISSION === 1 && r.COMPLETED_TIME > 1 && r.COMPLETED_TIME <= r.TIME_, `svc_intermission: the page shows the stats, the level completed at ${r.COMPLETED_TIME?.toFixed(1)} s`);
 for (let i = 0; i < 30 && r.EXIT_KIND === 0; i++) r = await qcTic(2);
 assert(r.EXIT_KIND === 0, 'nothing happens without a button');
 for (let i = 0; i < 6 && r.EXIT_KIND === 0; i++) r = await qcTic(1, { fire: 1 });
@@ -131,6 +132,17 @@ await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 1)');
 r = await qcTic();
 assert(r.MAP_NAME === 'e1m2' && r.LEVEL_MSG === 'Castle of the Damned' && r.EXIT_KIND === 0 && r.TOTAL_MONSTERS > 0, `E1M2 spawned by progs.dat: ${r.TOTAL_MONSTERS} monsters`);
 assert(r.SHELLS === carried.shells && r.HEALTH === carried.health && r.WEAPON === 1 && r.ITEMS === carried.items, `SetChangeParms and DecodeLevelParms carry ${r.SHELLS} shells and ${r.HEALTH} health into E1M2`);
+assert(r.INTERMISSION === 0 && r.FINALE_TEXT === null && r.CDTRACK === -1, 'the new level starts without an intermission');
+
+// the end of the episode: after E1M7's intermission, ExitIntermission switches the CD track and sends the
+// finale's text (staged: the world's model says e1m7, the intermission has begun)
+await db.exec("EXECUTE PROCEDURE qc_sf(0, qc_fdef('model'), qc_newstr('maps/e1m7.bsp'))");
+await db.exec("EXECUTE PROCEDURE qc_sg(qc_gdef('intermission_running'), 1)");
+await db.exec("EXECUTE PROCEDURE qc_run('ExitIntermission', 1)");
+r = await qcTic();
+const finale = (r.FINALE_TEXT ?? '').split(/\r?\n/);
+assert(r.INTERMISSION === 2 && /^As the corpse of the monstrous/.test(finale[0]) && finale.length > 3 && r.CDTRACK === 2,
+  `svc_cdtrack ${r.CDTRACK} and svc_finale: "${finale[0]}…" (${finale.length} lines)`);
 assert((await q1("SELECT COUNT(*) n FROM qc_log WHERE kind = 'error'")).N === 0, 'no QuakeC errors');
 
 const sorted = [...ms].sort((a, b) => a - b);

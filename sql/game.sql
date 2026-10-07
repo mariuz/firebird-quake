@@ -692,7 +692,8 @@ BEGIN
   SELECT e.map FROM ents e WHERE e.id = :eid INTO m;
   SELECT g.exit_kind FROM game g WHERE g.id = 1 INTO ek;
   IF (ek <> 0 OR m IS NULL) THEN EXIT;
-  UPDATE game g SET g.next_map = :m, g.exit_kind = 1, g.intermission_tics = 0 WHERE g.id = 1;
+  -- the page shows the intermission's stats, the level's time as Quake counts it, until fire
+  UPDATE game g SET g.next_map = :m, g.exit_kind = 1, g.intermission_tics = 0, g.intermission = 1, g.completed_time = g.time_ WHERE g.id = 1;
 END^
 
 -- teleport_touch: send `other` to the destination
