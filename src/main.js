@@ -38,7 +38,7 @@ let lastFxId = 0;
 let finaleShown = false;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
-const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast' };
+const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -427,14 +427,33 @@ async function boot() {
     db = await openDatabase();
     // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last
     window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
-    setStatus('Downloading pak0.pak…');
-    const resp = await fetch(new URL('./pak/pak0.pak', location.href));
-    if (!resp.ok) throw new Error(`could not fetch pak0.pak (${resp.status}); pick a PAK file instead`);
-    const buffers = [await resp.arrayBuffer()];
-    let label = 'pak0.pak';
-    const resp1 = await fetch(new URL('./pak/pak1.pak', location.href)).catch(() => null);   // the registered data, if served
-    if (resp1?.ok && (resp1.headers.get('content-type') ?? '').indexOf('text/html') < 0) { buffers.push(await resp1.arrayBuffer()); label = 'pak0.pak + pak1.pak'; }
-    await usePak(buffers, label);
+    // which game data the site serves: the shareware pak, the registered pak1.pak beside it, LibreQuake
+    // (public/pak/lq1/, `npm run fetch-pak -- --librequake`), or the shareware pak with LibreQuake's
+    // pak1.pak, which gives the registered monsters free models
+    const DATASETS = {
+      shareware: { label: 'Quake shareware', paks: ['pak/pak0.pak'] },
+      registered: { label: 'Quake (registered pak1.pak)', paks: ['pak/pak0.pak', 'pak/pak1.pak'] },
+      'shareware+lq1': { label: 'Quake shareware + LibreQuake monsters', paks: ['pak/pak0.pak', 'pak/lq1/pak1.pak'] },
+      librequake: { label: 'LibreQuake', paks: ['pak/lq1/pak0.pak', 'pak/lq1/pak1.pak'] },
+    };
+    const served = async (rel) => {
+      try { const r = await fetch(new URL('./' + rel, location.href), { method: 'HEAD' }); return r.ok && (r.headers.get('content-type') ?? '').indexOf('text/html') < 0; } catch { return false; }
+    };
+    const have = Object.fromEntries(await Promise.all([...new Set(Object.values(DATASETS).flatMap((d) => d.paks))].map(async (p) => [p, await served(p)])));
+    const sets = Object.entries(DATASETS).filter(([, d]) => d.paks.every((p) => have[p]));
+    $('data').innerHTML = sets.map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
+    $('data').parentElement.hidden = sets.length <= 1;
+    const loadDataset = async (key) => {
+      const d = DATASETS[key];
+      setStatus(`Downloading ${d.paks.map((p) => p.slice(4)).join(' + ')}…`);
+      const buffers = await Promise.all(d.paks.map(async (p) => { const r = await fetch(new URL('./' + p, location.href)); if (!r.ok) throw new Error(`could not fetch ${p} (${r.status})`); return r.arrayBuffer(); }));
+      await usePak(buffers, d.paks.map((p) => p.slice(4)).join(' + '));
+    };
+    $('data').addEventListener('change', (e) => { settings.data = e.target.value; saveSettings(); loadDataset(e.target.value).catch((err) => setStatus(err.message, true)); });   // the frame loop keeps running; usePak pauses it while loading
+    if (!sets.length) throw new Error('could not fetch pak0.pak; pick a PAK file instead');
+    const key = sets.some(([k]) => k === settings.data) ? settings.data : sets[0][0];
+    $('data').value = key;
+    await loadDataset(key);
     nextFrame();
   } catch (err) {
     console.error(err);

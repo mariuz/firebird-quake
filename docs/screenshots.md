@@ -215,6 +215,30 @@ statement that starts with `SELECT` as a query and anything else as a statement.
 the commands still run and the frame shows the hall with an invisible monster in it, which is also
 what the registered test sees.
 
+### With LibreQuake's pak1.pak
+
+[LibreQuake](https://github.com/lavenderdotpet/LibreQuake) ships a free `pak1.pak` with its own
+models for the same six monsters (`npm run fetch-librequake` puts it in `public/pak/lq1/`). The
+same commands with `PAK1=public/pak/lq1/pak1.pak` draw them in the shareware E1M1:
+
+![a LibreQuake enforcer](lq-enforcer-e1m1-0.png) ![a LibreQuake hell knight](lq-hell_knight-e1m1-0.png) ![a LibreQuake vore](lq-shalrath-e1m1-0.png) ![a LibreQuake spawn](lq-tarbaby-e1m1-0.png) ![a LibreQuake rotfish](lq-fish-e1m1-0.png) ![LibreQuake's Shub-Niggurath](lq-oldone-e1m1-0.png)
+
+```bash
+PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs e1m1 docs/lq-enforcer --at=1150,1030,-250,330 --sql="SELECT * FROM spawn_monster('enforcer', 160)" --tics=16 --single --fast
+```
+
+## LibreQuake
+
+LibreQuake's own levels, from its `pak0.pak` (`PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak`):
+the start map, and the first level forty tics in.
+
+![LibreQuake's start map](librequake-start-0.png) ![LibreQuake's first level](librequake-lq_e0m1-0.png)
+
+```bash
+PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs start   docs/librequake --single --fast
+PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs lq_e0m1 docs/librequake --tics=40 --single --fast
+```
+
 ## E2M1, the Installation
 
 The first level of the registered game, from the same `pak1.pak`.

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
-import { Pak } from '../src/pak.js';
+import { Pak, PakSet } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,7 +26,9 @@ let t0 = t();
 await createSchema(db, sql);
 console.log(`schema        ${(t() - t0).toFixed(0)} ms`);
 
-const pak = new Pak(fs.readFileSync(pakPath).buffer);
+// PAK1=path/to/pak1.pak adds a second pak (the registered data, or LibreQuake's free pak1)
+const pakPaths = [pakPath, process.env.PAK1 ?? path.join(path.dirname(pakPath), 'pak1.pak')].filter((f, i) => i === 0 || fs.existsSync(f));
+const pak = new PakSet(pakPaths.map((f) => new Pak(fs.readFileSync(f).buffer)));
 t0 = t();
 const res = await loadResources(db, pak);
 console.log(`resources     ${(t() - t0).toFixed(0)} ms (${res.models.size} models)`);

@@ -31,21 +31,32 @@ jobs:
       # The shareware pak sits inside an LHA archive in quake106.zip
       - run: sudo apt-get install -y lhasa
 
-      - name: Cache the shareware pak
+      - name: Cache the paks (shareware, LibreQuake)
         id: pak
         uses: actions/cache@v4
         with:
           path: public/pak/
-          key: quake106-${{ hashFiles('scripts/fetch-pak.mjs') }}
+          key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
 
       - name: Fetch the shareware pak
         if: steps.pak.outputs.cache-hit != 'true'
         run: npm run fetch-pak
 
+      # LibreQuake lite (free game data, BSD-3): a whole free game in public/pak/lq1/, and a pak1.pak
+      # whose models give the registered monsters a free look beside the shareware pak0.pak
+      - name: Fetch LibreQuake
+        if: steps.pak.outputs.cache-hit != 'true'
+        run: npm run fetch-pak -- --librequake
+
       # Runs the game's SQL inside the real Firebird WASM engine under Node:
       # loads E1M1, walks, shoots, opens a door, renders frames.
       - name: SQL smoke test
         run: npm test
+
+      # The same game logic over LibreQuake's data: its models carry no frame names, so the id frame
+      # layouts (src/framelayouts.js) drive them
+      - name: LibreQuake smoke test
+        run: PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/sql-smoke.mjs start
 
       # Picks up the rune, Chthon rises, lava, both terminals, three bolts, the exit opens
       - name: The House of Chthon

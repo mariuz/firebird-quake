@@ -7,6 +7,13 @@
 //
 //   node scripts/fetch-pak.mjs            downloads and extracts
 //   PAK=/path/to/pak0.pak node scripts/fetch-pak.mjs   copies a pak you have
+//
+//   node scripts/fetch-pak.mjs --librequake
+// downloads LibreQuake (lite, v0.09-beta: free, BSD-licensed game data that keeps Quake's file
+// layout) into public/pak/lq1/pak0.pak and pak1.pak. Its pak1.pak holds the registered monsters'
+// models and sounds, so with it beside the shareware pak0.pak the enforcer, hell knight, vore, spawn,
+// rotfish and Shub-Niggurath can be drawn without owning Quake; its pak0.pak is a whole free game.
+//   LQ=/path/to/id1 node scripts/fetch-pak.mjs --librequake   copies a LibreQuake id1 folder you have
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,6 +26,10 @@ const outDir = path.join(root, 'public/pak');
 const out = path.join(outDir, 'pak0.pak');
 fs.mkdirSync(outDir, { recursive: true });
 
+if (process.argv.includes('--librequake')) {
+  await fetchLibreQuake();
+  process.exit(0);
+}
 if (process.env.PAK) {
   fs.copyFileSync(process.env.PAK, out);
   console.log(`copied ${process.env.PAK} → ${path.relative(root, out)}`);
@@ -95,4 +106,49 @@ function findFile(dir, re) {
     if (e.isDirectory()) { const r = findFile(p, re); if (r) return r; } else if (re.test(e.name)) return p;
   }
   return null;
+}
+
+async function fetchLibreQuake() {
+  const LQ_URL = 'https://github.com/lavenderdotpet/LibreQuake/releases/download/v0.09-beta/lite.zip';
+  const lqDir = path.join(outDir, 'lq1');
+  fs.mkdirSync(lqDir, { recursive: true });
+  const targets = ['pak0.pak', 'pak1.pak'].map((f) => path.join(lqDir, f));
+  if (process.env.LQ) {
+    for (const t of targets) fs.copyFileSync(path.join(process.env.LQ, path.basename(t)), t);
+    console.log(`copied ${process.env.LQ} → ${path.relative(root, lqDir)}/`);
+    return;
+  }
+  if (targets.every((t) => fs.existsSync(t))) {
+    console.log(`${path.relative(root, lqDir)}/ already present (${targets.map((t) => (fs.statSync(t).size / 1048576).toFixed(1) + ' MB').join(', ')})`);
+    return;
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'librequake-'));
+  try {
+    console.log(`downloading ${LQ_URL} (56 MB)…`);
+    const resp = await fetch(LQ_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const zip = path.join(tmp, 'lite.zip');
+    fs.writeFileSync(zip, Buffer.from(await resp.arrayBuffer()));
+    const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'pipe', cwd: tmp });
+    const which = (cmds) => {
+      for (const c of cmds) {
+        try { execFileSync(process.platform === 'win32' ? 'where' : 'which', [c], { stdio: 'pipe' }); return c; } catch { /* next */ }
+      }
+      return null;
+    };
+    const sevenZip = which(['7z', '7za', '7zz']) ?? (process.platform === 'win32' && fs.existsSync('C:/Program Files/7-Zip/7z.exe') ? 'C:/Program Files/7-Zip/7z.exe' : null);
+    const members = ['lite/id1/pak0.pak', 'lite/id1/pak1.pak'];
+    if (sevenZip) run(sevenZip, ['x', '-y', 'lite.zip', ...members]);
+    else if (which(['unzip'])) run('unzip', ['-o', 'lite.zip', ...members]);
+    else if (process.platform === 'win32') run('powershell', ['-NoProfile', '-Command', `Expand-Archive -Force lite.zip ${tmp}`]);
+    else throw new Error('no unzip tool found');
+    for (const t of targets) {
+      const src = path.join(tmp, 'lite/id1', path.basename(t));
+      if (!fs.existsSync(src)) throw new Error(`${path.basename(t)} not found in lite.zip`);
+      fs.copyFileSync(src, t);
+      console.log(`wrote ${path.relative(root, t)} (${(fs.statSync(t).size / 1048576).toFixed(1)} MB)`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }

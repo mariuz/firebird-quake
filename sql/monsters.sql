@@ -529,7 +529,7 @@ BEGIN
   BEGIN
     IF (st = 'cruc') THEN
     BEGIN
-      UPDATE ents e SET e.anim_frame = MOD(e.anim_frame + 1, 6), e.frame = (SELECT a.first_frame FROM anims a WHERE a.model_id = :mid AND a.anim = 'cruc_') + MOD(e.anim_frame + 1, 6) WHERE e.id = :eid;
+      UPDATE ents e SET e.anim_frame = MOD(e.anim_frame + 1, 6), e.frame = COALESCE((SELECT a.first_frame FROM anims a WHERE a.model_id = :mid AND a.anim = 'cruc_'), 0) + MOD(e.anim_frame + 1, 6) WHERE e.id = :eid;
       IF (RAND() < 0.02e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
     END
     ELSE UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid;

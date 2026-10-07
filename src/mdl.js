@@ -78,7 +78,7 @@ export class Mdl {
   animations() {
     const out = [];
     for (let i = 0; i < this.frames.length; i++) {
-      const base = this.frames[i].name.replace(/\d+$/, '');
+      const base = this.frames[i].name.replace(/\d+$/, '') || 'frame';   // LibreQuake names some frames "1", "2"…
       const last = out[out.length - 1];
       if (last && last.name === base) last.count++;
       else out.push({ name: base, first: i, count: 1 });

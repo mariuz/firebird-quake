@@ -9,6 +9,7 @@
 
 import { Bsp, parseVec } from './bsp.js';
 import { Mdl, Spr } from './mdl.js';
+import { FRAME_LAYOUTS } from './framelayouts.js';
 import { MONSTERS, LIGHTSTYLES } from './gamedata.js';
 
 const CHUNK = 30000;
@@ -100,7 +101,7 @@ export async function loadResources(db, pak, { width = 320, height = 200, fov = 
     res.models.set(id, { id, name, kind: 'M', mdl: m });
     res.byName.set(name, id);
     modelRows.push([id, name, 'M', null, null, null, null, null, null, null, null, null, null, null, m.numFrames, m.flags, m.radius]);
-    for (const a of m.animations()) animRows.push([id, a.name, a.first, a.count]);
+    for (const a of animationsOf(m, name)) animRows.push([id, a.name, a.first, a.count]);
   }
   for (const name of pak.list('progs/', '.spr')) {
     const s = new Spr(pak.buffer(name), name);
@@ -247,4 +248,13 @@ export async function loadMap(db, pak, res, name, { skill = 1, newGame = true } 
 
   await db.exec(`EXECUTE PROCEDURE init_map('${name}', ${geo.modelIds[0]}, ${skill}, ${newGame ? 1 : 0})`);
   return bsp;
+}
+
+/** A model's named frame runs. LibreQuake's models name their frames "1", "2"…, but keep Quake's
+ *  frame order (progs.dat addresses frames by number), so the id layout for that model applies. */
+function animationsOf(mdl, name) {
+  const own = mdl.animations();
+  const layout = FRAME_LAYOUTS[name.toLowerCase()];
+  if (layout && layout[0] === mdl.frames.length && own.every((a) => a.name === 'frame')) return layout[1].map(([anim, first, count]) => ({ name: anim, first, count }));
+  return own;
 }

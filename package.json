@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "fetch-pak": "node scripts/fetch-pak.mjs",
+    "fetch-librequake": "node scripts/fetch-pak.mjs --librequake",
+    "gen-frame-layouts": "node scripts/gen-frame-layouts.mjs",
     "build": "node scripts/build.mjs",
     "serve": "node scripts/build.mjs --serve",
     "test": "node scripts/sql-smoke.mjs",
