@@ -1,48 +1,15 @@
 # Firebird Quake
 
-![the start map: the hall of the skill doors](docs/skills-start-0.png) ![the crucified zombies over the lava](docs/crucified-start-0.png) ![the slipgate to episode 1](docs/episode1-start-0.png) ![the slipgate to episode 3](docs/episode3-start-0.png) ![the slipgate to episode 4](docs/episode4-start-0.png)
-
-![E1M1, the Slipgate Complex, from the start](docs/screenshot-e1m1-0.png) ![a grunt](docs/grunt-e1m1-0.png)
-
-![the slime hall, its teleporter and the yellow armour](docs/slime-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![the exit slipgate](docs/slipgate-e1m1-0.png)
-
-![E1M7, the House of Chthon](docs/screenshot-e1m7-0.png) ![the rune on the floor of the hall](docs/rune-e1m7-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![Chthon winds up a lava ball, the terminals raised](docs/lavathrow-e1m7-0.png) ![Chthon from the far end of the hall](docs/behind-e1m7-0.png) ![the third bolt: Chthon sinks back into the lava](docs/death-e1m7-0.png)
-
-![E1M8, Ziggurat Vertigo: the lava hall](docs/lavahall-e1m8-0.png) ![a scrag over the lava river](docs/scrag-e1m8-0.png) ![three seconds into a jump, looking down](docs/jump-e1m8-0.png)
-
-![E1M2, Castle of the Damned: the drawbridge slab, raised](docs/bridgeup-e1m2-0.png) ![the slab sunk into the moat](docs/bridgedown-e1m2-0.png) ![the gold key room](docs/keyroom-e1m2-0.png) ![grunts in the beamed hall](docs/hall-e1m2-0.png)
-
-![E1M3, the Necropolis: zombies up from the pits](docs/pits-e1m3-0.png) ![zombies in the arched hall](docs/zombies-e1m3-0.png) ![a zombie down the corridor](docs/corridor-e1m3-0.png)
-
-![E1M4, the Grisly Grotto: the carved gate](docs/arch-e1m4-0.png) ![knights across the lake](docs/lake-e1m4-0.png) ![the super nailgun in its chamber](docs/tunnel-e1m4-0.png) ![the secret exit's ledge, from the water](docs/ledge-e1m4-0.png)
-
-![E1M5, Gloom Keep: under the water of the flooded moat](docs/flooded-e1m5-0.png) ![the moat courtyard](docs/moat-e1m5-0.png) ![the stained-glass hall](docs/glass-e1m5-0.png) ![a knight on the checkered floor](docs/knight-e1m5-0.png) ![an ogre at the wooden gate](docs/goldkey-e1m5-0.png)
-
-![E1M6, The Door To Chthon: taking the gold runekey wakes the fiend across the lava](docs/runekey-e1m6-0.png) ![the gold runekey doors, shut](docs/golddoors-e1m6-0.png) ![the doors take the key and slide aside](docs/goldopen-e1m6-0.png) ![a slipgate between its red torches](docs/slipgate-e1m6-0.png) ![the pillared hall](docs/pillars-e1m6-0.png) ![the banner hall](docs/banners-e1m6-0.png)
-
-The start map's hall of skill doors, its crucified zombies twitching over the lava (the decoration the
-E1M5 test checks first), and the slipgates to episodes 1, 3 and 4; E1M1 from the start, a grunt, the
-slime hall with its teleporter and armour, two grunts coming over the bridge, the exit slipgate; E1M7 from the start, the rune whose taking wakes Chthon, Chthon risen from the lava, winding up a lava
-ball with both lightning terminals raised, seen from the far end of the hall, and sinking back into the
-lava under the third bolt, which is the fight the E1M7 test plays; Ziggurat Vertigo's lava
-hall, a scrag over its lava river, and the view down from a jump that is still rising three seconds in,
-since gravity there is an eighth of normal; Castle of the Damned's drawbridge slab standing in the moat
-channel and then sunk, four seconds after the player steps onto the bank, the gold key between its two
-demon torches, and grunts in the beamed hall; the Necropolis' pit zombies four seconds after the trap
-springs, two more in the arched hall, and one shambling down a corridor; the Grisly Grotto's carved gate,
-knights across its lake, the super nailgun in its chamber, and the ledge with the secret slipgate to
-Ziggurat Vertigo seen from the water, where the E1M4 test surfaces; Gloom Keep's flooded moat from under
-the water, where the E1M5 test holds its breath, the moat's courtyard with its round window, the
-stained-glass hall, a knight on the checkered floor, and an ogre at the wooden gate; The Door To Chthon's
-gold runekey, whose taking wakes the fiend across the lava, the gold runekey doors shut and then opened
-by the key, which the E1M6 test plays, a slipgate between its red torches, the pillared hall and the
-banner hall. Every frame is the result of a query, painted headlessly by `scripts/screenshot.mjs`.
-
 Quake, simulated and rendered inside the [Firebird](https://firebirdsql.org) SQL database, running
 entirely in your browser on Firebird 6 compiled to WebAssembly. A port of the idea behind
 [Firebird DOOM](https://github.com/mariuz/firebird-doom) to a true 3D engine.
 
 **Play it:** https://mariuz.github.io/firebird-quake/
+
+![E1M1, the Slipgate Complex](docs/screenshot-e1m1-0.png) ![two grunts on the bridge](docs/grunts-e1m1-0.png) ![Chthon risen from the lava](docs/chthon-e1m7-0.png) ![the crucified zombies on the start map](docs/crucified-start-0.png)
+
+More pictures, of every level of the first episode, with the commands that made them, are in
+[docs/screenshots.md](docs/screenshots.md).
 
 Every game tic is a PSQL procedure call. Every frame is a `SELECT`. JavaScript handles the keyboard,
 the mouse and the canvas; everything else — collision against the BSP hulls, the player's physics,
@@ -228,50 +195,7 @@ npm run bench          # where a tic and a frame spend their time
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw [--fast] [--compare])
 ```
 
-The screenshot tool can also start from a spot, run SQL and let the world turn, in as many steps as a
-scene needs, which is how the pictures above were taken:
-
-```bash
-node scripts/screenshot.mjs start docs/skills    --single --fast
-node scripts/screenshot.mjs start docs/crucified --at=856,840,60,90 --tics=4 --single --fast
-node scripts/screenshot.mjs start docs/episode1  --at=-64,1250,130,90 --tics=4 --single --fast
-node scripts/screenshot.mjs start docs/episode3  --at=1536,2830,255,90 --tics=4 --single --fast
-node scripts/screenshot.mjs start docs/episode4  --at=1700,1728,-200,0 --tics=4 --single --fast
-node scripts/screenshot.mjs e1m1 docs/slime    --at=1392,824,-402,90  --tics=8  --single --fast
-node scripts/screenshot.mjs e1m1 docs/grunts   --at=1150,1030,-250,330 --tics=12 --single --fast
-node scripts/screenshot.mjs e1m1 docs/slipgate --at=1312,800,-240,270 --tics=10 --single --fast
-node scripts/screenshot.mjs e1m7 docs/rune     --at=-120,64,20,0 --tics=2 --single --fast
-node scripts/screenshot.mjs e1m7 docs/chthon   --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake((SELECT id FROM ents WHERE mtype = 'boss'))" --tics=70 --single --fast
-node scripts/screenshot.mjs e1m7 docs/lavathrow --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake(2); EXECUTE PROCEDURE button_fire(22, (SELECT ent_id FROM player)); EXECUTE PROCEDURE button_fire(24, (SELECT ent_id FROM player))" --tics=120 --single --fast
-node scripts/screenshot.mjs e1m7 docs/behind   --at=824,64,180,180 --sql="EXECUTE PROCEDURE boss_awake(2)" --tics=70 --single --fast
-node scripts/screenshot.mjs e1m7 docs/death    --at=-300,64,56,0 --sql="EXECUTE PROCEDURE boss_awake(2); EXECUTE PROCEDURE button_fire(22, (SELECT ent_id FROM player)); EXECUTE PROCEDURE button_fire(24, (SELECT ent_id FROM player))" --tics=120 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=3 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=3 --sql="EXECUTE PROCEDURE event_lightning_fire(15)" --tics=8 --single --fast
-node scripts/screenshot.mjs e1m8 docs/lavahall --at=992,-96,-706,270 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m8 docs/scrag    --at=96,-120,-594,315 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m8 docs/jump     --at=992,-96,-676,270 --sql="UPDATE ents SET vz = 300 WHERE id = (SELECT ent_id FROM player); UPDATE player SET pitch = 45" --tics=55 --single --fast
-node scripts/screenshot.mjs e1m2 docs/bridgeup   --at=1400,-564,229,0 --tics=2  --single --fast
-node scripts/screenshot.mjs e1m2 docs/bridgedown --at=1400,-564,229,0 --tics=80 --single --fast   # the bank is the trigger
-node scripts/screenshot.mjs e1m2 docs/keyroom    --at=880,-300,470,270 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m2 docs/hall       --at=536,-1264,438,90 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m3 docs/pits     --at=-900,-240,-330,90 --sql="UPDATE player SET pitch = 5; EXECUTE PROCEDURE trigger_fire((SELECT id FROM ents WHERE classname = 'trigger_once' AND target = 't83'), (SELECT ent_id FROM player))" --tics=80 --single --fast
-node scripts/screenshot.mjs e1m3 docs/zombies  --at=-128,-824,-322,0 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m3 docs/corridor --at=1352,120,-130,0 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m4 docs/arch     --at=-472,2080,1230,45 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m4 docs/lake     --at=1088,-784,846,135 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m4 docs/tunnel   --at=704,1408,542,270 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m4 docs/ledge    --at=1288,1350,845,90 --tics=4 --single --fast
-node scripts/screenshot.mjs e1m5 docs/flooded  --at=-312,314,-12,0 --tics=4 --single --fast
-node scripts/screenshot.mjs e1m5 docs/moat     --at=-792,1608,158,315 --tics=2 --single --fast
-node scripts/screenshot.mjs e1m5 docs/glass    --at=128,1840,-18,180 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m5 docs/knight   --at=-1128,1344,162,180 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m5 docs/goldkey  --at=-760,2248,330,315 --tics=2 --single --fast
-node scripts/screenshot.mjs e1m6 docs/runekey   --at=224,120,62,90 --sql="UPDATE player SET pitch = 10" --tics=30 --single --fast
-node scripts/screenshot.mjs e1m6 docs/golddoors --at=250,704,31,0 --tics=4 --single --fast
-node scripts/screenshot.mjs e1m6 docs/goldopen  --at=250,704,31,0 --sql="EXECUTE PROCEDURE door_fire(6, (SELECT ent_id FROM player))" --tics=40 --single --fast
-node scripts/screenshot.mjs e1m6 docs/slipgate  --at=-472,136,110,250 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m6 docs/pillars   --at=-40,1184,-306,135 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m6 docs/banners   --at=672,152,30,135 --tics=8 --single --fast
-node scripts/screenshot.mjs e1m8 docs/g --gallery --fast     # a shot from every item spot: how to find views of a level
-```
+Posed and staged shots of every level, with their commands, are in [docs/screenshots.md](docs/screenshots.md).
 
 ## Layout
 
