@@ -101,6 +101,14 @@ await db.exec(`UPDATE ents SET x = ${tr.CX}, y = ${tr.CY}, z = ${tr.CZ}, vx = 0,
 await db.exec('EXECUTE PROCEDURE link_ent((SELECT ent_id FROM player))');
 s = await tic();
 assert(s.EXIT_KIND === 1 && s.NEXT_MAP === 'e1m5', 'touching the exit asks for E1M5');
+// execute_changelevel: the view moves to one of the level's intermission cameras, looking along its mangle
+const cams = await qa("SELECT ox, oy, oz, mpitch, myaw FROM map_ents WHERE classname = 'info_intermission'");
+const cam = cams.find((c) => Math.abs(c.OX - s.PX) < 0.5 && Math.abs(c.OY - s.PY) < 0.5 && Math.abs(c.OZ - s.PZ) < 0.5);
+assert(cams.length > 0 && cam && Math.abs(s.YAW - cam.MYAW) < 0.5 && Math.abs(s.PITCH - cam.MPITCH) < 0.5 && Math.abs(s.VIEW_Z - s.PZ) < 0.01,
+  `the view goes to an info_intermission (${cam ? `${cam.OX} ${cam.OY} ${cam.OZ}, looking ${cam.MYAW}° at pitch ${cam.MPITCH}` : 'none'}), the eye at the spot`);
+assert(s.INTERMISSION === 1 && s.CDTRACK === 3, `with the stats screen and the intermission music (track ${s.CDTRACK})`);
+const s2 = await tic();
+assert(Math.abs(s2.PX - s.PX) < 0.01 && Math.abs(s2.PZ - s.PZ) < 0.01, 'and the camera stays put');
 
 // and back on E1M5 gravity is normal again
 await loadMap(db, pak, res, 'e1m5', { skill: 1, newGame: false });

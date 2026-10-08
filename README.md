@@ -256,7 +256,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:skill` | the skills: each of the start map's halls sets its skill, nightmare's monsters attack without waiting and flinch at most every five seconds (two hits make a knight flinch twice on normal, once on nightmare), and QuakeC's `localcmd("skill 3")` sets it in QuakeC mode |
 | `npm run test:infight` | monsters fighting monsters: a knight hurt by an ogre turns on it and remembers the player, a knight spares a knight but a grunt turns on a grunt, the knight and the ogre fight until one dies, and the survivor goes back to the player |
 | `npm run test:registered` | the pak1 monsters' AI, spawned into E1M1 without their models: each is made to see the player and watched for its signature behaviour |
-| `npm run test:e1m8` | Ziggurat Vertigo: gravity 100, so jumps and grenades go far and falls are gentle; the exit leads to E1M5 |
+| `npm run test:e1m8` | Ziggurat Vertigo: gravity 100, so jumps and grenades go far and falls are gentle; the exit leads to E1M5, the view moving to an intermission camera that holds, with the stats and the intermission music |
 | `npm run test:e1m5` | the crucified zombies on the start map, and Gloom Keep's flooded moat: swimming, breath, drowning, surfacing |
 | `npm run test:e1m2` | Castle of the Damned: the drawbridge slab sinks into the moat, and the player wades across on it |
 | `npm run test:e1m3` | the Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, fall and rise, throw flesh, and die only when gibbed |

@@ -274,6 +274,8 @@ DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 BEGIN
+  -- the intermission: the player is at its camera, out of the world (MOVETYPE_NONE), until the page goes on
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.intermission = 1)) THEN EXIT;
   SELECT p.ent_id, p.jump_released, p.dmg_lava_time, p.air_finished, p.dead_time, p.weapon FROM player p WHERE p.id = 1 INTO pe, jr, dltime, afin, deadt, w;
   SELECT e.deadflag, e.flags, e.waterlevel, e.watertype, e.yaw, e.health, e.z FROM ents e WHERE e.id = :pe INTO dead, flags, wl, wt, yaw, hp, oldz;
   t = now_();

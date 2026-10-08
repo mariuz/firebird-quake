@@ -455,14 +455,14 @@ node scripts/screenshot.mjs e1m1 docs/qcvm-ai --qc --at=1150,1030,-250,330 --tic
 ## The intermission and the finale
 
 The end of a level, as Quake's status bar code draws it (`Sbar_IntermissionOverlay`): the time,
-the secrets and the kills over the view, until fire. The PSQL game shows it over the last frame when
-`changelevel` fires; in QuakeC mode progs.dat sends `svc_intermission` from the `info_intermission`
-camera. After E1M7, `ExitIntermission` sends `svc_cdtrack` and `svc_finale`, whose text the page
+the secrets and the kills over the view from one of the level's `info_intermission` cameras, until
+fire: the PSQL game's `changelevel` moves the view there as `execute_changelevel` does, and in QuakeC
+mode progs.dat does it itself and sends `svc_intermission`. After E1M7, `ExitIntermission` sends `svc_cdtrack` and `svc_finale`, whose text the page
 types out at eight characters a second under `gfx/finale.lmp`.
 
 ![the intermission after E1M1](intermission-e1m1-0.png) ![the end of the shareware episode, after E1M7](finale-e1m7-0.png)
 
-1. E1M1 completed: the stats over the last frame
+1. E1M1 completed: the stats over an intermission camera's view (one of E1M1's, at random)
 2. after E1M7, in QuakeC mode: the finale's text (here all of it) over the intermission camera's view
 
 ```bash

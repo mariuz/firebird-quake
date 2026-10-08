@@ -695,13 +695,28 @@ END^
 
 CREATE OR ALTER PROCEDURE changelevel (eid INTEGER)
 AS
-DECLARE m VARCHAR(32); DECLARE ek SMALLINT;
+DECLARE m VARCHAR(32); DECLARE ek SMALLINT; DECLARE pe INTEGER;
+DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE cz DOUBLE PRECISION; DECLARE cp DOUBLE PRECISION; DECLARE cyaw DOUBLE PRECISION;
 BEGIN
   SELECT e.map FROM ents e WHERE e.id = :eid INTO m;
   SELECT g.exit_kind FROM game g WHERE g.id = 1 INTO ek;
   IF (ek <> 0 OR m IS NULL) THEN EXIT;
-  -- the page shows the intermission's stats, the level's time as Quake counts it, until fire
-  UPDATE game g SET g.next_map = :m, g.exit_kind = 1, g.intermission_tics = 0, g.intermission = 1, g.completed_time = g.time_ WHERE g.id = 1;
+  -- the page shows the intermission's stats, the level's time as Quake counts it, until fire; the
+  -- intermission music (svc_cdtrack 3)
+  UPDATE game g SET g.next_map = :m, g.exit_kind = 1, g.intermission_tics = 0, g.intermission = 1, g.completed_time = g.time_, g.cdtrack = 3 WHERE g.id = 1;
+  -- execute_changelevel: the view goes to an intermission camera (FindIntermission: one of the level's
+  -- info_intermission spots at random, else the start), looking along its mangle, from the eye at the
+  -- spot itself; the player is out of the world (not solid, not hurt, not moving)
+  SELECT FIRST 1 m.ox, m.oy, m.oz, COALESCE(m.mpitch, 0), COALESCE(m.myaw, m.angle, 0) FROM map_ents m
+   WHERE m.classname = 'info_intermission' ORDER BY RAND() INTO cx, cy, cz, cp, cyaw;
+  IF (cx IS NULL) THEN
+    SELECT FIRST 1 m.ox, m.oy, m.oz, 0, COALESCE(m.angle, 0) FROM map_ents m WHERE m.classname = 'info_player_start' INTO cx, cy, cz, cp, cyaw;
+  IF (cx IS NULL) THEN EXIT;
+  pe = player_ent();
+  UPDATE ents e SET e.x = :cx, e.y = :cy, e.z = :cz, e.vx = 0, e.vy = 0, e.vz = 0, e.yaw = :cyaw,
+         e.solid = 0, e.movetype = 0, e.takedamage = 0 WHERE e.id = :pe;
+  UPDATE player p SET p.pitch = :cp, p.view_ofs = 0, p.stepz = 0, p.punchangle = 0 WHERE p.id = 1;
+  EXECUTE PROCEDURE link_ent(pe);
 END^
 
 -- teleport_touch: send `other` to the destination
