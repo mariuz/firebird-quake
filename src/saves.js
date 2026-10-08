@@ -10,6 +10,7 @@ import { SAVED_TABLES } from './loader.js';
 
 export const SAVE_VERSION = 1;
 const ROWS_PER_BLOCK = 150;
+const BLOCK_BYTES = 256 * 1024;
 
 /** { version, slot, meta: the saves row, tables: { sv_ents: { cols, rows } … } } for a saved slot, or null. */
 export async function exportSave(db, slot) {
@@ -36,9 +37,17 @@ export async function importSave(db, save, slot = save.slot) {
     const head = `INSERT INTO sv_${t} (slot, ${cols.join(', ')}) VALUES (${Number(slot)}, `;
     for (const r of rows) inserts.push(`${head}${r.map(lit).join(', ')});`);
   }
-  for (let i = 0; i < inserts.length; i += ROWS_PER_BLOCK) {
-    await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${inserts.slice(i, i + ROWS_PER_BLOCK).join('\n')}\nEND^\nSET TERM ; ^`);
+  // a block holds at most 255 table contexts, and stays under a few hundred KB of text
+  let block = [], size = 0;
+  const flush = async () => {
+    if (block.length) await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${block.join('\n')}\nEND^\nSET TERM ; ^`);
+    block = []; size = 0;
+  };
+  for (const ins of inserts) {
+    if (block.length >= ROWS_PER_BLOCK || size + ins.length > BLOCK_BYTES) await flush();
+    block.push(ins); size += ins.length;
   }
+  await flush();
 }
 
 // what the engine returns, as JSON keeps it: BIGINTs may come back as BigInt, CHARs padded
@@ -48,12 +57,29 @@ function plain(v) {
   return v;
 }
 
-// a value as a PSQL literal; String(number) is the shortest text that reads back as the same double
+// a value as a PSQL literal
 function lit(v) {
   if (v === null || v === undefined) return 'NULL';
-  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+  if (typeof v === 'number') return Number.isFinite(v) ? exactDouble(v) : 'NULL';
   if (typeof v === 'boolean') return v ? '1' : '0';
   return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+// A double that reads back bit for bit. Firebird's text-to-double conversion is not correctly rounded
+// (about one value in ten comes back a unit in the last place off, as literal or as parameter), so a
+// fraction is written as its exact integer mantissa times a power of two, both of which it converts
+// exactly. Integers up to 2^53 are written as they are.
+function exactDouble(v) {
+  if (Number.isInteger(v) && Math.abs(v) <= 2 ** 53) return String(v);
+  const dv = new DataView(new ArrayBuffer(8));
+  dv.setFloat64(0, v);
+  const hi = dv.getUint32(0), lo = dv.getUint32(4);
+  const biased = (hi >>> 20) & 0x7ff;
+  let m = BigInt(hi & 0xfffff) * 4294967296n + BigInt(lo);
+  let e = biased - 1075;
+  if (biased === 0) e = -1074; else m += 1n << 52n;    // subnormals have no implicit bit
+  while (m && !(m & 1n)) { m >>= 1n; e++; }
+  return `CAST(${v < 0 ? '-' : ''}${m} AS DOUBLE PRECISION) * POWER(2e0, ${e})`;
 }
 
 // ── the browser's copy: one IndexedDB record per slot and data set ─────────────────────────────────

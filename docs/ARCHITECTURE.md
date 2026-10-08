@@ -161,10 +161,13 @@ A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in Qu
   back with `GEN_ID`; the moment's leftovers go (`sound_events`, `fx_events`, `vis_faces` with
   `viewcfg.vis_leaf`, the VM's local stack, `checkclient`'s caches). A PSQL save leaves QuakeC mode.
 - **The browser's copy**: the database is in memory, so `exportSave` (`src/saves.js`) reads a slot's
-  rows into an object (`{ version, slot, meta, tables: { ents: { cols, rows } … } }`, numbers as
-  JavaScript keeps them: the shortest text that reads back as the same double), and the page stores it
+  rows into an object (`{ version, slot, meta, tables: { ents: { cols, rows } … } }`), and the page stores it
   in IndexedDB under `<data set>/<slot>`, since model ids depend on the paks. `importSave` writes it
-  back into the `sv_` tables with `EXECUTE BLOCK`s of literal `INSERT`s, 150 rows a block.
+  back into the `sv_` tables with `EXECUTE BLOCK`s of literal `INSERT`s (150 rows a block: a block may
+  hold 255 table contexts). Firebird's text-to-double conversion is not correctly rounded (about one
+  value in ten comes back a unit in the last place off, as a literal or as a text-bound parameter), so a
+  fraction is written as its integer mantissa times a power of two, `CAST(m AS DOUBLE PRECISION) *
+  POWER(2e0, e)`, which comes back bit for bit.
 - **The page** (`saveGame`, `loadGame` in `src/main.js`): the menu's Load and Save list the twelve
   slots; a load switches the **Logic** and the skill to the save's and calls `startMap(map, true,
   save)`, which imports and loads after the geometry instead of spawning. `scripts/save-test.mjs` saves
