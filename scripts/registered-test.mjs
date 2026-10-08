@@ -50,7 +50,7 @@ const spawn = async (name, dist = 160) => {
 const mon = (id) => q1(`SELECT id, st, anim, anim_frame, health, enemy_id, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z, flags, movetype FROM ents WHERE id = ${id}`);
 const sounds = (like) => q1(`SELECT COUNT(*) n FROM sound_events WHERE snd LIKE '${like}'`).then((r) => r.N);
 const count = (cls) => q1(`SELECT COUNT(*) n FROM ents WHERE classname = '${cls}'`).then((r) => r.N);
-const wake = async (id) => { await db.exec(`EXECUTE PROCEDURE found_target(${id})`); return mon(id); };
+const wake = async (id) => { await db.exec(`EXECUTE PROCEDURE found_target(${id}, (SELECT ent_id FROM player))`); return mon(id); };
 const untilState = async (id, states, max = 60) => { let m; for (let i = 0; i < max; i++) { await tic(); m = await mon(id); if (!m || states.includes(m.ST)) break; } return m; };
 
 const types = (await qa('SELECT name FROM monster_types ORDER BY name')).map((r) => r.NAME);

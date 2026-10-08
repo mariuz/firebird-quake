@@ -9,6 +9,7 @@ CREATE OR ALTER PROCEDURE t_damage (targ INTEGER, inflictor INTEGER, attacker IN
 CREATE OR ALTER PROCEDURE use_targets (eid INTEGER, activator INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE monster_die (eid INTEGER, attacker INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE monster_pain (eid INTEGER, attacker INTEGER, damage INTEGER) AS BEGIN END^
+CREATE OR ALTER PROCEDURE found_target (eid INTEGER, enemy INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE teleport_touch (trig INTEGER, other INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE door_fire (eid INTEGER, activator INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE plat_go_down (eid INTEGER) AS BEGIN END^
@@ -990,6 +991,7 @@ DECLARE td SMALLINT; DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp 
 DECLARE save INTEGER; DECLARE take INTEGER; DECLARE av INTEGER; DECLARE atype DOUBLE PRECISION; DECLARE inv DOUBLE PRECISION;
 DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION;
 DECLARE mt SMALLINT; DECLARE acls VARCHAR(40); DECLARE pe INTEGER; DECLARE sdf DOUBLE PRECISION; DECLARE pf DOUBLE PRECISION;
+DECLARE cur INTEGER;
 BEGIN
   SELECT e.takedamage, e.classname, e.flags, e.health, e.movetype FROM ents e WHERE e.id = :targ INTO td, cls, flags, hp, mt;
   IF (td IS NULL OR td = 0 OR hp <= 0 AND cls <> 'player') THEN EXIT;
@@ -1053,9 +1055,15 @@ BEGIN
   END
   IF (BIN_AND(flags, 32) <> 0) THEN
   BEGIN
-    -- monsters get mad at whoever hurt them (never at their own kind)
-    IF (attacker = pe) THEN
-      UPDATE ents e SET e.enemy_id = :attacker, e.st = IIF(e.st = 'stand' OR e.st = 'walk', 'run', e.st), e.anim = IIF(e.st = 'stand' OR e.st = 'walk', NULL, e.anim) WHERE e.id = :targ;
+    -- T_Damage: get mad at whoever hurt us (not the world, not ourselves, not the enemy we have), unless
+    -- it is one of our own kind, except for soldiers; a monster fighting another remembers the player
+    SELECT e.enemy_id FROM ents e WHERE e.id = :targ INTO cur;
+    IF (attacker IS NOT NULL AND attacker > 0 AND attacker <> targ AND attacker IS DISTINCT FROM cur
+        AND (cls IS DISTINCT FROM acls OR cls = 'monster_army')) THEN
+    BEGIN
+      IF (cur = pe) THEN UPDATE ents e SET e.oldenemy_id = :pe WHERE e.id = :targ;
+      EXECUTE PROCEDURE found_target(targ, attacker);
+    END
     EXECUTE PROCEDURE monster_pain(targ, attacker, take);
   END
 END^

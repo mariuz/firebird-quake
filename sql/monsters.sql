@@ -135,14 +135,15 @@ BEGIN
   RETURN 1;
 END^
 
--- FoundTarget / HuntTarget
-CREATE OR ALTER PROCEDURE found_target (eid INTEGER)
+-- FoundTarget / HuntTarget: the enemy (the player it saw, or whoever hurt it), the sight sound, the
+-- run, and a second before the first attack
+CREATE OR ALTER PROCEDURE found_target (eid INTEGER, enemy INTEGER)
 AS
 DECLARE s VARCHAR(64); DECLARE run_ VARCHAR(16);
 BEGIN
   SELECT t.sight_snd, t.run_anim FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO s, run_;
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
-  UPDATE ents e SET e.enemy_id = player_ent(), e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5, e.attack_finished = now_() + 1 WHERE e.id = :eid;
+  UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5, e.attack_finished = now_() + 1 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, run_);
 END^
 
@@ -550,8 +551,16 @@ BEGIN
     SELECT e.health FROM ents e WHERE e.id = :enemy INTO ehp;
     IF (ehp IS NULL OR ehp <= 0) THEN
     BEGIN
+      -- ai_run: back to the player it was hunting before a monster hurt it (HuntTarget), if alive
       enemy = NULL;
-      UPDATE ents e SET e.enemy_id = NULL WHERE e.id = :eid;
+      SELECT o.id FROM ents e JOIN ents o ON o.id = e.oldenemy_id WHERE e.id = :eid AND o.health > 0 INTO enemy;
+      IF (enemy IS NOT NULL) THEN
+      BEGIN
+        UPDATE ents e SET e.enemy_id = :enemy, e.oldenemy_id = NULL, e.goal_id = NULL, e.st = 'run', e.attack_finished = :t + 1 WHERE e.id = :eid;
+        EXECUTE PROCEDURE set_anim(eid, run_a);
+        EXIT;
+      END
+      UPDATE ents e SET e.enemy_id = NULL, e.oldenemy_id = NULL WHERE e.id = :eid;
       IF (st IN ('run', 'melee', 'missile')) THEN
       BEGIN
         st = 'stand';
@@ -570,7 +579,7 @@ BEGIN
       SELECT l.pvs FROM leaves l WHERE l.id = (SELECT e.leaf FROM ents e WHERE e.id = player_ent()) INTO pvs;
       IF (pvs_visible(pvs, lf) = 1 AND find_target(eid) = 1) THEN
       BEGIN
-        EXECUTE PROCEDURE found_target(eid);
+        EXECUTE PROCEDURE found_target(eid, player_ent());
         EXIT;
       END
     END

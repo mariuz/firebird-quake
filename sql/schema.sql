@@ -202,6 +202,7 @@ CREATE TABLE ents (
   deadflag   SMALLINT DEFAULT 0 NOT NULL,
   owner_id   INTEGER,
   enemy_id   INTEGER,
+  oldenemy_id INTEGER,                    -- the player, while a monster fights the monster that hurt it (infighting)
   goal_id    INTEGER,
   movetarget INTEGER,
   st         VARCHAR(12) DEFAULT 'idle' NOT NULL,  -- monsters: stand walk run attack melee pain die dead / doors: top bottom up down

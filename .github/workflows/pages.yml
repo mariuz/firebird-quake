@@ -66,6 +66,9 @@ jobs:
       - name: The registered monsters
         run: npm run test:registered
 
+      - name: Monsters fighting monsters
+        run: npm run test:infight
+
       # Ziggurat Vertigo: low gravity, long jumps, grenades that fly, the exit to E1M5
       - name: Ziggurat Vertigo
         run: npm run test:e1m8
