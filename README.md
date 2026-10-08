@@ -87,7 +87,8 @@ Click the view to capture the mouse.
 | `1`–`8`, `/` or the wheel | choose a weapon, cycle weapons |
 | `9` | all weapons and ammo (impulse 9) |
 | `P` | pause |
-| `Esc` | Quake's menu: new game, options (mouse speed, always run, volumes, screen size…), help |
+| `F6`, `F9` | quick save, quick load |
+| `Esc` | Quake's menu: new game, load and save (twelve slots), options (mouse speed, always run, volumes, screen size…), help |
 
 On touch screens the left half of the view moves, the right half looks, and a tap fires.
 
@@ -255,6 +256,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm test` | SQL smoke test: every procedure compiles, E1M1 loads, tics and frames run, every sound the game queued exists in the pak (`PAK=… PAK1=… node scripts/sql-smoke.mjs start` runs it over LibreQuake, as CI does) |
 | `npm run test:boss` | E1M7: the rune wakes Chthon, he rises and throws lava, the lightning does nothing until both terminals are up, three bolts kill him, the exit opens |
 | `npm run test:skill` | the skills: each of the start map's halls sets its skill, nightmare's monsters attack without waiting and flinch at most every five seconds (two hits make a knight flinch twice on normal, once on nightmare), and QuakeC's `localcmd("skill 3")` sets it in QuakeC mode |
+| `npm run test:save` | save games: E1M1 saved mid-play and loaded back exactly (every entity, the client, the totals, the light styles); exported as the page keeps it, loaded onto E1M1 loaded again with other brush model ids; the same in QuakeC mode with progs.dat's globals, fields and run-time strings; no saving dead or in the intermission |
 | `npm run test:infight` | monsters fighting monsters: a knight hurt by an ogre turns on it and remembers the player, a knight spares a knight but a grunt turns on a grunt, the knight and the ogre fight until one dies, and the survivor goes back to the player |
 | `npm run test:registered` | the pak1 monsters' AI, spawned into E1M1 without their models: each is made to see the player and watched for its signature behaviour |
 | `npm run test:e1m8` | Ziggurat Vertigo: gravity 100, so jumps and grenades go far and falls are gentle; the exit leads to E1M5, the view moving to an intermission camera that holds, with the stats and the intermission music |

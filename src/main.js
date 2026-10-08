@@ -16,9 +16,11 @@ import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
+import saveSql from '../sql/save.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
+import { exportSave, importSave, SaveStore } from './saves.js';
 import { frameDlights, dlightAt } from './dlights.js';
 import { Menu } from './menu.js';
 import { Renderer, lightPoint } from './renderer.js';
@@ -54,6 +56,9 @@ const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
+let pakKey = '';           // the paks in use: saves are kept per data set (model ids depend on the paks)
+let saveSlots = new Array(12).fill(null);   // the menu's slot names (SaveGame_Comment), from the browser's store
+const QUICK_SLOT = 12;     // F6 / F9: Quake's quick.sav, not in the menu's list
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -97,6 +102,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code.startsWith('Digit')) impulse = Number(e.code.slice(5));
   if (e.code === 'Slash') impulse = 10;
   if (e.code === 'KeyP' || e.code === 'Pause') paused = !paused;
+  if (e.code === 'F6') { e.preventDefault(); saveGame(QUICK_SLOT); }
+  if (e.code === 'F9') { e.preventDefault(); loadGame(QUICK_SLOT); }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 let menuOpened = 0;
@@ -172,7 +179,8 @@ function readInput(tics) {
 }
 
 // ── maps ─────────────────────────────────────────────────────────────────
-async function startMap(name, newGame) {
+// save: an exported save game (src/saves.js) to put back on the freshly loaded map instead of a new spawn
+async function startMap(name, newGame, save = null) {
   running = false;
   setStatus(`Loading ${name} into Firebird…`);
   const t0 = performance.now();
@@ -189,18 +197,26 @@ async function startMap(name, newGame) {
       await jit.init();
       progsLoaded = true;
     }
-    setStatus(`Spawning ${name} through QuakeC…`);
-    await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
+    if (save) await db.exec('EXECUTE PROCEDURE qc_enter');   // the save's edicts replace the spawn
+    else {
+      setStatus(`Spawning ${name} through QuakeC…`);
+      await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
+    }
     // the functions the spawn ran more than once, compiled to procedures (the rest follow as they get hot)
     setStatus('Compiling QuakeC to PSQL…');
     await jit.compileHot({ min: 2, max: 32 });
+  }
+  if (save) {
+    setStatus(`Loading the saved game…`);
+    await importSave(db, save);
+    await db.exec(`EXECUTE PROCEDURE load_game(${save.slot})`);
   }
   map = { name, bsp };
   renderer.setResources(res);
   renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
   renderer.particles = [];
   beams = []; explosions = [];
-  interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null;
+  interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null; muzzleUntil = 0; prevWeaponFrame = 0;
   audio.setAmbients(bsp.entities);
   const world = bsp.entities.find((e) => e.classname === 'worldspawn');
   audio.playMusic(Number(world?.sounds ?? 0));
@@ -213,6 +229,51 @@ async function startMap(name, newGame) {
   $('map').value = name;
   lastTic = performance.now();
   running = true;
+}
+
+// ── save games (sql/save.sql, src/saves.js) ───────────────────────────────
+// Host_Savegame_f: save_game copies the state's rows into the slot, and the browser keeps them
+async function saveGame(slot) {
+  if (!running || !db) return;
+  try {
+    await db.exec(`EXECUTE PROCEDURE save_game(${slot})`);
+    const save = await exportSave(db, slot);
+    if (SaveStore.available()) await SaveStore.put(pakKey, slot, save);
+    if (slot < 12) saveSlots[slot] = save.meta.COMMENT;
+    flash(`Saving game to s${slot === QUICK_SLOT ? 'quick' : slot}.sav... ${save.meta.COMMENT.replace(/ +/g, ' ')}`);
+  } catch (err) {
+    flash(sqlMessage(err), true);
+  }
+}
+
+// Host_Loadgame_f: the save's map loaded under the save's logic, then load_game puts the rows back
+async function loadGame(slot) {
+  if (!db || !pak) return;
+  try {
+    const save = SaveStore.available() ? await SaveStore.get(pakKey, slot) : null;
+    if (!save) { flash('no saved game in that slot', true); return; }
+    const logic = save.meta.QC_MODE === 1 ? 'qc' : 'psql';
+    if (logic !== settings.logic) { settings.logic = logic; $('logic').value = logic; }
+    settings.skill = save.meta.SKILL; $('skill').value = String(save.meta.SKILL); saveSettings();
+    await startMap(save.meta.MAP_NAME, true, save);
+  } catch (err) {
+    console.error(err);
+    setStatus(sqlMessage(err), true);
+  }
+}
+
+const refreshSaves = async () => { try { saveSlots = SaveStore.available() ? await SaveStore.list(pakKey) : new Array(12).fill(null); } catch { saveSlots = new Array(12).fill(null); } };
+// the line Firebird's exception carries (save_error's text), not the whole report
+const sqlMessage = (err) => {
+  const lines = String(err.message).split('\n').map((l) => l.replace(/^-/, ''));
+  const i = lines.findIndex((l) => l.includes('SAVE_ERROR'));   // -"PUBLIC"."SAVE_ERROR", then its text
+  return i >= 0 && lines[i + 1] ? lines[i + 1] : err.message;
+};
+let flashTimer = 0;
+function flash(msg, isError = false) {
+  setStatus(msg, isError);
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { if (running) setStatus(''); }, 2500);
 }
 
 // ── the loop ─────────────────────────────────────────────────────────────
@@ -484,7 +545,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, save: saveSql });
   return instance;
 }
 
@@ -507,6 +568,8 @@ async function usePak(buffers, label) {
   audio.setPak(pak);
   $('map').innerHTML = maps.map((m) => `<option>${m}</option>`).join('');
   $('pakname').textContent = label;
+  pakKey = label;
+  await refreshSaves();
   const first = maps.includes(settings.map) ? settings.map : maps.includes('start') ? 'start' : maps[0];
   await startMap(first, true);
 }
@@ -579,6 +642,9 @@ function menuActions() {
   return {
     newGame,
     quit: newGame,
+    saves: () => saveSlots,
+    save: (slot) => saveGame(slot),
+    load: (slot) => loadGame(slot),
     options: [
       { label: 'Reset to defaults', kind: 'action', change: () => { Object.assign(settings, { sensitivity: 3, alwaysRun: true, invertMouse: false }); setSfx(70); setMusicVolume(50); } },
       { label: 'Screen size', kind: 'value', get: () => (settings.detail === 'high' ? '320x200' : '160x100'), change: () => setDetail(settings.detail === 'high' ? 'low' : 'high') },

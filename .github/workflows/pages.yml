@@ -72,6 +72,10 @@ jobs:
       - name: The skills, nightmare included
         run: npm run test:skill
 
+      # E1M1 saved mid-play and loaded back, in both modes, also onto a reloaded map
+      - name: Save games
+        run: npm run test:save
+
       # Ziggurat Vertigo: low gravity, long jumps, grenades that fly, the exit to E1M5
       - name: Ziggurat Vertigo
         run: npm run test:e1m8

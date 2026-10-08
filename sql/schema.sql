@@ -484,6 +484,21 @@ CREATE TABLE qc_eyeleaf (
   x DOUBLE PRECISION NOT NULL, y DOUBLE PRECISION NOT NULL, z DOUBLE PRECISION NOT NULL,
   leaf INTEGER NOT NULL
 );
+-- ── save games (sql/save.sql) ────────────────────────────────────────────────
+-- One row per slot (Quake's s0..s11, and 12 for quick.sav); the game's rows are in the sv_<table> copies that
+-- loader.js generates from the live tables (savedTablesSql). world_model and ent_seq are what a load
+-- needs to put the rows back on a freshly loaded copy of the map: its brush models may have other ids.
+CREATE TABLE saves (
+  slot        SMALLINT NOT NULL PRIMARY KEY,
+  map_name    VARCHAR(32) NOT NULL,
+  comment     VARCHAR(40) NOT NULL,          -- SaveGame_Comment: the level's name and the kills, for the menu
+  qc_mode     SMALLINT NOT NULL,
+  skill       SMALLINT NOT NULL,
+  time_       DOUBLE PRECISION NOT NULL,
+  world_model INTEGER NOT NULL,
+  ent_seq     BIGINT NOT NULL
+);
+
 CREATE GLOBAL TEMPORARY TABLE qc_localstack (
   depth INTEGER NOT NULL,
   ofs INTEGER NOT NULL,

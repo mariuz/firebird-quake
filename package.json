@@ -15,6 +15,7 @@
     "test:registered": "node scripts/registered-test.mjs",
     "test:infight": "node scripts/infight-test.mjs",
     "test:skill": "node scripts/skill-test.mjs",
+    "test:save": "node scripts/save-test.mjs",
     "test:e1m8": "node scripts/e1m8-test.mjs",
     "test:e1m5": "node scripts/e1m5-test.mjs",
     "test:e1m2": "node scripts/e1m2-test.mjs",

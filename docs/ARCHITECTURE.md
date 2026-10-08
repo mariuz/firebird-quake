@@ -33,8 +33,10 @@ engine needs `SharedArrayBuffer`, so the page must be cross-origin isolated: the
 COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworker.js` installs a
 service worker that re-issues every response with the headers after one reload.
 
-`createSchema(db, sql)` in `src/loader.js` runs the six SQL files in order, `SQL_FILES = schema,
-physics, game, weapons, monsters, render`, splitting each on `SET TERM`. The order matters because
+`createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
+physics, game, weapons, monsters, render, qcvm, save`, splitting each on `SET TERM`; the generated
+`load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
+6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
 PROCEDURE x (...) AS BEGIN END^`) for the procedures it calls before defining them, and the stub's
 signature must match the real one exactly.
@@ -133,6 +135,41 @@ A direct port of `world.c` and `sv_phys.c`:
 - Combat: `t_damage(target, inflictor, attacker, dmg)` with armour absorption, god mode, the damage momentum, pain (`monster_pain`), death (`killed` → `monster_die`, gibs through `throw_gib`/`throw_head`, kill count); `t_radius_damage` for explosions. On skill 3 (`nightmare()`) a monster gets no wait before attacking (`found_target`, `check_attack` and the return to the player leave `attack_finished` alone, as `SUB_AttackFinished` does) and, once hurt, no pain animation for five seconds (`t_damage` sets `pain_finished`, as `T_Damage` does); it spawns the hard skill's entities. A monster hurt by anything but the world, itself or the enemy it already has gets mad at the attacker (`found_target(eid, enemy)`: the sight sound, the run, a second before the first attack) unless the attacker is of its own class, soldiers excepted, as `combat.qc`'s `T_Damage` has it; a monster that was hunting the player keeps it in `oldenemy_id`, and when its enemy dies it goes back to the player (`ai_run`'s `HuntTarget`). So an ogre's grenade turns a knight on the ogre, two grunts can shoot it out, and a barrel's blast turns monsters on the barrel for as long as it lasts (`scripts/infight-test.mjs`).
 - Projectiles: `launch_spike`/`launch_grenade`/`launch_rocket` create tossed or flying entities whose `impact(e1, e2)` does the class-specific thing: spikes and the three monster spike kinds, rockets, lasers, vore balls, lava balls, fireballs, grenades (bounce, explode on a timer or on a monster), zombie gibs, and the player bumping doors, secret doors, buttons, and taking fall damage.
 - Messages and sound: `cprint` (centre print, two seconds) and `sprint` write to `game`; `snd(ent, chan, name, vol, attn)` and `snd_at(x, y, z, ...)` append `sound_events`; `fx(kind, ...)` appends `fx_events` (explosions, blood, gunshot, teleport, lightning, lava splash…). Names picked with `IIF`/`CASE` are `TRIM`med (section 13).
+
+## 6a. Save games (`sql/save.sql`, `src/saves.js`)
+
+A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in QuakeC mode
+`qc_globals`, `qc_fields`, `qc_edicts`, the run-time strings (`qc_strings` with `ofs < 0`), `qc_vm` and
+`qc_saved`. Everything else is the map, the pak or `progs.dat`, which a load reads again.
+
+- **The copies**: `savedTablesSql(db)` in `src/loader.js` reads those tables' columns from
+  `RDB$RELATION_FIELDS` after the schema exists and generates `sv_<table>` (a `slot` in front of the
+  same columns) and three procedures: `save_tables(slot, qc)`, `restore_tables(slot, qc)` and
+  `drop_saved(slot)`, each an `INSERT … SELECT` per table. A column added to `ents` is saved without
+  touching them. (DDL through `EXECUTE STATEMENT` does not take effect in this engine build, so the
+  generation is in JS, as the `load_<table>` procedures are.) The list is `SAVED_TABLES`.
+- **`save_game(slot)`** (`Host_Savegame_f`): refuses a dead player (`deadflag`, or QuakeC's
+  `deadflag`/`health` fields) and the intermission, writes the slot's `saves` row (the map, the mode,
+  the skill, the time, `world_model`, the `ent_seq` value, and `SaveGame_Comment`'s 22-column level
+  name with the kills, which the menu lists), and copies the rows. Slots 0 to 11 are the menu's, 12 is
+  `quick.sav` (F6, F9).
+- **`load_game(slot)`** (`Host_Loadgame_f`) runs after the page has loaded the save's map (and for a
+  QuakeC save entered QuakeC mode with `qc_enter`, skipping the spawn): the rows come back; the brush
+  models are renumbered, because `loadMap` gives each load of a map new model ids (`res.nextModel`
+  only grows), so every `model_id` at or above the saved `world_model` moves by the difference (the
+  alias models, sprites and item boxes are loaded once per data set and keep theirs); `ent_seq` goes
+  back with `GEN_ID`; the moment's leftovers go (`sound_events`, `fx_events`, `vis_faces` with
+  `viewcfg.vis_leaf`, the VM's local stack, `checkclient`'s caches). A PSQL save leaves QuakeC mode.
+- **The browser's copy**: the database is in memory, so `exportSave` (`src/saves.js`) reads a slot's
+  rows into an object (`{ version, slot, meta, tables: { ents: { cols, rows } … } }`, numbers as
+  JavaScript keeps them: the shortest text that reads back as the same double), and the page stores it
+  in IndexedDB under `<data set>/<slot>`, since model ids depend on the paks. `importSave` writes it
+  back into the `sv_` tables with `EXECUTE BLOCK`s of literal `INSERT`s, 150 rows a block.
+- **The page** (`saveGame`, `loadGame` in `src/main.js`): the menu's Load and Save list the twelve
+  slots; a load switches the **Logic** and the skill to the save's and calls `startMap(map, true,
+  save)`, which imports and loads after the geometry instead of spawning. `scripts/save-test.mjs` saves
+  E1M1 mid-play and checks that a load brings back every entity, the client, the totals and the light
+  styles exactly, in the session and after an export, another level, and E1M1 loaded again.
 
 ## 7. The player (`sql/weapons.sql`)
 
@@ -258,7 +295,7 @@ ammo, keys, sigils), the centre print, and a text HUD at low detail.
 - **Input**: `keydown`/`keyup` into a set, pointer lock for the mouse, the wheel for weapons, touch halves for phones; `readInput(tics)` turns them into the nine `quake_tic` arguments.
 - **The loop**: `frame()` computes how many tics are due (1..4 at 50 ms) so a slow frame catches up, runs `quake_tic`, then in one `Promise.all` queries `frame_faces[_fast]`, `frame_ents`, `frame_lightstyles`, the new `sound_events` and `fx_events` (by last id) and the brush models' frames, paints, plays, presents. Level changes (`EXIT_KIND`) load the next map after the stats message; the finale shows the ending text.
 - **Data sets**: `DATASETS` in `boot()` are the pak combinations the site may serve (`pak/pak0.pak`, `pak/pak1.pak`, `pak/lq1/pak0.pak`, `pak/lq1/pak1.pak`), probed with `HEAD`; the **Data** selector shows those whose files exist. The file picker takes one or two paks.
-- **The menu** (`src/menu.js`, menu.c): Escape, or the browser releasing the mouse, brings it up; the game pauses (no tics) and the last frame is drawn again, dimmed (`Renderer.fadeScreen`, `Draw_FadeScreen`), with the menu over it from the pak's pictures (`gfx/qplaque.lmp`, `gfx/ttl_main.lmp`, `gfx/mainmenu.lmp`, the spinning `gfx/menudotN.lmp`, `gfx/sp_menu.lmp`, `gfx/p_option.lmp`, `gfx/helpN.lmp`, the `gfx/box_*.lmp` text box) and the console font's gold half for the options (`M_Print`), with Quake's menu sounds. The options call the same setters as the page's controls (`setDetail`, `setLogic`, `setRenderer`, `setSfx`, `setMusicVolume`). When paused, `gfx/pause.lmp` is drawn as Quake does.
+- **The menu** (`src/menu.js`, menu.c): Escape, or the browser releasing the mouse, brings it up; the game pauses (no tics) and the last frame is drawn again, dimmed (`Renderer.fadeScreen`, `Draw_FadeScreen`), with the menu over it from the pak's pictures (`gfx/qplaque.lmp`, `gfx/ttl_main.lmp`, `gfx/mainmenu.lmp`, the spinning `gfx/menudotN.lmp`, `gfx/sp_menu.lmp`, `gfx/p_option.lmp`, `gfx/helpN.lmp`, the `gfx/box_*.lmp` text box) and the console font's gold half for the options (`M_Print`), with Quake's menu sounds. Single Player's Load and Save list the twelve save slots (`gfx/p_load.lmp`, `gfx/p_save.lmp`, section 6a). The options call the same setters as the page's controls (`setDetail`, `setLogic`, `setRenderer`, `setSfx`, `setMusicVolume`). When paused, `gfx/pause.lmp` is drawn as Quake does.
 - **Settings** persist in `localStorage`: map, skill, detail (320×200 or 160×100), renderer mode, volumes, music mode, data set, mouse speed, always run, invert mouse.
 - **Console**: any SQL against the live database, with buttons for the common queries; `window.quake` exposes `db`, `sql()`, `renderer`, `res`, `settings`, `last` (the last tic row) and `map` to the devtools console.
 - **Music**: `worldspawn.sounds` names the CD track; `public/music/trackNN.ogg` or a picked folder; otherwise a synthesised drone.
@@ -278,6 +315,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
 | `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
 | `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
 | `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |
 | `screenshot.mjs` | renders frames headlessly: `--at=x,y,z,yaw`, `--sql="…"` and `--tics=N` (repeatable, in order), `--single`, `--fast`, `--compare` (SQL-projected vs JS-projected frame, must match), `--gallery` (a view from every item spot) |

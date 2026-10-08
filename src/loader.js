@@ -81,12 +81,74 @@ export async function bulkLoad(db, table, rows) {
   await flush();
 }
 
-export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm'];
+export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm', 'save'];
 
 export async function createSchema(db, sql) {
   await db.exec(sql.schema);
   await db.exec(loaderSql());
-  for (const f of SQL_FILES.slice(1)) await db.exec(sql[f]);
+  for (const f of SQL_FILES.slice(1)) {
+    if (f === 'save') await db.exec(await savedTablesSql(db));
+    await db.exec(sql[f]);
+  }
+}
+
+// ── save games (sql/save.sql) ───────────────────────────────────────────────
+// The state of a game is these tables' rows; everything else is the map, the pak or progs.dat, which
+// a load reads again. Each gets a copy, sv_<table>, with the slot in front of the same columns, and
+// save_tables / restore_tables copy a slot's rows across. The QuakeC VM's tables are copied only in
+// QuakeC mode (qc = 1); of the string table only the strings made at run time (ftos, vtos, the
+// level's names) are the game's.
+export const SAVED_TABLES = {
+  game: { qc: false, where: '' },
+  player: { qc: false, where: '' },
+  ents: { qc: false, where: '' },
+  lightstyles: { qc: false, where: '' },
+  qc_globals: { qc: true, where: '' },
+  qc_fields: { qc: true, where: '' },
+  qc_edicts: { qc: true, where: '' },
+  qc_strings: { qc: true, where: 'ofs < 0' },
+  qc_vm: { qc: true, where: '' },
+  qc_saved: { qc: true, where: '' },
+};
+
+/** The sv_ tables and the two copying procedures, generated from the live tables' columns so that a
+ *  column added to ents is saved without touching this. Needs the schema in the database. */
+export async function savedTablesSql(db) {
+  const names = Object.keys(SAVED_TABLES).map((t) => `'${t.toUpperCase()}'`).join(', ');
+  const { rows } = await db.query(
+    `SELECT TRIM(rf.rdb$relation_name) t, TRIM(rf.rdb$field_name) c, f.rdb$field_type ft, f.rdb$character_length cl, TRIM(cs.rdb$character_set_name) cs
+       FROM rdb$relation_fields rf JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source
+       LEFT JOIN rdb$character_sets cs ON cs.rdb$character_set_id = f.rdb$character_set_id
+      WHERE rf.rdb$relation_name IN (${names}) ORDER BY rf.rdb$relation_name, rf.rdb$field_position`, [], { rowMode: 'object' });
+  const TYPES = { 7: 'SMALLINT', 8: 'INTEGER', 16: 'BIGINT', 27: 'DOUBLE PRECISION' };
+  const typeOf = (r) => {
+    if (TYPES[r.FT]) return TYPES[r.FT];
+    if (r.FT === 37 || r.FT === 14) return `${r.FT === 37 ? 'VARCHAR' : 'CHAR'}(${r.CL})${r.CS ? ` CHARACTER SET ${r.CS}` : ''}`;
+    throw new Error(`savedTablesSql: ${r.T}.${r.C} has a column type (${r.FT}) the save tables do not know`);
+  };
+  const cols = new Map();
+  for (const r of rows) {
+    if (!cols.has(r.T)) cols.set(r.T, []);
+    cols.get(r.T).push({ name: r.C, type: typeOf(r) });
+  }
+  let ddl = '';
+  let save = 'SET TERM ^ ;\nCREATE OR ALTER PROCEDURE save_tables (slot SMALLINT, qc SMALLINT)\nAS\nBEGIN\n';
+  let restore = 'CREATE OR ALTER PROCEDURE restore_tables (slot SMALLINT, qc SMALLINT)\nAS\nBEGIN\n';
+  let drop = 'CREATE OR ALTER PROCEDURE drop_saved (slot SMALLINT)\nAS\nBEGIN\n';
+  for (const [table, { qc, where }] of Object.entries(SAVED_TABLES)) {
+    const c = cols.get(table.toUpperCase());
+    if (!c) throw new Error(`savedTablesSql: no table ${table}`);
+    const list = c.map((x) => x.name).join(', ');
+    const cond = qc ? 'IF (qc = 1) THEN\n  ' : '';
+    ddl += `CREATE TABLE sv_${table} (slot SMALLINT NOT NULL, ${c.map((x) => `${x.name} ${x.type}`).join(', ')});\n`;
+    ddl += `CREATE INDEX sv_${table}_slot ON sv_${table} (slot);\n`;
+    save += `  DELETE FROM sv_${table} s WHERE s.slot = :slot;\n`;
+    save += `  ${cond}INSERT INTO sv_${table} (slot, ${list}) SELECT :slot, ${list} FROM ${table}${where ? ` WHERE ${where}` : ''};\n`;
+    restore += `  ${qc ? 'IF (qc = 1) THEN BEGIN\n    ' : ''}DELETE FROM ${table}${where ? ` WHERE ${where}` : ''};\n`;
+    restore += `  ${qc ? '  ' : ''}INSERT INTO ${table} (${list}) SELECT ${list} FROM sv_${table} s WHERE s.slot = :slot;${qc ? '\n  END' : ''}\n`;
+    drop += `  DELETE FROM sv_${table} s WHERE s.slot = :slot;\n`;
+  }
+  return `${ddl}${save}END^\n${restore}END^\n${drop}END^\nSET TERM ; ^\n`;
 }
 
 /**
