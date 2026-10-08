@@ -17,6 +17,7 @@ import { createSchema, loadResources, loadMap, SQL_FILES, loadProgs } from '../s
 import { Renderer, lightPoint } from '../src/renderer.js';
 import { Hud, VIEW_MODELS } from '../src/hud.js';
 import { frameDlights, dlightAt } from '../src/dlights.js';
+import { Menu } from '../src/menu.js';
 import { png } from './png.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -140,6 +141,17 @@ async function shot(name) {
   if (last.INTERMISSION === 2) hud.drawFinale(renderer, last.FINALE_TEXT ?? '', 1e3);
   else if (last.INTERMISSION === 1) hud.drawIntermission(renderer, last);
   else hud.draw(renderer, last, last.TIME_);
+  // --menu=main|single|options|help|quit: Quake's menu over the dimmed frame (the options with stand-in values)
+  const menuArg = process.argv.find((a) => a.startsWith('--menu='));
+  if (menuArg) {
+    const opt = (label, kind, v) => ({ label, kind, get: () => v, change: () => {} });
+    const m = new Menu({ lmp: (n) => (pak.has(n) ? qpic(pak.get(n)) : null), conchars: hud.conchars, actions: { newGame() {}, quit() {}, options: [
+      opt('Reset to defaults', 'action'), opt('Screen size', 'value', '320x200'), opt('Mouse Speed', 'slider', 0.2), opt('CD Music Volume', 'slider', 0.5),
+      opt('Sound Volume', 'slider', 0.7), opt('Always Run', 'check', true), opt('Invert Mouse', 'check', false), opt('Game logic', 'value', 'PSQL'), opt('Renderer', 'value', 'fast')] } });
+    m.state = menuArg.slice(7);
+    renderer.fadeScreen();
+    m.draw(renderer, 0.25);
+  }
   renderer.present();
   const t2 = performance.now();
   const nf = fast ? faces.length : new Set(faces.map((r) => r[0])).size;

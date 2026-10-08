@@ -20,6 +20,7 @@ import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
 import { frameDlights, dlightAt } from './dlights.js';
+import { Menu } from './menu.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
@@ -39,6 +40,7 @@ let lastTic = 0;
 let lastSoundId = 0;
 let lastFxId = 0;
 let finaleShown = false;
+let menu = null;           // Quake's menu (src/menu.js): up, the game pauses
 let interWait = 0;         // the PSQL game's intermission: when it began (the stats stay until fire)
 let finaleStart = 0;       // game time the finale's text began (QuakeC's svc_finale)
 let cdTrack = -1;          // the track svc_cdtrack asked for
@@ -47,7 +49,8 @@ let muzzleUntil = 0;       // the player's muzzle flash lights the room until th
 let prevWeaponFrame = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
-const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql' };
+const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql',
+  sensitivity: 3, alwaysRun: true, invertMouse: false };
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
@@ -81,6 +84,14 @@ const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
   if (!running) return;
+  // the menu takes every key while it is up; Escape brings it up (and lets the mouse go)
+  if (menu?.active) {
+    if (e.code === 'Escape' && performance.now() - menuOpened < 400) { e.preventDefault(); return; }   // the Escape that released the mouse
+    if (menu.key(e.code)) e.preventDefault();
+    if (!menu.active && running) canvas.requestPointerLock?.()?.catch?.(() => {});
+    return;
+  }
+  if (e.code === 'Escape') { e.preventDefault(); openMenu(); document.exitPointerLock?.(); return; }
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   keys.add(e.code);
   if (e.code.startsWith('Digit')) impulse = Number(e.code.slice(5));
@@ -88,6 +99,10 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP' || e.code === 'Pause') paused = !paused;
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
+let menuOpened = 0;
+function openMenu() { if (!menu || menu.active) return; menu.open(); menuOpened = performance.now(); keys.clear(); }
+// the browser's Escape releases the mouse before the page hears the key: bring the menu up then, as Quake's Escape does
+document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas && running && !paused && !interWait) openMenu(); });
 window.addEventListener('blur', () => keys.clear());
 canvas.addEventListener('click', () => {
   if (running && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
@@ -96,8 +111,8 @@ canvas.addEventListener('mousedown', (e) => { if (document.pointerLockElement ==
 window.addEventListener('mouseup', () => { fireClick = false; });
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement === canvas) {
-    mouseYaw -= e.movementX * 0.15;
-    mousePitch += e.movementY * 0.15;
+    mouseYaw -= e.movementX * 0.05 * settings.sensitivity;
+    mousePitch += e.movementY * 0.05 * settings.sensitivity * (settings.invertMouse ? -1 : 1);
   }
 });
 window.addEventListener('wheel', (e) => { if (document.pointerLockElement === canvas) impulse = 10; });
@@ -138,7 +153,8 @@ function readInput(tics) {
   let side = (k('KeyD') || k('Period') ? 1 : 0) - (k('KeyA') || k('Comma') ? 1 : 0);
   const turnKeys = (k('ArrowLeft') ? 1 : 0) - (k('ArrowRight') ? 1 : 0);
   const lookKeys = (k('PageDown') ? 1 : 0) - (k('PageUp') ? 1 : 0);
-  const run = k('ShiftLeft') || k('ShiftRight') ? 0 : 1;     // always run; shift walks
+  const shift = k('ShiftLeft') || k('ShiftRight');
+  const run = (settings.alwaysRun ? !shift : shift) ? 1 : 0;     // always run (shift walks), or shift runs
   if (touch.move) {
     fwd = Math.max(-1, Math.min(1, -touch.move.dy / 40));
     side = Math.max(-1, Math.min(1, touch.move.dx / 40));
@@ -210,9 +226,16 @@ function nextFrame() {
 const arr = { rowMode: 'array' };
 
 async function frame() {
-  if (!running || paused || document.hidden) {
+  if (!running || paused || document.hidden || menu?.active) {
     lastTic = performance.now();
-    if (paused && renderer && last) { drawFrame(null, [], [], new Map(), last.TIME_); hud.drawCenter(renderer, 'paused', 80); renderer.present(); }
+    // the game waits: the last frame again, under the menu (dimmed) or Quake's PAUSE plaque
+    if ((paused || menu?.active) && renderer && last && !document.hidden) {
+      drawFrame(lastDraw?.faces ?? null, lastDraw?.ents ?? [], lastDraw?.styles ?? new Float32Array(64), last.TIME_, 0, (r) => {
+        if (menu?.active) { r.fadeScreen(); menu.draw(r, performance.now() / 1000); return; }
+        const p = menu?.pic('gfx/pause.lmp');
+        if (p) r.drawPic(p, (r.w - p.w) >> 1, (r.h - 48 - p.h) >> 1); else hud.drawCenter(r, 'paused', 80);
+      });
+    }
     nextFrame();
     return;
   }
@@ -325,7 +348,7 @@ function handleFx(rows, time) {
   }
 }
 
-function drawFrame(faces, ents, styles, time, dt = 0.05) {
+function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   const r = renderer;
   const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, roll: last.DEAD ? 60 : 0, fov: settings.fov };
   r.beginFrame(view);
@@ -404,6 +427,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05) {
   else if (last.INVINCIBLE) tint = [255, 255, 0, 0.3];
   else if (last.SUIT) tint = [0, 255, 0, 0.2];
   else if (last.WATERLEVEL >= 3) tint = last.WATERTYPE === -5 ? [255, 80, 0, 0.6] : last.WATERTYPE === -4 ? [0, 25, 5, 0.6] : [130, 80, 50, 0.5];
+  if (overlay) overlay(r);
   r.present(tint);
 }
 let prevPos = null;
@@ -479,6 +503,7 @@ async function usePak(buffers, label) {
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
   hud = new Hud(wad, (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
+  menu = new Menu({ lmp: (n) => (pak.has(n) ? qpic(pak.get(n)) : null), conchars: hud.conchars, play: (snd) => audio.playLocal(snd), actions: menuActions() });
   audio.setPak(pak);
   $('map').innerHTML = maps.map((m) => `<option>${m}</option>`).join('');
   $('pakname').textContent = label;
@@ -491,7 +516,7 @@ async function boot() {
     db = await openDatabase();
     // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last;
     // the QuakeC VM: await quake.loadProgs(); await quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)"); await quake.sql('SELECT * FROM qc_log')
-    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get jit() { return jit; }, get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
+    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get jit() { return jit; }, get menu() { return menu; }, get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
     // which game data the site serves: the shareware pak, the registered pak1.pak beside it, LibreQuake
     // (public/pak/lq1/, `npm run fetch-pak -- --librequake`), or the shareware pak with LibreQuake's
     // pak1.pak, which gives the registered monsters free models
@@ -532,20 +557,50 @@ $('pakfile').addEventListener('change', async (e) => {
   try { await usePak(await Promise.all(files.map((f) => f.arrayBuffer())), files.map((f) => f.name).join(' + ')); } catch (err) { setStatus(err.message, true); }
 });
 $('map').addEventListener('change', (e) => { settings.map = e.target.value; saveSettings(); startMap(e.target.value, true).catch((err) => setStatus(err.message, true)); });
-$('detail').value = settings.detail;
-$('detail').addEventListener('change', async (e) => {
-  settings.detail = e.target.value; saveSettings();
+// the settings, changed from the page's controls or from the menu's options
+async function setDetail(v) {
+  settings.detail = v; saveSettings(); $('detail').value = v;
   await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov);
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
-});
-$('logic').value = settings.logic;
-$('logic').addEventListener('change', (e) => {
-  settings.logic = e.target.value; saveSettings();
+}
+function setLogic(v) {
+  settings.logic = v; saveSettings(); $('logic').value = v;
   if (map) startMap(map.name, true).catch((err) => setStatus(err.message, true));   // a new game under the other logic
-});
+}
+function setRenderer(v) { settings.renderer = v; saveSettings(); $('renderer').value = v; }
+function setSfx(v) { settings.sfx = v; saveSettings(); $('sfxvol').value = v; audio.unlock(); audio.setVolume(v / 100); }
+function setMusicVolume(v) { settings.music = v; saveSettings(); $('musicvol').value = v; audio.setMusicVolume(v / 100); }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// M_Menu_Options and the rest of the menu's actions: New Game is Quake's "map start"
+function menuActions() {
+  const newGame = () => startMap('start', true).catch((err) => setStatus(err.message, true));
+  return {
+    newGame,
+    quit: newGame,
+    options: [
+      { label: 'Reset to defaults', kind: 'action', change: () => { Object.assign(settings, { sensitivity: 3, alwaysRun: true, invertMouse: false }); setSfx(70); setMusicVolume(50); } },
+      { label: 'Screen size', kind: 'value', get: () => (settings.detail === 'high' ? '320x200' : '160x100'), change: () => setDetail(settings.detail === 'high' ? 'low' : 'high') },
+      { label: 'Mouse Speed', kind: 'slider', get: () => (settings.sensitivity - 1) / 10, change: (d) => { settings.sensitivity = clamp(settings.sensitivity + d * 0.5, 1, 11); saveSettings(); } },
+      { label: 'CD Music Volume', kind: 'slider', get: () => settings.music / 100, change: (d) => setMusicVolume(clamp(settings.music + d * 10, 0, 100)) },
+      { label: 'Sound Volume', kind: 'slider', get: () => settings.sfx / 100, change: (d) => setSfx(clamp(settings.sfx + d * 10, 0, 100)) },
+      { label: 'Always Run', kind: 'check', get: () => settings.alwaysRun, change: () => { settings.alwaysRun = !settings.alwaysRun; saveSettings(); } },
+      { label: 'Invert Mouse', kind: 'check', get: () => settings.invertMouse, change: () => { settings.invertMouse = !settings.invertMouse; saveSettings(); } },
+      { label: 'Game logic', kind: 'value', get: () => (settings.logic === 'qc' ? 'QuakeC VM' : 'PSQL'), change: () => setLogic(settings.logic === 'qc' ? 'psql' : 'qc') },
+      { label: 'Renderer', kind: 'value', get: () => (settings.renderer === 'sql' ? 'all in SQL' : 'fast'), change: () => setRenderer(settings.renderer === 'sql' ? 'fast' : 'sql') },
+    ],
+  };
+}
+
+$('detail').value = settings.detail;
+$('detail').addEventListener('change', (e) => setDetail(e.target.value));
+$('logic').value = settings.logic;
+$('logic').addEventListener('change', (e) => setLogic(e.target.value));
 $('renderer').value = settings.renderer;
-$('renderer').addEventListener('change', (e) => { settings.renderer = e.target.value; saveSettings(); });
+$('renderer').addEventListener('change', (e) => setRenderer(e.target.value));
+$('musicvol').value = settings.music;
+$('musicvol').addEventListener('input', () => setMusicVolume(Number($('musicvol').value)));
 $('skill').value = String(settings.skill);
 $('skill').addEventListener('change', (e) => { settings.skill = Number(e.target.value); saveSettings(); });
 $('sfxvol').value = settings.sfx;

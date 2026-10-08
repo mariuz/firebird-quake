@@ -87,6 +87,7 @@ Click the view to capture the mouse.
 | `1`–`8`, `/` or the wheel | choose a weapon, cycle weapons |
 | `9` | all weapons and ammo (impulse 9) |
 | `P` | pause |
+| `Esc` | Quake's menu: new game, options (mouse speed, always run, volumes, screen size…), help |
 
 On touch screens the left half of the view moves, the right half looks, and a tap fires.
 

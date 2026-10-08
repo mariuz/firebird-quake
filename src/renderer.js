@@ -609,6 +609,12 @@ export class Renderer {
     for (let i = 0; i < s.length; i++) this.drawChar(conchars, (s.charCodeAt(i) & 127) + (alt ? 128 : 0), x + i * 8, y);
   }
 
+  // Draw_FadeScreen: every other pixel black, under the menu
+  fadeScreen() {
+    const { fb, w, h } = this;
+    for (let y = 0; y < h; y++) for (let x = y & 1; x < w; x += 2) fb[y * w + x] = 0;
+  }
+
   fillRect(x, y, rw, rh, c) {
     const { fb, w, h } = this;
     for (let j = Math.max(0, y); j < Math.min(h, y + rh); j++) for (let i = Math.max(0, x); i < Math.min(w, x + rw); i++) fb[j * w + i] = c;

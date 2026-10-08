@@ -88,6 +88,17 @@ export class QuakeAudio {
     return { gain, pan };
   }
 
+  // a sound with no place (the menu's)
+  async playLocal(name) {
+    if (!this.ctx) return;
+    const buf = await this.buffer(name);
+    if (!buf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.master);
+    src.start();
+  }
+
   async playEvents(rows, listener) {
     this.listener = listener;
     if (!this.ctx) return;

@@ -488,3 +488,21 @@ node scripts/screenshot.mjs e1m1 docs/dlight-off    --tics=2 --single --fast
 node scripts/screenshot.mjs e1m1 docs/dlight-rocket --tics=2 --sql="EXECUTE PROCEDURE launch_rocket((SELECT ent_id FROM player), 480, -320, 110, 0, 1, 0, 1000, 100, 'progs/missile.mdl')" --tics=3 --single --fast
 node scripts/screenshot.mjs e1m1 docs/dlight-boom   --tics=2 --explosion=480,-200,70 --single --fast
 ```
+
+## The menu
+
+Quake's menu, drawn by `src/menu.js` from the pak's own pictures over the dimmed game (Escape brings
+it up and the game pauses): the main menu with the spinning Quake logo for a cursor, Single Player,
+and the options, whose sliders and switches set the page's settings.
+
+![the main menu](menu-main-e1m1-0.png) ![Single Player](menu-single-e1m1-0.png) ![the options](menu-options-e1m1-0.png)
+
+1. the main menu (`gfx/mainmenu.lmp`, `gfx/menudotN.lmp`)
+2. Single Player: New Game, Load, Save
+3. the options in the console font's gold half, with sliders as `M_DrawSlider` draws them
+
+```bash
+node scripts/screenshot.mjs e1m1 docs/menu-main    --tics=2 --menu=main    --single --fast
+node scripts/screenshot.mjs e1m1 docs/menu-single  --tics=2 --menu=single  --single --fast
+node scripts/screenshot.mjs e1m1 docs/menu-options --tics=2 --menu=options --single --fast
+```
