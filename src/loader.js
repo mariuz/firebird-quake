@@ -81,7 +81,7 @@ export async function bulkLoad(db, table, rows) {
   await flush();
 }
 
-export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm', 'save'];
+export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm', 'save', 'demo'];
 
 export async function createSchema(db, sql) {
   await db.exec(sql.schema);
@@ -103,6 +103,7 @@ export const SAVED_TABLES = {
   player: { qc: false, where: '' },
   ents: { qc: false, where: '' },
   lightstyles: { qc: false, where: '' },
+  rng: { qc: false, where: '' },
   qc_globals: { qc: true, where: '' },
   qc_fields: { qc: true, where: '' },
   qc_edicts: { qc: true, where: '' },
@@ -285,7 +286,7 @@ const ENT_COLS = ['classname', 'targetname', 'target', 'killtarget', 'model', 'a
   'speed', 'lip', 'health', 'light', 'style', 'sounds', 'dmg', 'height', 'count', 'map', 'noise', 'worldtype'];
 
 /** SV_SpawnServer: replace the current map with `name` from the PAK. */
-export async function loadMap(db, pak, res, name, { skill = 1, newGame = true } = {}) {
+export async function loadMap(db, pak, res, name, { skill = 1, newGame = true, seed = null } = {}) {
   const bsp = new Bsp(pak.buffer(`maps/${name}.bsp`), `maps/${name}.bsp`);
   await db.exec(`DELETE FROM sound_events; DELETE FROM fx_events; DELETE FROM ents; DELETE FROM map_ents; DELETE FROM vis_faces; UPDATE viewcfg SET vis_leaf = NULL;
     DELETE FROM face_verts WHERE face < ${ITEM_ID_BASE}; DELETE FROM faces WHERE id < ${ITEM_ID_BASE}; DELETE FROM miptex WHERE id < ${ITEM_ID_BASE};
@@ -315,6 +316,8 @@ export async function loadMap(db, pak, res, name, { skill = 1, newGame = true } 
   });
   await bulkLoad(db, 'map_ents', entRows);
 
+  // seed: the random numbers' seed (a demo or a test replays from it), else init_map picks one
+  if (seed !== null) await db.exec(`UPDATE rng SET next_seed = ${Math.floor(seed)} WHERE id = 1`);
   await db.exec(`EXECUTE PROCEDURE init_map('${name}', ${geo.modelIds[0]}, ${skill}, ${newGame ? 1 : 0})`);
   return bsp;
 }

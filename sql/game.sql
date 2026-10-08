@@ -708,7 +708,7 @@ BEGIN
   -- info_intermission spots at random, else the start), looking along its mangle, from the eye at the
   -- spot itself; the player is out of the world (not solid, not hurt, not moving)
   SELECT FIRST 1 m.ox, m.oy, m.oz, COALESCE(m.mpitch, 0), COALESCE(m.myaw, m.angle, 0) FROM map_ents m
-   WHERE m.classname = 'info_intermission' ORDER BY RAND() INTO cx, cy, cz, cp, cyaw;
+   WHERE m.classname = 'info_intermission' ORDER BY rnd() INTO cx, cy, cz, cp, cyaw;
   IF (cx IS NULL) THEN
     SELECT FIRST 1 m.ox, m.oy, m.oz, 0, COALESCE(m.angle, 0) FROM map_ents m WHERE m.classname = 'info_player_start' INTO cx, cy, cz, cp, cyaw;
   IF (cx IS NULL) THEN EXIT;
@@ -737,7 +737,7 @@ BEGIN
   IF (dx IS NULL) THEN EXIT;
   IF (BIN_AND(sf, 2) = 0) THEN
   BEGIN
-    EXECUTE PROCEDURE snd(other, 0, 'misc/r_tele' || CAST(1 + FLOOR(RAND() * 5) AS INTEGER) || '.wav', 1, 1);
+    EXECUTE PROCEDURE snd(other, 0, 'misc/r_tele' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
     EXECUTE PROCEDURE fx(5, (SELECT e.x FROM ents e WHERE e.id = :other), (SELECT e.y FROM ents e WHERE e.id = :other),
       (SELECT e.z FROM ents e WHERE e.id = :other), 0, 0, 0, 0);
   END
@@ -760,7 +760,7 @@ BEGIN
    WHERE e.id = :other;
   IF (ocls = 'player') THEN UPDATE player p SET p.pitch = 0 WHERE p.id = 1;
   EXECUTE PROCEDURE link_ent(other);
-  EXECUTE PROCEDURE snd_at(dx, dy, dz, 'misc/r_tele' || CAST(1 + FLOOR(RAND() * 5) AS INTEGER) || '.wav', 1, 1);
+  EXECUTE PROCEDURE snd_at(dx, dy, dz, 'misc/r_tele' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
   EXECUTE PROCEDURE fx(5, dx, dy, dz + 27, 0, 0, 0, 0);
 END^
 
@@ -944,8 +944,8 @@ BEGIN
   -- VelocityForDamage
   spd = IIF(dmg > 50, 2, IIF(dmg > 200, 4, 1)) * 1e0;
   UPDATE ents e SET e.movetype = 10, e.solid = 0,
-         e.vx = 100 * (RAND() * 2 - 1) * :spd * 0.7e0, e.vy = 100 * (RAND() * 2 - 1) * :spd * 0.7e0, e.vz = (RAND() * 200 + 100) * :spd,
-         e.avel_yaw = RAND() * 600, e.think = 'remove', e.nextthink = now_() + 10 + RAND() * 10, e.frame = 0 WHERE e.id = :g;
+         e.vx = 100 * (rnd() * 2 - 1) * :spd * 0.7e0, e.vy = 100 * (rnd() * 2 - 1) * :spd * 0.7e0, e.vz = (rnd() * 200 + 100) * :spd,
+         e.avel_yaw = rnd() * 600, e.think = 'remove', e.nextthink = now_() + 10 + rnd() * 10, e.frame = 0 WHERE e.id = :g;
 END^
 
 CREATE OR ALTER PROCEDURE throw_head (eid INTEGER, model VARCHAR(64), dmg INTEGER)
@@ -954,8 +954,8 @@ BEGIN
   EXECUTE PROCEDURE set_model(eid, model);
   UPDATE ents e SET e.movetype = 10, e.solid = 0, e.takedamage = 0, e.frame = 0, e.anim = NULL, e.st = 'dead',
          e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
-         e.vx = 100 * (RAND() * 2 - 1), e.vy = 100 * (RAND() * 2 - 1), e.vz = RAND() * 200 + 200,
-         e.avel_yaw = RAND() * 600, e.think = NULL, e.nextthink = NULL, e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
+         e.vx = 100 * (rnd() * 2 - 1), e.vy = 100 * (rnd() * 2 - 1), e.vz = rnd() * 200 + 200,
+         e.avel_yaw = rnd() * 600, e.think = NULL, e.nextthink = NULL, e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
 END^
 
 -- Killed(): the target's health fell to zero
@@ -968,9 +968,9 @@ BEGIN
   IF (cls = 'player') THEN
   BEGIN
     UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0,
-           e.anim = 'death' || SUBSTRING('abcde' FROM 1 + FLOOR(RAND() * 5) FOR 1), e.anim_frame = 0 WHERE e.id = :targ;
+           e.anim = 'death' || SUBSTRING('abcde' FROM 1 + FLOOR(rnd() * 5) FOR 1), e.anim_frame = 0 WHERE e.id = :targ;
     UPDATE player p SET p.dead_time = now_(), p.view_ofs = -8, p.weapon = 0, p.items = BIN_AND(p.items, BIN_NOT(1048576 + 524288 + 4194304 + 2097152)) WHERE p.id = 1;
-    EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(1 + FLOOR(RAND() * 5) AS INTEGER) || '.wav', 1, 1);
+    EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
     EXIT;
   END
   IF (BIN_AND(flags, 32) <> 0) THEN
@@ -1070,7 +1070,7 @@ BEGIN
     SELECT p.pain_finished FROM player p WHERE p.id = 1 INTO pf;
     IF (pf < now_() AND take > 0) THEN
     BEGIN
-      EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(1 + FLOOR(RAND() * 6) AS INTEGER) || '.wav', 1, 1);
+      EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(1 + FLOOR(rnd() * 6) AS INTEGER) || '.wav', 1, 1);
       UPDATE player p SET p.pain_finished = now_() + 0.5e0, p.punchangle = -2 WHERE p.id = 1;
     END
     EXIT;
@@ -1213,7 +1213,7 @@ BEGIN
   ELSE IF (c1 = 'rocket') THEN
   BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END
-    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(RAND() * 20));
+    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(rnd() * 20));
     EXECUTE PROCEDURE t_radius_damage(e1, own, dmg, e2);
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
@@ -1554,8 +1554,8 @@ BEGIN
              e.movetype = IIF(BIN_AND(:mflags, 3) <> 0, 5, 4), e.flags = BIN_OR(32, :mflags), e.yaw_speed = :mys,
              e.minx = IIF(:mhull = 2, -32, -16), e.miny = IIF(:mhull = 2, -32, -16), e.minz = -24,
              e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
-             e.st = 'stand', e.anim = :stand, e.anim_frame = FLOOR(RAND() * 4), e.ideal_yaw = e.yaw,
-             e.think = 'monster_think', e.nextthink = 0.1e0 + RAND() * 0.5e0 WHERE e.id = :eid;
+             e.st = 'stand', e.anim = :stand, e.anim_frame = FLOOR(rnd() * 4), e.ideal_yaw = e.yaw,
+             e.think = 'monster_think', e.nextthink = 0.1e0 + rnd() * 0.5e0 WHERE e.id = :eid;
       IF (mname = 'fish') THEN
         UPDATE ents e SET e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 24 WHERE e.id = :eid;
       IF (mname = 'oldone') THEN
@@ -1595,7 +1595,7 @@ BEGIN
       EXECUTE PROCEDURE drop_to_floor(eid);
     END
     ELSE IF (cls = 'misc_fireball') THEN
-      UPDATE ents e SET e.solid = 0, e.speed = IIF(COALESCE(:spd, 0) = 0, 1000, :spd), e.think = 'fireball_think', e.nextthink = RAND() * 5 WHERE e.id = :eid;
+      UPDATE ents e SET e.solid = 0, e.speed = IIF(COALESCE(:spd, 0) = 0, 1000, :spd), e.think = 'fireball_think', e.nextthink = rnd() * 5 WHERE e.id = :eid;
     ELSE IF (cls = 'trap_spikeshooter' OR cls = 'trap_shooter') THEN
     BEGIN
       EXECUTE PROCEDURE movedir(COALESCE(ang, 0)) RETURNING_VALUES dx, dy, dz;
@@ -1657,9 +1657,9 @@ BEGIN
   EXECUTE PROCEDURE spawn_ent('fireball', (SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid), (SELECT e.z FROM ents e WHERE e.id = :eid))
     RETURNING_VALUES f;
   EXECUTE PROCEDURE set_model(f, 'progs/lavaball.mdl');
-  UPDATE ents e SET e.solid = 1, e.movetype = 6, e.vx = RAND() * 100 - 50, e.vy = RAND() * 100 - 50, e.vz = :spd + RAND() * 200,
+  UPDATE ents e SET e.solid = 1, e.movetype = 6, e.vx = rnd() * 100 - 50, e.vy = rnd() * 100 - 50, e.vz = :spd + rnd() * 200,
          e.avel_yaw = 200, e.think = 'remove', e.nextthink = now_() + 5, e.effects = 4 WHERE e.id = :f;
-  UPDATE ents e SET e.nextthink = now_() + RAND() * 5 + 3 WHERE e.id = :eid;
+  UPDATE ents e SET e.nextthink = now_() + rnd() * 5 + 3 WHERE e.id = :eid;
 END^
 
 CREATE OR ALTER PROCEDURE spikeshooter_fire (eid INTEGER)

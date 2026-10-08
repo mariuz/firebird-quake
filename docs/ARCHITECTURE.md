@@ -34,7 +34,7 @@ COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworke
 service worker that re-issues every response with the headers after one reload.
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
-physics, game, weapons, monsters, render, qcvm, save`, splitting each on `SET TERM`; the generated
+physics, game, weapons, monsters, render, qcvm, save, demo`, splitting each on `SET TERM`; the generated
 `load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
 6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
@@ -173,6 +173,29 @@ A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in Qu
   save)`, which imports and loads after the geometry instead of spawning. `scripts/save-test.mjs` saves
   E1M1 mid-play and checks that a load brings back every entity, the client, the totals and the light
   styles exactly, in the session and after an export, another level, and E1M1 loaded again.
+
+## 6b. Random numbers and demos (`physics.sql`'s `rnd`, `sql/demo.sql`, `src/demos.js`)
+
+- **`rnd()`** is the game's only source of randomness: a linear congruential generator
+  (`seed · 1103515245 + 12345 mod 2³¹`) kept in the one-row `rng` table, about 12 µs a call against
+  `RAND()`'s 1 (a few dozen calls a tic). `init_map` seeds it from `rng.next_seed` (set by `loadMap`'s
+  `seed` option) or from `RAND()`, keeps that in `rng.level_seed`, and numbers the edicts from 1 again
+  (`ent_seq`). QuakeC's `random()` builtin calls it too. `rng` is one of the saved tables, so a load
+  goes on with the same numbers.
+- **Determinism**: with no clock (time is the tic count) and no other randomness, a level spawned with
+  the same seed and fed the same tic arguments is the same game bit for bit: checked over hundreds of
+  tics of fighting, in a fresh database and in one that has played other levels (row placement does
+  not leak into the results), in the PSQL game and in QuakeC mode, interpreted or with every function
+  compiled.
+- **Recording**: `demo_record` (only at tic 0) stores the level's map, skill, logic and `level_seed` in
+  the `demo` row and turns recording on; `quake_tic` and `qc_tic` first call `demo_note`, which then
+  appends their nine arguments to `demo_tics`; `demo_stop`, or the next `init_map`, ends it.
+- **Playback** is the page's: `loadMap` with the demo's seed (and `qc_begin_map` for a QuakeC demo),
+  then `DemoPlayer.take(tics)` gives the loop the recorded calls that fill the frame's tics, in place
+  of the keyboard and mouse. The page's **Demo** buttons record (the current level again, as a new
+  game), stop, play, and save the demo as `<map>.dem.json`; the file picker plays one. The last demo is
+  kept in IndexedDB beside the saves. `exportDemo`/`importDemo` write the doubles exactly, as the saves
+  do.
 
 ## 7. The player (`sql/weapons.sql`)
 
@@ -318,6 +341,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
 | `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
 | `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |
 | `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
 | `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |

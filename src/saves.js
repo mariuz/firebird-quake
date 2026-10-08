@@ -37,7 +37,11 @@ export async function importSave(db, save, slot = save.slot) {
     const head = `INSERT INTO sv_${t} (slot, ${cols.join(', ')}) VALUES (${Number(slot)}, `;
     for (const r of rows) inserts.push(`${head}${r.map(lit).join(', ')});`);
   }
-  // a block holds at most 255 table contexts, and stays under a few hundred KB of text
+  await execInserts(db, inserts);
+}
+
+/** INSERT statements run in EXECUTE BLOCKs: at most 255 table contexts a block, a few hundred KB of text. */
+export async function execInserts(db, inserts) {
   let block = [], size = 0;
   const flush = async () => {
     if (block.length) await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${block.join('\n')}\nEND^\nSET TERM ; ^`);
@@ -57,8 +61,8 @@ function plain(v) {
   return v;
 }
 
-// a value as a PSQL literal
-function lit(v) {
+// a value as a PSQL literal (src/demos.js writes its rows with it too)
+export function lit(v) {
   if (v === null || v === undefined) return 'NULL';
   if (typeof v === 'number') return Number.isFinite(v) ? exactDouble(v) : 'NULL';
   if (typeof v === 'boolean') return v ? '1' : '0';

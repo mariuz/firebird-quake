@@ -52,6 +52,11 @@
           <option value="off">Off</option>
         </select> <input id="musicvol" type="range" min="0" max="100" step="5">
           <input id="musicdir" type="file" webkitdirectory multiple title="a folder with track02.ogg … track11.ogg"></label>
+        <label title="A demo: the level again from its start, and every tic's input, which replays the game exactly (the game's random numbers are seeded)">Demo
+          <button id="demo-record" type="button">Record demo</button>
+          <button id="demo-play" type="button" disabled>Play</button>
+          <button id="demo-save" type="button" disabled title="Save the demo as a file">Save</button>
+          <input id="demo-file" type="file" accept=".json" title="Play a demo file"></label>
         <span id="engine" class="pill">Firebird</span>
         <span id="mapname" class="pill"></span>
       </div>

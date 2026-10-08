@@ -17,10 +17,12 @@ import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
 import saveSql from '../sql/save.sql';
+import demoSql from '../sql/demo.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
 import { exportSave, importSave, SaveStore } from './saves.js';
+import { exportDemo, importDemo, DemoPlayer } from './demos.js';
 import { frameDlights, dlightAt } from './dlights.js';
 import { Menu } from './menu.js';
 import { Renderer, lightPoint } from './renderer.js';
@@ -59,6 +61,9 @@ let jitTics = 0;
 let pakKey = '';           // the paks in use: saves are kept per data set (model ids depend on the paks)
 let saveSlots = new Array(12).fill(null);   // the menu's slot names (SaveGame_Comment), from the browser's store
 const QUICK_SLOT = 12;     // F6 / F9: Quake's quick.sav, not in the menu's list
+let recording = false;     // a demo is being recorded (sql/demo.sql)
+let demoPlayer = null;     // a demo playing back: its recorded calls replace the input (src/demos.js)
+let demo = null;           // the last demo recorded or opened
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -179,9 +184,12 @@ function readInput(tics) {
 }
 
 // ── maps ─────────────────────────────────────────────────────────────────
-// save: an exported save game (src/saves.js) to put back on the freshly loaded map instead of a new spawn
-async function startMap(name, newGame, save = null) {
+// save: an exported save game (src/saves.js) to put back on the freshly loaded map instead of a new spawn;
+// seed: the level's random seed (a demo's), else init_map picks one
+async function startMap(name, newGame, { save = null, seed = null } = {}) {
   running = false;
+  if (recording) await stopRecording();   // a demo is one level
+  if (!seed) demoPlayer = null;
   setStatus(`Loading ${name} into Firebird…`);
   const t0 = performance.now();
   // QuakeC mode: the client's parms leave with it (SetChangeParms), the level is spawned by progs.dat's own spawn
@@ -189,7 +197,7 @@ async function startMap(name, newGame, save = null) {
   const qc = settings.logic === 'qc';
   if (qc && !newGame && progsLoaded) await db.exec('EXECUTE PROCEDURE qc_change_parms');
   if (!qc) await db.exec('EXECUTE PROCEDURE qc_leave');
-  const bsp = await loadMap(db, pak, res, name, { skill: settings.skill, newGame });
+  const bsp = await loadMap(db, pak, res, name, { skill: settings.skill, newGame, seed });
   if (qc) {
     if (!progsLoaded) {
       setStatus('Loading progs.dat into the QuakeC VM…');
@@ -255,7 +263,7 @@ async function loadGame(slot) {
     const logic = save.meta.QC_MODE === 1 ? 'qc' : 'psql';
     if (logic !== settings.logic) { settings.logic = logic; $('logic').value = logic; }
     settings.skill = save.meta.SKILL; $('skill').value = String(save.meta.SKILL); saveSettings();
-    await startMap(save.meta.MAP_NAME, true, save);
+    await startMap(save.meta.MAP_NAME, true, { save });
   } catch (err) {
     console.error(err);
     setStatus(sqlMessage(err), true);
@@ -274,6 +282,50 @@ function flash(msg, isError = false) {
   setStatus(msg, isError);
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => { if (running) setStatus(''); }, 2500);
+}
+
+// ── demos (sql/demo.sql, src/demos.js) ─────────────────────────────────────
+// Record: the level again as a new game, then every quake_tic call's arguments; Play: the level with the
+// demo's seed, skill and logic, fed the recorded calls. The last demo is kept in the browser and can be
+// saved as a file.
+async function startRecording() {
+  if (!map || demoPlayer) return;
+  await startMap(map.name, true);
+  await db.exec('EXECUTE PROCEDURE demo_record');
+  recording = true;
+  updateDemoButtons();
+  flash(`recording a demo of ${map.name}`);
+}
+
+async function stopRecording() {
+  recording = false;
+  await db.exec('EXECUTE PROCEDURE demo_stop');
+  demo = await exportDemo(db);
+  if (demo && SaveStore.available()) await SaveStore.put(pakKey, 'demo', demo).catch(() => {});
+  updateDemoButtons();
+  if (demo) flash(`demo of ${demo.map} recorded: ${demo.tics.reduce((n, r) => n + r[0], 0)} tics`);
+}
+
+async function playDemo(d = demo) {
+  if (!d || !db) return;
+  try {
+    if (!pak.has(`maps/${d.map}.bsp`)) throw new Error(`${d.map} is not in this pak`);
+    if (recording) await stopRecording();
+    await importDemo(db, d);
+    settings.logic = d.qc === 1 ? 'qc' : 'psql'; $('logic').value = settings.logic;
+    settings.skill = d.skill; $('skill').value = String(d.skill); saveSettings();
+    await startMap(d.map, true, { seed: d.seed });
+    demoPlayer = new DemoPlayer(d);
+    updateDemoButtons();
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+function updateDemoButtons() {
+  $('demo-record').textContent = recording ? 'Stop recording' : 'Record demo';
+  $('demo-play').disabled = !demo || recording;
+  $('demo-save').disabled = !demo;
 }
 
 // ── the loop ─────────────────────────────────────────────────────────────
@@ -316,8 +368,12 @@ async function frame() {
     }
 
     let t = performance.now();
-    // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row
-    last = (await db.query(`SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`, readInput(tics), { rowMode: 'object' })).rows[0];
+    // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row; a demo's recorded calls
+    // when one is playing (the keyboard and mouse are read and dropped)
+    const ticSql = `SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const input = readInput(tics);
+    for (const args of demoPlayer ? demoPlayer.take(tics) : [input]) last = (await db.query(ticSql, args, { rowMode: 'object' })).rows[0];
+    if (demoPlayer?.done) { demoPlayer = null; updateDemoButtons(); flash('the demo has ended: the game is yours'); }
     perf.tic = performance.now() - t;
     // EF_MUZZLEFLASH for the player: a shot starts the weapon's animation (the axe has no flash; the
     // nailguns and the lightning gun cycle their frames, one shot a frame)
@@ -545,7 +601,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, save: saveSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, save: saveSql, demo: demoSql });
   return instance;
 }
 
@@ -570,6 +626,8 @@ async function usePak(buffers, label) {
   $('pakname').textContent = label;
   pakKey = label;
   await refreshSaves();
+  try { demo = SaveStore.available() ? (await SaveStore.get(pakKey, 'demo')) ?? null : null; } catch { demo = null; }
+  updateDemoButtons();
   const first = maps.includes(settings.map) ? settings.map : maps.includes('start') ? 'start' : maps[0];
   await startMap(first, true);
 }
@@ -659,6 +717,21 @@ function menuActions() {
   };
 }
 
+$('demo-record').addEventListener('click', () => (recording ? stopRecording() : startRecording()).catch((err) => setStatus(err.message, true)));
+$('demo-play').addEventListener('click', () => playDemo());
+$('demo-save').addEventListener('click', () => {
+  if (!demo) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(demo)], { type: 'application/json' }));
+  a.download = `${demo.map}.dem.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('demo-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try { demo = JSON.parse(await f.text()); await playDemo(demo); } catch (err) { setStatus(`not a demo: ${err.message}`, true); }
+});
 $('detail').value = settings.detail;
 $('detail').addEventListener('change', (e) => setDetail(e.target.value));
 $('logic').value = settings.logic;

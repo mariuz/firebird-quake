@@ -83,12 +83,12 @@ BEGIN
     IF (tdir <> turnaround AND step_direction(eid, tdir, dist) = 1) THEN EXIT;
   END
   -- try other directions
-  IF (RAND() < 0.5e0 OR ABS(dy) > ABS(dx)) THEN BEGIN tdir = d1; d1 = d2; d2 = tdir; END
+  IF (rnd() < 0.5e0 OR ABS(dy) > ABS(dx)) THEN BEGIN tdir = d1; d1 = d2; d2 = tdir; END
   IF (d1 <> nodir AND d1 <> turnaround AND step_direction(eid, d1, dist) = 1) THEN EXIT;
   IF (d2 <> nodir AND d2 <> turnaround AND step_direction(eid, d2, dist) = 1) THEN EXIT;
   -- there is no direct path to the player, so pick another direction
   IF (olddir <> nodir AND step_direction(eid, olddir, dist) = 1) THEN EXIT;
-  tdir = IIF(RAND() < 0.5e0, 0, 315);
+  tdir = IIF(rnd() < 0.5e0, 0, 315);
   d1 = 0;
   WHILE (d1 < 8) DO
   BEGIN
@@ -113,7 +113,7 @@ BEGIN
      AND g.y + g.miny <= e.y + e.maxy + :dist AND g.y + g.maxy >= e.y + e.minx - :dist
      AND g.z + g.minz <= e.z + e.maxz + :dist AND g.z + g.maxz >= e.z + e.minz - :dist INTO close_;
   IF (close_ = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.enemy_id = :goal)) THEN EXIT;
-  IF (FLOOR(RAND() * 4) = 1 OR step_direction(eid, iy, dist) = 0) THEN
+  IF (FLOOR(rnd() * 4) = 1 OR step_direction(eid, iy, dist) = 0) THEN
     EXECUTE PROCEDURE new_chase_dir(eid, goal, dist);
 END^
 
@@ -126,7 +126,7 @@ BEGIN
   SELECT p.invisible_finished, p.show_hostile FROM player p WHERE p.id = 1 INTO inv, sh;
   SELECT e.health FROM ents e WHERE e.id = :pe INTO php;
   IF (php <= 0) THEN RETURN 0;
-  IF (inv > now_() AND RAND() < 0.95e0) THEN RETURN 0;
+  IF (inv > now_() AND rnd() < 0.95e0) THEN RETURN 0;
   r = ent_range(eid, pe);
   IF (r = 3) THEN RETURN 0;
   IF (visible(eid, pe) = 0) THEN RETURN 0;
@@ -191,9 +191,9 @@ BEGIN
   ELSE IF (r = 2) THEN chance = IIF(has_melee = 1, 0.05e0, 0.1e0);
   ELSE chance = 0;
   chance = chance * ac / 0.3e0;
-  IF (RAND() < chance) THEN
+  IF (rnd() < chance) THEN
   BEGIN
-    UPDATE ents e SET e.attack_state = 4, e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 2 * RAND()) WHERE e.id = :eid;
+    UPDATE ents e SET e.attack_state = 4, e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 2 * rnd()) WHERE e.id = :eid;
     RETURN 1;
   END
   UPDATE ents e SET e.attack_state = IIF(:r = 2, 1, 2) WHERE e.id = :eid;
@@ -310,7 +310,7 @@ BEGIN
   SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
   IF (d IS NULL OR d > mrange) THEN EXIT;
   IF (ms IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, ms, 1, 1);
-  dmg = CAST(dmg * (0.5e0 + RAND()) AS INTEGER);
+  dmg = CAST(dmg * (0.5e0 + rnd()) AS INTEGER);
   EXECUTE PROCEDURE t_damage(enemy, eid, eid, dmg);
   EXECUTE PROCEDURE fx(3, (SELECT e.x FROM ents e WHERE e.id = :enemy), (SELECT e.y FROM ents e WHERE e.id = :enemy), (SELECT e.z + 10 FROM ents e WHERE e.id = :enemy), 0, 0, 0, dmg);
 END^
@@ -359,19 +359,19 @@ BEGIN
     IF (damage < 9) THEN EXIT;
     IF (pf > now_()) THEN EXIT;
     EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
-    IF (damage >= 25) THEN pick = 'paine'; ELSE pick = IIF(RAND() < 0.5e0, 'paina', IIF(RAND() < 0.5e0, 'painb', IIF(RAND() < 0.5e0, 'painc', 'paind')));
+    IF (damage >= 25) THEN pick = 'paine'; ELSE pick = IIF(rnd() < 0.5e0, 'paina', IIF(rnd() < 0.5e0, 'painb', IIF(rnd() < 0.5e0, 'painc', 'paind')));
     UPDATE ents e SET e.st = 'pain', e.pain_finished = now_() + IIF(:pick = 'paine', 3, 1) WHERE e.id = :eid;
     EXECUTE PROCEDURE set_anim(eid, pick);
     EXIT;
   END
   IF (pf > now_()) THEN EXIT;
-  IF (RAND() > pc) THEN EXIT;
+  IF (rnd() > pc) THEN EXIT;
   IF (mt = 'boss') THEN EXIT;
   EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
   -- pick one of the pain animations
   n = 1; p = 1;
   WHILE (POSITION(',', anims, p) > 0) DO BEGIN n = n + 1; p = POSITION(',', anims, p) + 1; END
-  i = FLOOR(RAND() * n); p = 1;
+  i = FLOOR(rnd() * n); p = 1;
   WHILE (i > 0) DO BEGIN p = POSITION(',', anims, p) + 1; i = i - 1; END
   q = POSITION(',', anims, p);
   pick = IIF(q = 0, SUBSTRING(anims FROM p), SUBSTRING(anims FROM p FOR q - p));
@@ -451,7 +451,7 @@ BEGIN
   END
   EXECUTE PROCEDURE snd(eid, 2, ds, 1, 1);
   q = POSITION(',', anims);
-  IF (q > 0 AND RAND() < 0.5e0) THEN pick = SUBSTRING(anims FROM q + 1); ELSE pick = IIF(q > 0, SUBSTRING(anims FROM 1 FOR q - 1), anims);
+  IF (q > 0 AND rnd() < 0.5e0) THEN pick = SUBSTRING(anims FROM q + 1); ELSE pick = IIF(q > 0, SUBSTRING(anims FROM 1 FOR q - 1), anims);
   q = POSITION(',', pick);
   IF (q > 0) THEN pick = SUBSTRING(pick FROM 1 FOR q - 1);
   UPDATE ents e SET e.st = 'die', e.solid = 0, e.movetype = 6, e.vx = 0, e.vy = 0, e.flags = BIN_AND(e.flags, BIN_NOT(1 + 2)),
@@ -532,7 +532,7 @@ BEGIN
     IF (st = 'cruc') THEN
     BEGIN
       UPDATE ents e SET e.anim_frame = MOD(e.anim_frame + 1, 6), e.frame = COALESCE((SELECT a.first_frame FROM anims a WHERE a.model_id = :mid AND a.anim = 'cruc_'), 0) + MOD(e.anim_frame + 1, 6) WHERE e.id = :eid;
-      IF (RAND() < 0.02e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
+      IF (rnd() < 0.02e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
     END
     ELSE UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid;
     EXIT;
@@ -619,7 +619,7 @@ BEGIN
       EXECUTE PROCEDURE set_anim(eid, walk_a);
       EXIT;
     END
-    IF (st = 'stand' AND RAND() < 0.02e0 AND idle_s IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 2, idle_s, 1, 1);
+    IF (st = 'stand' AND rnd() < 0.02e0 AND idle_s IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 2, idle_s, 1, 1);
     -- advance the frame
     af = af + 1;
     IF (af >= fc) THEN
@@ -660,7 +660,7 @@ BEGIN
         IF (d < 48 AND (SELECT e.attack_finished FROM ents e WHERE e.id = :eid) < t) THEN
         BEGIN
           IF (mt = 'tarbaby') THEN EXECUTE PROCEDURE snd(eid, 1, 'blob/hit1.wav', 1, 1);   -- Tar_JumpTouch
-          EXECUTE PROCEDURE t_damage(enemy, eid, eid, 10 + FLOOR(RAND() * 10) + IIF(mt = 'demon1', 10, 0));
+          EXECUTE PROCEDURE t_damage(enemy, eid, eid, 10 + FLOOR(rnd() * 10) + IIF(mt = 'demon1', 10, 0));
           UPDATE ents e SET e.attack_finished = :t + 1 WHERE e.id = :eid;
         END
       END
@@ -1051,6 +1051,7 @@ AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
 BEGIN
+  EXECUTE PROCEDURE demo_note(tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp);
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   DELETE FROM sound_events s WHERE s.tic < :tic - 40;
   DELETE FROM fx_events f WHERE f.tic < :tic - 40;
@@ -1085,6 +1086,12 @@ CREATE OR ALTER PROCEDURE init_map (map_name VARCHAR(32), world_model INTEGER, s
 AS
 DECLARE i INTEGER;
 BEGIN
+  -- the random numbers: the seed asked for (a demo, a test), else a fresh one
+  UPDATE rng r SET r.seed = COALESCE(r.next_seed, CAST(RAND() * 2147483647 AS BIGINT)), r.next_seed = NULL WHERE r.id = 1;
+  UPDATE rng r SET r.level_seed = r.seed WHERE r.id = 1;
+  UPDATE demo d SET d.recording = 0 WHERE d.id = 1;      -- a demo is one level
+  -- the edicts are numbered from 1 again (loadMap emptied ents), so a replay makes the same ids
+  i = GEN_ID(ent_seq, -GEN_ID(ent_seq, 0));
   UPDATE game g SET g.tic = 0, g.time_ = 0, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
          g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
          g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1,

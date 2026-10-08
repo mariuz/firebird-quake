@@ -46,7 +46,7 @@ BEGIN
   ux = ry * dz - rz * dy; uy = rz * dx - rx * dz; uz = rx * dy - ry * dx;
   WHILE (i < cnt) DO
   BEGIN
-    r1 = (RAND() * 2 - 1) * spread_x; r2 = (RAND() * 2 - 1) * spread_y;
+    r1 = (rnd() * 2 - 1) * spread_x; r2 = (rnd() * 2 - 1) * spread_y;
     ax = dx + r1 * rx + r2 * ux; ay = dy + r1 * ry + r2 * uy; az = dz + r1 * rz + r2 * uz;
     EXECUTE PROCEDURE trace_move(shooter, 0, 0, 0, 0, 0, 0, ox, oy, oz, ox + ax * 2048, oy + ay * 2048, oz + az * 2048, 0)
       RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
@@ -303,7 +303,7 @@ BEGIN
     IF (afin < t) THEN
     BEGIN
       EXECUTE PROCEDURE t_damage(pe, 0, 0, 2);
-      EXECUTE PROCEDURE snd(pe, 2, 'player/drown' || CAST(1 + FLOOR(RAND() * 2) AS INTEGER) || '.wav', 1, 1);
+      EXECUTE PROCEDURE snd(pe, 2, 'player/drown' || CAST(1 + FLOOR(rnd() * 2) AS INTEGER) || '.wav', 1, 1);
       UPDATE player p SET p.air_finished = :t + 1 WHERE p.id = 1;
     END
   END
@@ -358,7 +358,7 @@ BEGIN
       IF ((SELECT p.swim_time FROM player p WHERE p.id = 1) < t) THEN
       BEGIN
         UPDATE player p SET p.swim_time = :t + 1 WHERE p.id = 1;
-        EXECUTE PROCEDURE snd(pe, 2, IIF(RAND() < 0.5e0, 'misc/water1.wav', 'misc/water2.wav'), 1, 1);
+        EXECUTE PROCEDURE snd(pe, 2, IIF(rnd() < 0.5e0, 'misc/water1.wav', 'misc/water2.wav'), 1, 1);
       END
     END
     ELSE IF (onground = 1 AND jr = 1) THEN

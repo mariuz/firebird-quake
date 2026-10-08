@@ -462,7 +462,7 @@ BEGIN
     IF (e > 0 AND qc_on() = 1) THEN EXECUTE PROCEDURE link_ent(e);
   END
   ELSE IF (n = 6) THEN BEGIN END                    -- break
-  ELSE IF (n = 7) THEN EXECUTE PROCEDURE qc_sg(1, RAND());                                            -- random()
+  ELSE IF (n = 7) THEN EXECUTE PROCEDURE qc_sg(1, rnd());                                            -- random()
   ELSE IF (n = 8) THEN                              -- sound(e, channel, sample, volume, attenuation): logged, and played in QuakeC mode
   BEGIN
     EXECUTE PROCEDURE qc_print('sound', TRIM(qc_ftos(qc_g(4))) || ' ' || TRIM(qc_ftos(qc_g(7))) || ' ' || qc_str(CAST(qc_g(10) AS INTEGER)) || ' ' || TRIM(qc_ftos(qc_g(13))) || ' ' || TRIM(qc_ftos(qc_g(16))));
@@ -1815,6 +1815,7 @@ DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE r INTEGER; DECLARE fl
 DECLARE vyaw DOUBLE PRECISION; DECLARE vpitch DOUBLE PRECISION; DECLARE va INTEGER; DECLARE fa INTEGER;
 DECLARE fdt INTEGER; DECLARE fds INTEGER; DECLARE vo DOUBLE PRECISION;
 BEGIN
+  EXECUTE PROCEDURE demo_note(tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp);
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   DELETE FROM sound_events s WHERE s.tic < :tic - 40;
   DELETE FROM fx_events f WHERE f.tic < :tic - 40;

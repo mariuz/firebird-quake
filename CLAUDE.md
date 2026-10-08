@@ -15,6 +15,7 @@ npm run check                  # compile every sql/*.sql against the engine (fir
 npm test                       # SQL smoke test on E1M1
 npm run test:boss | test:registered | test:infight | test:skill | test:e1m2 … test:e1m8   # the scene tests
 npm run test:save              # save games: saved, played on, loaded back, in both modes and after a reload
+npm run test:demo              # demos: a game recorded and played back bit for bit (QCJIT=all: playback compiled)
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
 npm run test:qctic             # the page's QuakeC mode: qc_tic's row, the intermission, a level change
@@ -48,7 +49,9 @@ git-ignored and must never be committed; a registered `pak1.pak` is local only.
 Run it three times locally. The known causes: a monster's first think is random within 0.6 s (wait
 before asserting on frames), AI choices near the scene are random (set the bystanders dead and
 non-solid), and `sound_events`/`fx_events` expire after 40 tics (poll each tic). Fix the test's
-timing rather than loosening the assertion.
+timing rather than loosening the assertion. All randomness is `rnd()` (seeded, `physics.sql`), so
+`loadMap(db, pak, res, map, { seed: 1234 })` makes a level's random choices the same every run; never
+call `RAND()` in game code (only `init_map` does, to pick a seed), or demos stop replaying.
 
 ## Adding a scene test
 

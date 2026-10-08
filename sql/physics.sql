@@ -12,6 +12,30 @@ SET TERM ^ ;
 -- forward declarations (bodies in game.sql); signatures must not change
 CREATE OR ALTER PROCEDURE impact (e1 INTEGER, e2 INTEGER) AS BEGIN END^
 
+-- The game's RAND(): a linear congruential generator in rng.seed, [0, 1). Every random choice of the
+-- simulation goes through it, so a seed and the tics' input replay a game exactly (sql/demo.sql).
+CREATE OR ALTER FUNCTION rnd RETURNS DOUBLE PRECISION
+AS
+DECLARE s BIGINT;
+BEGIN
+  UPDATE rng r SET r.seed = MOD(r.seed * 1103515245 + 12345, 2147483648) WHERE r.id = 1 RETURNING r.seed INTO s;
+  RETURN s / 2147483648e0;
+END^
+
+-- A recording demo's next call: quake_tic and qc_tic hand over their arguments first (sql/demo.sql)
+CREATE OR ALTER PROCEDURE demo_note (tics INTEGER, fwd DOUBLE PRECISION, side DOUBLE PRECISION, yaw_d DOUBLE PRECISION,
+  pitch_d DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, run SMALLINT, imp SMALLINT)
+AS
+DECLARE n INTEGER;
+BEGIN
+  IF (EXISTS (SELECT 1 FROM demo d WHERE d.id = 1 AND d.recording = 1)) THEN
+  BEGIN
+    UPDATE demo d SET d.calls = d.calls + 1 WHERE d.id = 1 RETURNING d.calls INTO n;
+    INSERT INTO demo_tics (n, tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp)
+    VALUES (:n, :tics, :fwd, :side, :yaw_d, :pitch_d, :fire, :jump, :run, :imp);
+  END
+END^
+
 
 -- ── point queries ─────────────────────────────────────────────────────────
 -- SV_HullPointContents: descend from node until a leaf/contents.

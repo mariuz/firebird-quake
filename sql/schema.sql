@@ -484,6 +484,37 @@ CREATE TABLE qc_eyeleaf (
   x DOUBLE PRECISION NOT NULL, y DOUBLE PRECISION NOT NULL, z DOUBLE PRECISION NOT NULL,
   leaf INTEGER NOT NULL
 );
+-- The game's random numbers (rnd() in physics.sql): a seeded generator, so that a game replays exactly
+-- from the same seed and the same input (demos, sql/demo.sql). init_map seeds it from next_seed when
+-- one is set (a demo, a test), else from RAND().
+CREATE TABLE rng (
+  id         SMALLINT NOT NULL PRIMARY KEY,
+  seed       BIGINT NOT NULL,
+  next_seed  BIGINT,
+  level_seed BIGINT                 -- the seed the level was spawned with: a demo starts from it
+);
+INSERT INTO rng (id, seed) VALUES (1, 1);
+
+-- A demo (sql/demo.sql): a level as it was spawned (map, skill, logic, seed) and the arguments of every
+-- quake_tic / qc_tic call after it, which replay the game exactly. One demo at a time.
+CREATE TABLE demo (
+  id        SMALLINT NOT NULL PRIMARY KEY,
+  map_name  VARCHAR(32),
+  skill     SMALLINT,
+  qc_mode   SMALLINT,
+  seed      BIGINT,
+  recording SMALLINT DEFAULT 0 NOT NULL,
+  calls     INTEGER DEFAULT 0 NOT NULL      -- demo_tics' rows
+);
+INSERT INTO demo (id) VALUES (1);
+CREATE TABLE demo_tics (
+  n       INTEGER NOT NULL PRIMARY KEY,     -- the call's number, from 1
+  tics    SMALLINT NOT NULL,
+  fwd     DOUBLE PRECISION NOT NULL, side DOUBLE PRECISION NOT NULL,
+  yaw_d   DOUBLE PRECISION NOT NULL, pitch_d DOUBLE PRECISION NOT NULL,
+  fire    SMALLINT NOT NULL, jump SMALLINT NOT NULL, run SMALLINT NOT NULL, imp SMALLINT NOT NULL
+);
+
 -- ── save games (sql/save.sql) ────────────────────────────────────────────────
 -- One row per slot (Quake's s0..s11, and 12 for quick.sav); the game's rows are in the sv_<table> copies that
 -- loader.js generates from the live tables (savedTablesSql). world_model and ent_seq are what a load
