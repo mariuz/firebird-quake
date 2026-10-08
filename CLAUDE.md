@@ -9,6 +9,7 @@ overview; [docs/screenshots.md](docs/screenshots.md) shows every level with the 
 
 ```bash
 npm run fetch-pak              # shareware pak0.pak into public/pak/ (needs 7-Zip, lha or lhasa)
+NODE_USE_ENV_PROXY=1 npm run fetch-pak   # behind a proxy (Claude's cloud sessions): Node's fetch ignores HTTPS_PROXY without it
 npm run fetch-librequake       # LibreQuake lite into public/pak/lq1/ (free pak0 + pak1)
 npm run check                  # compile every sql/*.sql against the engine (first error with its line)
 npm test                       # SQL smoke test on E1M1
