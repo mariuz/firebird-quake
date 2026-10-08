@@ -558,6 +558,19 @@ BEGIN
     s = qc_str(CAST(qc_g(IIF(n = 21, 7, 4)) AS INTEGER));
     EXECUTE PROCEDURE qc_print('cmd', s);
     IF (qc_on() = 1 AND s STARTING WITH 'bf') THEN UPDATE player p SET p.bonus_time = (SELECT g.time_ FROM game g WHERE g.id = 1) WHERE p.id = 1;
+    -- localcmd: the console buffer, a line at a time (QuakeC's newline is the two characters backslash-n);
+    -- "skill N" is what trigger_setskill sends, read by cvar("skill") from the next frame on
+    IF (n = 46) THEN
+    BEGIN
+      UPDATE qc_vm v SET v.cmdbuf = SUBSTRING(v.cmdbuf || :s FROM 1 FOR 256) WHERE v.id = 1 RETURNING v.cmdbuf INTO s2;
+      i = POSITION('\n', s2);
+      IF (i > 0) THEN
+      BEGIN
+        s = TRIM(SUBSTRING(s2 FROM 1 FOR i - 1));
+        UPDATE qc_vm v SET v.cmdbuf = SUBSTRING(:s2 FROM :i + 2) WHERE v.id = 1;
+        IF (s SIMILAR TO 'skill [0-3]') THEN UPDATE game g SET g.skill = CAST(SUBSTRING(:s FROM 7) AS SMALLINT) WHERE g.id = 1;
+      END
+    END
   END
   ELSE IF (n = 22) THEN                             -- findradius(org, rad): a chain through .chain
   BEGIN
@@ -1796,7 +1809,7 @@ RETURNS (
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
   amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
-  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT)
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE r INTEGER; DECLARE fl INTEGER;
 DECLARE vyaw DOUBLE PRECISION; DECLARE vpitch DOUBLE PRECISION; DECLARE va INTEGER; DECLARE fa INTEGER;
@@ -1847,13 +1860,13 @@ BEGIN
          CAST(qc_g(qc_gdef('killed_monsters')) AS INTEGER), CAST(qc_g(qc_gdef('total_monsters')) AS INTEGER),
          CAST(qc_g(qc_gdef('found_secrets')) AS INTEGER), CAST(qc_g(qc_gdef('total_secrets')) AS INTEGER),
          e.waterlevel, e.watertype, g.map_name, g.level_msg, g.finale, e.leaf, COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0),
-         g.intermission, g.completed_time, g.finale_text, g.cdtrack
+         g.intermission, g.completed_time, g.finale_text, g.cdtrack, g.skill
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = 1 LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_time, bonus_time, dead, exit_kind, next_map,
          killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, finale, leaf, amb_water, amb_sky,
-         intermission, completed_time, finale_text, cdtrack;
+         intermission, completed_time, finale_text, cdtrack, skill;
   invincible = IIF(BIN_AND(items, 1048576) <> 0, 1, 0); quad = IIF(BIN_AND(items, 4194304) <> 0, 1, 0);
   invisible = IIF(BIN_AND(items, 524288) <> 0, 1, 0); suit = IIF(BIN_AND(items, 2097152) <> 0, 1, 0);
   SUSPEND;

@@ -253,6 +253,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 |---|---|
 | `npm test` | SQL smoke test: every procedure compiles, E1M1 loads, tics and frames run, every sound the game queued exists in the pak (`PAK=… PAK1=… node scripts/sql-smoke.mjs start` runs it over LibreQuake, as CI does) |
 | `npm run test:boss` | E1M7: the rune wakes Chthon, he rises and throws lava, the lightning does nothing until both terminals are up, three bolts kill him, the exit opens |
+| `npm run test:skill` | the skills: each of the start map's halls sets its skill, nightmare's monsters attack without waiting and flinch at most every five seconds (two hits make a knight flinch twice on normal, once on nightmare), and QuakeC's `localcmd("skill 3")` sets it in QuakeC mode |
 | `npm run test:infight` | monsters fighting monsters: a knight hurt by an ogre turns on it and remembers the player, a knight spares a knight but a grunt turns on a grunt, the knight and the ogre fight until one dies, and the survivor goes back to the player |
 | `npm run test:registered` | the pak1 monsters' AI, spawned into E1M1 without their models: each is made to see the player and watched for its signature behaviour |
 | `npm run test:e1m8` | Ziggurat Vertigo: gravity 100, so jumps and grenades go far and falls are gentle; the exit leads to E1M5 |

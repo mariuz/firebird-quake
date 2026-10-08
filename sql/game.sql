@@ -81,6 +81,13 @@ BEGIN
   RETURN t;
 END^
 
+-- skill 3: monsters attack without the wait SUB_AttackFinished gives them, and flinch at most every 5 s
+CREATE OR ALTER FUNCTION nightmare () RETURNS SMALLINT
+AS
+BEGIN
+  RETURN IIF((SELECT g.skill FROM game g WHERE g.id = 1) = 3, 1, 0);
+END^
+
 CREATE OR ALTER FUNCTION player_ent () RETURNS INTEGER
 AS
 DECLARE e INTEGER;
@@ -1065,6 +1072,8 @@ BEGIN
       EXECUTE PROCEDURE found_target(targ, attacker);
     END
     EXECUTE PROCEDURE monster_pain(targ, attacker, take);
+    -- nightmare mode monsters don't go into pain frames often
+    IF (nightmare() = 1) THEN UPDATE ents e SET e.pain_finished = now_() + 5 WHERE e.id = :targ;
   END
 END^
 
@@ -1304,7 +1313,7 @@ BEGIN
       CONTINUE;
     END
     IF (cls IN ('light', 'info_intermission', 'info_player_deathmatch', 'info_player_coop', 'light_fluoro', 'light_fluorospark', 'air_bubbles',
-                'ambient_comp_hum', 'ambient_drip', 'ambient_drone', 'ambient_swamp1', 'ambient_swamp2', 'trigger_onlyregistered', 'trigger_setskill')) THEN
+                'ambient_comp_hum', 'ambient_drip', 'ambient_drone', 'ambient_swamp1', 'ambient_swamp2', 'trigger_onlyregistered')) THEN
     BEGIN
       IF (cls = 'light' AND tn IS NOT NULL AND tn <> '' AND sty IS NOT NULL) THEN
       BEGIN
@@ -1448,7 +1457,7 @@ BEGIN
       UPDATE ents e SET e.solid = 0, e.movetype = 0, e.yaw = 0 WHERE e.id = :eid;
     -- ── triggers ──
     ELSE IF (cls IN ('trigger_multiple', 'trigger_once', 'trigger_secret', 'trigger_counter', 'trigger_teleport', 'trigger_changelevel',
-                     'trigger_push', 'trigger_hurt', 'trigger_monsterjump', 'trigger_relay')) THEN
+                     'trigger_push', 'trigger_hurt', 'trigger_monsterjump', 'trigger_relay', 'trigger_setskill')) THEN
     BEGIN
       UPDATE ents e SET e.model_id = NULL, e.solid = IIF(:mdl IS NULL, 0, 1), e.movetype = 0, e.yaw = 0 WHERE e.id = :eid;
       IF (cls = 'trigger_multiple') THEN

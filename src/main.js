@@ -242,6 +242,8 @@ async function frame() {
     // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
     if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
 
+    // the start map's halls (trigger_setskill) choose the skill, as Quake's do: the next level is spawned with it
+    if (last.SKILL != null && last.SKILL !== settings.skill) { settings.skill = last.SKILL; $('skill').value = String(last.SKILL); saveSettings(); }
     // what progs.dat told the client: the finale's text starts typing; svc_cdtrack changes the music
     if (last.INTERMISSION === 2 && !finaleStart) finaleStart = last.TIME_;
     if (last.CDTRACK >= 0 && last.CDTRACK !== cdTrack) { cdTrack = last.CDTRACK; audio.playMusic(cdTrack); }

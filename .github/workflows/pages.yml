@@ -69,6 +69,9 @@ jobs:
       - name: Monsters fighting monsters
         run: npm run test:infight
 
+      - name: The skills, nightmare included
+        run: npm run test:skill
+
       # Ziggurat Vertigo: low gravity, long jumps, grenades that fly, the exit to E1M5
       - name: Ziggurat Vertigo
         run: npm run test:e1m8

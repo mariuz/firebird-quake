@@ -483,6 +483,9 @@ BEGIN
         EXECUTE PROCEDURE t_damage(pe, tid, tid, tdm);
       END
     END
+    ELSE IF (tcls = 'trigger_setskill') THEN                  -- the start map's halls: the skill its message names
+      UPDATE game g SET g.skill = (SELECT CAST(TRIM(e.message) AS SMALLINT) FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]')
+       WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]');
     ELSE IF (tcls = 'trigger_message') THEN
     BEGIN
       SELECT e.attack_finished FROM ents e WHERE e.id = :tid INTO tlt;

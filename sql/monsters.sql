@@ -143,7 +143,8 @@ DECLARE s VARCHAR(64); DECLARE run_ VARCHAR(16);
 BEGIN
   SELECT t.sight_snd, t.run_anim FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO s, run_;
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
-  UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5, e.attack_finished = now_() + 1 WHERE e.id = :eid;
+  UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5,
+         e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
   EXECUTE PROCEDURE set_anim(eid, run_);
 END^
 
@@ -192,7 +193,7 @@ BEGIN
   chance = chance * ac / 0.3e0;
   IF (RAND() < chance) THEN
   BEGIN
-    UPDATE ents e SET e.attack_state = 4, e.attack_finished = now_() + 2 * RAND() WHERE e.id = :eid;
+    UPDATE ents e SET e.attack_state = 4, e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 2 * RAND()) WHERE e.id = :eid;
     RETURN 1;
   END
   UPDATE ents e SET e.attack_state = IIF(:r = 2, 1, 2) WHERE e.id = :eid;
@@ -556,7 +557,7 @@ BEGIN
       SELECT o.id FROM ents e JOIN ents o ON o.id = e.oldenemy_id WHERE e.id = :eid AND o.health > 0 INTO enemy;
       IF (enemy IS NOT NULL) THEN
       BEGIN
-        UPDATE ents e SET e.enemy_id = :enemy, e.oldenemy_id = NULL, e.goal_id = NULL, e.st = 'run', e.attack_finished = :t + 1 WHERE e.id = :eid;
+        UPDATE ents e SET e.enemy_id = :enemy, e.oldenemy_id = NULL, e.goal_id = NULL, e.st = 'run', e.attack_finished = IIF(nightmare() = 1, e.attack_finished, :t + 1) WHERE e.id = :eid;
         EXECUTE PROCEDURE set_anim(eid, run_a);
         EXIT;
       END
@@ -1045,7 +1046,7 @@ RETURNS (
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
   amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
-  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT)
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
@@ -1068,13 +1069,13 @@ BEGIN
          g.found_secrets, g.total_secrets, e.waterlevel, e.watertype, g.map_name, g.level_msg,
          IIF(p.invincible_finished > g.time_, 1, 0), IIF(p.super_damage_finished > g.time_, 1, 0),
          IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf,
-         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale, g.intermission, g.completed_time, g.finale_text, g.cdtrack
+         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale, g.intermission, g.completed_time, g.finale_text, g.cdtrack, g.skill
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, time_, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_take, dmg_save, dmg_time, bonus_time, dead, exit_kind, next_map,
          killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf,
-         amb_water, amb_sky, finale, intermission, completed_time, finale_text, cdtrack;
+         amb_water, amb_sky, finale, intermission, completed_time, finale_text, cdtrack, skill;
   UPDATE player p SET p.dmg_take = 0, p.dmg_save = 0 WHERE p.id = 1 AND p.dmg_time < :time_ - 0.05e0;
   SUSPEND;
 END^
