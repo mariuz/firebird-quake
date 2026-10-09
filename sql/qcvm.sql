@@ -75,22 +75,39 @@ BEGIN
         WHERE e.id = :ent;
     ELSE IF (c IS NOT NULL) THEN
     BEGIN
-      IF (c < 30 OR c > 40) THEN                    -- 31..39 are computed from the box
-        UPDATE ents e SET
-          e.x = IIF(:c = 1, :v, e.x), e.y = IIF(:c = 2, :v, e.y), e.z = IIF(:c = 3, :v, e.z),
-          e.vx = IIF(:c = 4, :v, e.vx), e.vy = IIF(:c = 5, :v, e.vy), e.vz = IIF(:c = 6, :v, e.vz),
-          e.pitch = IIF(:c = 7, :v, e.pitch), e.yaw = IIF(:c = 8, :v, e.yaw), e.roll = IIF(:c = 9, :v, e.roll), e.avel_yaw = IIF(:c = 10, :v, e.avel_yaw),
-          e.minx = IIF(:c = 11, :v, e.minx), e.miny = IIF(:c = 12, :v, e.miny), e.minz = IIF(:c = 13, :v, e.minz),
-          e.maxx = IIF(:c = 14, :v, e.maxx), e.maxy = IIF(:c = 15, :v, e.maxy), e.maxz = IIF(:c = 16, :v, e.maxz),
-          e.solid = IIF(:c = 17, CAST(:v AS SMALLINT), e.solid), e.movetype = IIF(:c = 18, CAST(:v AS SMALLINT), e.movetype),
-          e.flags = IIF(:c = 19, CAST(:v AS INTEGER), e.flags), e.frame = IIF(:c = 20, CAST(:v AS INTEGER), e.frame),
-          e.skin = IIF(:c = 21, CAST(:v AS INTEGER), e.skin), e.effects = IIF(:c = 22, CAST(:v AS INTEGER), e.effects),
-          e.model_id = IIF(:c = 23, NULLIF(CAST(:v AS INTEGER), 0), e.model_id), e.ltime = IIF(:c = 24, :v, e.ltime),
-          e.waterlevel = IIF(:c = 25, CAST(:v AS SMALLINT), e.waterlevel), e.watertype = IIF(:c = 26, CAST(:v AS INTEGER), e.watertype),
-          e.owner_id = IIF(:c = 27, CAST(:v AS INTEGER), e.owner_id),
-          e.enemy_id = IIF(:c = 28, CAST(:v AS INTEGER), e.enemy_id), e.goal_id = IIF(:c = 29, CAST(:v AS INTEGER), e.goal_id),
-          e.ideal_yaw = IIF(:c = 41, :v, e.ideal_yaw), e.yaw_speed = IIF(:c = 42, :v, e.yaw_speed)
-        WHERE e.id = :ent;
+      -- one column each (an UPDATE of all of them through IIFs cost twice as much); the most written first;
+      -- 31..39 are computed from the box
+      IF (c = 20) THEN UPDATE ents e SET e.frame = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 1) THEN UPDATE ents e SET e.x = :v WHERE e.id = :ent;
+      ELSE IF (c = 2) THEN UPDATE ents e SET e.y = :v WHERE e.id = :ent;
+      ELSE IF (c = 3) THEN UPDATE ents e SET e.z = :v WHERE e.id = :ent;
+      ELSE IF (c = 4) THEN UPDATE ents e SET e.vx = :v WHERE e.id = :ent;
+      ELSE IF (c = 5) THEN UPDATE ents e SET e.vy = :v WHERE e.id = :ent;
+      ELSE IF (c = 6) THEN UPDATE ents e SET e.vz = :v WHERE e.id = :ent;
+      ELSE IF (c = 19) THEN UPDATE ents e SET e.flags = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 8) THEN UPDATE ents e SET e.yaw = :v WHERE e.id = :ent;
+      ELSE IF (c = 7) THEN UPDATE ents e SET e.pitch = :v WHERE e.id = :ent;
+      ELSE IF (c = 9) THEN UPDATE ents e SET e.roll = :v WHERE e.id = :ent;
+      ELSE IF (c = 41) THEN UPDATE ents e SET e.ideal_yaw = :v WHERE e.id = :ent;
+      ELSE IF (c = 28) THEN UPDATE ents e SET e.enemy_id = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 29) THEN UPDATE ents e SET e.goal_id = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 22) THEN UPDATE ents e SET e.effects = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 10) THEN UPDATE ents e SET e.avel_yaw = :v WHERE e.id = :ent;
+      ELSE IF (c = 17) THEN UPDATE ents e SET e.solid = CAST(:v AS SMALLINT) WHERE e.id = :ent;
+      ELSE IF (c = 18) THEN UPDATE ents e SET e.movetype = CAST(:v AS SMALLINT) WHERE e.id = :ent;
+      ELSE IF (c = 24) THEN UPDATE ents e SET e.ltime = :v WHERE e.id = :ent;
+      ELSE IF (c = 25) THEN UPDATE ents e SET e.waterlevel = CAST(:v AS SMALLINT) WHERE e.id = :ent;
+      ELSE IF (c = 26) THEN UPDATE ents e SET e.watertype = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 27) THEN UPDATE ents e SET e.owner_id = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 21) THEN UPDATE ents e SET e.skin = CAST(:v AS INTEGER) WHERE e.id = :ent;
+      ELSE IF (c = 23) THEN UPDATE ents e SET e.model_id = NULLIF(CAST(:v AS INTEGER), 0) WHERE e.id = :ent;
+      ELSE IF (c = 42) THEN UPDATE ents e SET e.yaw_speed = :v WHERE e.id = :ent;
+      ELSE IF (c = 11) THEN UPDATE ents e SET e.minx = :v WHERE e.id = :ent;
+      ELSE IF (c = 12) THEN UPDATE ents e SET e.miny = :v WHERE e.id = :ent;
+      ELSE IF (c = 13) THEN UPDATE ents e SET e.minz = :v WHERE e.id = :ent;
+      ELSE IF (c = 14) THEN UPDATE ents e SET e.maxx = :v WHERE e.id = :ent;
+      ELSE IF (c = 15) THEN UPDATE ents e SET e.maxy = :v WHERE e.id = :ent;
+      ELSE IF (c = 16) THEN UPDATE ents e SET e.maxz = :v WHERE e.id = :ent;
       EXIT;
     END
   END
@@ -395,7 +412,7 @@ BEGIN
   EXECUTE PROCEDURE qc_route(qc_fdef('enemy'), 28); EXECUTE PROCEDURE qc_route(qc_fdef('goalentity'), 29);
   EXECUTE PROCEDURE qc_route(qc_fdef('ideal_yaw'), 41); EXECUTE PROCEDURE qc_route(qc_fdef('yaw_speed'), 42);
   EXECUTE PROCEDURE qc_reset;
-  DELETE FROM vis_faces;
+  DELETE FROM vis_faces; DELETE FROM vis_ents;
   UPDATE viewcfg c SET c.vis_leaf = NULL;
   UPDATE player p SET p.ent_id = 1, p.view_ofs = 22, p.stepz = 0, p.punchangle = 0 WHERE p.id = 1;
 END^
@@ -1806,15 +1823,16 @@ BEGIN
   WHILE (1 = 1) DO
   BEGIN
     e = NULL;
-    SELECT FIRST 1 d.id FROM qc_edicts d
+    -- (the edict's ents row and its nextthink joined once, rather than looked up by each EXISTS; the + 0
+    -- keeps the plan walking the edicts in order)
+    SELECT FIRST 1 d.id FROM qc_edicts d LEFT JOIN ents x ON x.id = d.id + 0 LEFT JOIN qc_fields n ON n.ent = d.id + 0 AND n.ofs = :f_nt
       WHERE d.free = 0 AND d.id > :last AND (
         d.id <= :mc
-        OR EXISTS (SELECT 1 FROM qc_fields n WHERE n.ent = d.id AND n.ofs = :f_nt AND n.v > 0 AND n.v <= :t + :dt + 1e-6)
-        OR EXISTS (SELECT 1 FROM ents x JOIN qc_fields n ON n.ent = x.id AND n.ofs = :f_nt AND n.v > 0 WHERE x.id = d.id AND x.movetype = 7)
-        OR EXISTS (SELECT 1 FROM ents x WHERE x.id = d.id AND (
-             (x.movetype IN (7, 5, 9, 8) AND (x.vx <> 0 OR x.vy <> 0 OR x.vz <> 0))
-          OR (x.movetype IN (6, 10) AND BIN_AND(x.flags, 512) = 0)
-          OR (x.movetype = 4 AND BIN_AND(x.flags, 515) = 0))))
+        OR (n.v > 0 AND n.v <= :t + :dt + 1e-6)
+        OR (x.movetype = 7 AND n.v > 0)
+        OR (x.movetype IN (7, 5, 9, 8) AND (x.vx <> 0 OR x.vy <> 0 OR x.vz <> 0))
+        OR (x.movetype IN (6, 10) AND BIN_AND(x.flags, 512) = 0)
+        OR (x.movetype = 4 AND BIN_AND(x.flags, 515) = 0))
       ORDER BY d.id INTO e;
     IF (e IS NULL) THEN LEAVE;
     last = e;

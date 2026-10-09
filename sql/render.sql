@@ -56,23 +56,35 @@ END^
 SET TERM ; ^
 
 -- the world's faces in the PVS of each view leaf visited (R_MarkLeaves' result, kept per leaf: the first
--- visit to a leaf marks them, a return to it costs nothing), emptied with the map by loadMap
+-- visit to a leaf marks them, a return to it costs nothing), emptied with the map by loadMap. Each row
+-- carries the face's plane and bounding sphere, so the frame queries cull without a join to faces
 CREATE TABLE leaf_faces (
   vleaf INTEGER NOT NULL,
   face  INTEGER NOT NULL,
+  nx DOUBLE PRECISION NOT NULL, ny DOUBLE PRECISION NOT NULL, nz DOUBLE PRECISION NOT NULL, dist DOUBLE PRECISION NOT NULL,
+  cx DOUBLE PRECISION NOT NULL, cy DOUBLE PRECISION NOT NULL, cz DOUBLE PRECISION NOT NULL, radius DOUBLE PRECISION NOT NULL,
   PRIMARY KEY (vleaf, face)
 );
 CREATE TABLE leaf_marked (
   vleaf INTEGER NOT NULL PRIMARY KEY
 );
 
--- this frame's visible brush-model entities' faces, each at its entity's origin (PSQL has no arrays;
--- Quake has visframe); the world's are in leaf_faces under viewcfg.vis_leaf
+-- the visible brush-model entities' faces, each at its entity's origin, with the plane and sphere as in
+-- leaf_faces (PSQL has no arrays; Quake has visframe); the world's are in leaf_faces under viewcfg.vis_leaf.
+-- Rebuilt by mark_faces when the view leaf changes or a brush entity moved, appeared or went: vis_ents
+-- is every brush entity as it was when vis_faces was last built
 CREATE TABLE vis_faces (
   face   INTEGER NOT NULL,
   ent_id INTEGER NOT NULL,
   ox DOUBLE PRECISION NOT NULL, oy DOUBLE PRECISION NOT NULL, oz DOUBLE PRECISION NOT NULL,
+  nx DOUBLE PRECISION NOT NULL, ny DOUBLE PRECISION NOT NULL, nz DOUBLE PRECISION NOT NULL, dist DOUBLE PRECISION NOT NULL,
+  cx DOUBLE PRECISION NOT NULL, cy DOUBLE PRECISION NOT NULL, cz DOUBLE PRECISION NOT NULL, radius DOUBLE PRECISION NOT NULL,
   PRIMARY KEY (ent_id, face)
+);
+CREATE TABLE vis_ents (
+  ent_id   INTEGER NOT NULL PRIMARY KEY,
+  model_id INTEGER NOT NULL,
+  x DOUBLE PRECISION NOT NULL, y DOUBLE PRECISION NOT NULL, z DOUBLE PRECISION NOT NULL
 );
 
 -- the faces that survive this frame's back-face and frustum tests
@@ -87,11 +99,13 @@ SET TERM ^ ;
 
 -- mark_faces: R_MarkLeaves. The first time the eye is in a leaf, every face of every leaf in its PVS goes
 -- into leaf_faces under it (a return to a leaf finds them there: no 15 ms spike crossing a door again);
--- viewcfg.vis_leaf says which leaf the frame queries read; every frame the brush-model entities whose
--- leaves are in the PVS go into vis_faces at their own origin.
+-- viewcfg.vis_leaf says which leaf the frame queries read. The brush-model entities whose leaves are in
+-- the PVS go into vis_faces at their own origin, built again only when the leaf changed or a brush
+-- entity is not as vis_ents last saw it (moved, appeared, went, changed model): a frame where nothing
+-- of that happened, which is most of them, keeps the rows.
 CREATE OR ALTER PROCEDURE mark_faces (pvs d_pvs, vleaf INTEGER)
 AS
-DECLARE cur INTEGER; DECLARE world INTEGER;
+DECLARE cur INTEGER; DECLARE world INTEGER; DECLARE changed SMALLINT = 0; DECLARE n1 INTEGER; DECLARE n2 INTEGER;
 DECLARE eid INTEGER; DECLARE emid INTEGER; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
 DECLARE leafs VARCHAR(200) CHARACTER SET ASCII; DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT; DECLARE lf INTEGER;
 BEGIN
@@ -101,17 +115,32 @@ BEGIN
   BEGIN
     IF (NOT EXISTS (SELECT 1 FROM leaf_marked k WHERE k.vleaf = :vleaf)) THEN
     BEGIN
-      INSERT INTO leaf_faces (vleaf, face)
-      SELECT DISTINCT :vleaf, m.face
+      INSERT INTO leaf_faces (vleaf, face, nx, ny, nz, dist, cx, cy, cz, radius)
+      SELECT DISTINCT :vleaf, m.face, f.nx, f.ny, f.nz, f.dist, f.cx, f.cy, f.cz, f.radius
         FROM leaves l
         JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms
+        JOIN faces f ON f.id = m.face
        WHERE l.id > 0 AND l.contents <> -2 AND l.num_ms > 0
          AND (:pvs = '' OR BIN_AND(POSITION(SUBSTRING(:pvs FROM BIN_SHR(l.id - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(l.id - 1, 3))) <> 0);
       INSERT INTO leaf_marked (vleaf) VALUES (:vleaf);
     END
     UPDATE viewcfg c SET c.vis_leaf = :vleaf WHERE c.id = 1;
+    changed = 1;
   END
+  IF (changed = 0) THEN
+  BEGIN
+    SELECT COUNT(*) FROM vis_ents INTO n1;
+    SELECT COUNT(*) FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.model_id <> :world INTO n2;
+    -- (looked at from vis_ents: a few primary-key probes; the count catches a brush entity that appeared)
+    IF (n1 <> n2 OR EXISTS (SELECT 1 FROM vis_ents v LEFT JOIN ents e ON e.id = v.ent_id
+                             WHERE e.id IS NULL OR e.model_id <> v.model_id OR e.x <> v.x OR e.y <> v.y OR e.z <> v.z)) THEN
+      changed = 1;
+  END
+  IF (changed = 0) THEN EXIT;
   DELETE FROM vis_faces;
+  DELETE FROM vis_ents;
+  INSERT INTO vis_ents (ent_id, model_id, x, y, z)
+  SELECT e.id, e.model_id, e.x, e.y, e.z FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.model_id <> :world;
 
   FOR SELECT e.id, e.model_id, e.x, e.y, e.z, e.leafs FROM ents e JOIN models m ON m.id = e.model_id
        WHERE m.kind = 'B' AND e.model_id <> :world INTO eid, emid, ox, oy, oz, leafs
@@ -132,7 +161,8 @@ BEGIN
       END
     END
     IF (vis = 1) THEN
-      INSERT INTO vis_faces (face, ent_id, ox, oy, oz) SELECT f.id, :eid, :ox, :oy, :oz FROM faces f WHERE f.model_id = :emid;
+      INSERT INTO vis_faces (face, ent_id, ox, oy, oz, nx, ny, nz, dist, cx, cy, cz, radius)
+      SELECT f.id, :eid, :ox, :oy, :oz, f.nx, f.ny, f.nz, f.dist, f.cx, f.cy, f.cz, f.radius FROM faces f WHERE f.model_id = :emid;
   END
 END^
 
@@ -155,12 +185,10 @@ BEGIN
   EXECUTE PROCEDURE mark_faces(pvs, vleaf);
   -- the world's faces in the view leaf's PVS, at origin 0
   ent_id = 0; ox = 0; oy = 0; oz = 0;
-  FOR SELECT f.id
-        -- the leaf's faces, then each one's row: "+ 0" keeps the plan (made when the tables were empty) from
-        -- scanning every face and probing leaf_faces by its whole key instead
-        FROM leaf_faces lf
-        JOIN faces f ON f.id = lf.face + 0
-       WHERE lf.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
+  FOR SELECT f.face
+        -- the leaf's rows carry each face's plane and sphere: no join to faces per candidate
+        FROM leaf_faces f
+       WHERE f.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
          AND (f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz + f.radius >= :nearz
          AND ABS((f.cx - :ex) * :rx + (f.cy - :ey) * :ry + (f.cz - :ez) * :rz)
              <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :kx + f.radius * :qx
@@ -171,13 +199,12 @@ BEGIN
   -- then the visible brush models' faces, each at its entity's origin
   FOR SELECT v.face, v.ent_id, v.ox, v.oy, v.oz
         FROM vis_faces v
-        JOIN faces f ON f.id = v.face
-       WHERE f.nx * (:ex - v.ox) + f.ny * (:ey - v.oy) + f.nz * (:ez - v.oz) - f.dist > 0
-         AND (f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz + f.radius >= :nearz
-         AND ABS((f.cx + v.ox - :ex) * :rx + (f.cy + v.oy - :ey) * :ry + (f.cz + v.oz - :ez) * :rz)
-             <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :kx + f.radius * :qx
-         AND ABS((f.cx + v.ox - :ex) * :ux + (f.cy + v.oy - :ey) * :uy + (f.cz + v.oz - :ez) * :uz)
-             <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :ky + f.radius * :qy
+       WHERE v.nx * (:ex - v.ox) + v.ny * (:ey - v.oy) + v.nz * (:ez - v.oz) - v.dist > 0
+         AND (v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz + v.radius >= :nearz
+         AND ABS((v.cx + v.ox - :ex) * :rx + (v.cy + v.oy - :ey) * :ry + (v.cz + v.oz - :ez) * :rz)
+             <= ((v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz) * :kx + v.radius * :qx
+         AND ABS((v.cx + v.ox - :ex) * :ux + (v.cy + v.oy - :ey) * :uy + (v.cz + v.oz - :ez) * :uz)
+             <= ((v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz) * :ky + v.radius * :qy
         INTO face, ent_id, ox, oy, oz
   DO SUSPEND;
 END^
@@ -211,10 +238,9 @@ BEGIN
   -- project to NULL; the painter clips those edges in view space.
   DELETE FROM sel_faces;
   INSERT INTO sel_faces (face, ent_id, ox, oy, oz)
-  SELECT f.id, 0, 0, 0, 0
-    FROM leaf_faces lf
-    JOIN faces f ON f.id = lf.face + 0
-   WHERE lf.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
+  SELECT f.face, 0, 0, 0, 0
+    FROM leaf_faces f
+   WHERE f.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
      AND (f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz + f.radius >= :nearz
      AND ABS((f.cx - :ex) * :rx + (f.cy - :ey) * :ry + (f.cz - :ez) * :rz)
          <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :kx + f.radius * :qx
@@ -223,13 +249,12 @@ BEGIN
   INSERT INTO sel_faces (face, ent_id, ox, oy, oz)
   SELECT v.face, v.ent_id, v.ox, v.oy, v.oz
     FROM vis_faces v
-    JOIN faces f ON f.id = v.face
-   WHERE f.nx * (:ex - v.ox) + f.ny * (:ey - v.oy) + f.nz * (:ez - v.oz) - f.dist > 0
-     AND (f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz + f.radius >= :nearz
-     AND ABS((f.cx + v.ox - :ex) * :rx + (f.cy + v.oy - :ey) * :ry + (f.cz + v.oz - :ez) * :rz)
-         <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :kx + f.radius * :qx
-     AND ABS((f.cx + v.ox - :ex) * :ux + (f.cy + v.oy - :ey) * :uy + (f.cz + v.oz - :ez) * :uz)
-         <= ((f.cx + v.ox - :ex) * :fx + (f.cy + v.oy - :ey) * :fy + (f.cz + v.oz - :ez) * :fz) * :ky + f.radius * :qy;
+   WHERE v.nx * (:ex - v.ox) + v.ny * (:ey - v.oy) + v.nz * (:ez - v.oz) - v.dist > 0
+     AND (v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz + v.radius >= :nearz
+     AND ABS((v.cx + v.ox - :ex) * :rx + (v.cy + v.oy - :ey) * :ry + (v.cz + v.oz - :ez) * :rz)
+         <= ((v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz) * :kx + v.radius * :qx
+     AND ABS((v.cx + v.ox - :ex) * :ux + (v.cy + v.oy - :ey) * :uy + (v.cz + v.oz - :ez) * :uz)
+         <= ((v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz) * :ky + v.radius * :qy;
 
   cur = -1; curent = -1;
   FOR SELECT v.ent_id, f.id, fv.seq,

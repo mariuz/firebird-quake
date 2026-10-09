@@ -310,7 +310,7 @@ const ENT_COLS = ['classname', 'targetname', 'target', 'killtarget', 'model', 'a
 /** SV_SpawnServer: replace the current map with `name` from the PAK. */
 export async function loadMap(db, pak, res, name, { skill = 1, newGame = true, seed = null } = {}) {
   const bsp = new Bsp(pak.buffer(`maps/${name}.bsp`), `maps/${name}.bsp`);
-  await db.exec(`DELETE FROM sound_events; DELETE FROM fx_events; DELETE FROM ents; DELETE FROM map_ents; DELETE FROM map_keys; DELETE FROM vis_faces; DELETE FROM leaf_faces; DELETE FROM leaf_marked; UPDATE viewcfg SET vis_leaf = NULL;
+  await db.exec(`DELETE FROM sound_events; DELETE FROM fx_events; DELETE FROM ents; DELETE FROM map_ents; DELETE FROM map_keys; DELETE FROM vis_faces; DELETE FROM vis_ents; DELETE FROM leaf_faces; DELETE FROM leaf_marked; UPDATE viewcfg SET vis_leaf = NULL;
     DELETE FROM face_verts WHERE face < ${ITEM_ID_BASE}; DELETE FROM faces WHERE id < ${ITEM_ID_BASE}; DELETE FROM miptex WHERE id < ${ITEM_ID_BASE};
     DELETE FROM hulls; DELETE FROM leaves; DELETE FROM marksurfaces; DELETE FROM models WHERE kind = 'B' AND id < ${res.itemBase}`);
   // world model ids: previous world models are gone, reuse the registry slots

@@ -54,9 +54,17 @@ function operands(op, a, b, c) {
 
 // the fields qc_enter routes to ents columns (sql/qcvm.sql): read and written through qc_f/qc_sf;
 // every other field is a qc_fields row, read and written directly
-const ROUTED = [['origin', 3], ['velocity', 3], ['angles', 3], ['avelocity', 1, 1], ['mins', 3], ['maxs', 3], ['solid'], ['movetype'], ['flags'],
-  ['frame'], ['skin'], ['effects'], ['modelindex'], ['ltime'], ['waterlevel'], ['watertype'], ['owner'], ['absmin', 3], ['absmax', 3], ['size', 3],
-  ['model'], ['enemy'], ['goalentity'], ['ideal_yaw'], ['yaw_speed']];
+// [field, length, first component, the ents columns] (sql/qcvm.sql: qc_enter's routes and qc_f's CASE); a
+// column named here is read and written directly by the compiled code (a cast, when given, on the write);
+// the computed ones (absmin, absmax, size) and .model (a string) go through qc_f and qc_sf
+const ROUTED = [['origin', 3, 0, ['x', 'y', 'z']], ['velocity', 3, 0, ['vx', 'vy', 'vz']], ['angles', 3, 0, ['pitch', 'yaw', 'roll']],
+  ['avelocity', 1, 1, ['avel_yaw']], ['mins', 3, 0, ['minx', 'miny', 'minz']], ['maxs', 3, 0, ['maxx', 'maxy', 'maxz']],
+  ['solid', 1, 0, [['solid', 'SMALLINT']]], ['movetype', 1, 0, [['movetype', 'SMALLINT']]], ['flags', 1, 0, [['flags', 'INTEGER']]],
+  ['frame', 1, 0, [['frame', 'INTEGER']]], ['skin', 1, 0, [['skin', 'INTEGER']]], ['effects', 1, 0, [['effects', 'INTEGER']]],
+  ['modelindex', 1, 0, [['model_id', 'INTEGER', 'NULLIF']]], ['ltime', 1, 0, ['ltime']], ['waterlevel', 1, 0, [['waterlevel', 'SMALLINT']]],
+  ['watertype', 1, 0, [['watertype', 'INTEGER']]], ['owner', 1, 0, [['owner_id', 'INTEGER']]], ['absmin', 3], ['absmax', 3], ['size', 3],
+  ['model'], ['enemy', 1, 0, [['enemy_id', 'INTEGER']]], ['goalentity', 1, 0, [['goal_id', 'INTEGER']]], ['ideal_yaw', 1, 0, ['ideal_yaw']],
+  ['yaw_speed', 1, 0, ['yaw_speed']]];
 
 // a float as a DOUBLE PRECISION literal
 function lit(v) {
@@ -115,9 +123,15 @@ export class QcJit {
     this.carried = new Set();
     for (const f of this.body.keys()) for (const g of this.liveness(f)[0]) this.carried.add(g);
     this.routed = new Set();
-    for (const [n, len = 1, skip = 0] of ROUTED) {
+    this.column = new Map();                   // field offset → { col, cast, nullif } for the columns read and written directly
+    for (const [n, len = 1, skip = 0, cols = null] of ROUTED) {
       const o = p.fieldByName(n);
-      if (o !== undefined) for (let i = skip; i < skip + len; i++) this.routed.add(o + i);
+      if (o === undefined) continue;
+      for (let i = skip; i < skip + len; i++) {
+        this.routed.add(o + i);
+        const c = cols?.[i - skip];
+        if (c) this.column.set(o + i, typeof c === 'string' ? { col: c } : { col: c[0], cast: c[1], nullif: c[2] === 'NULLIF' });
+      }
     }
   }
 
@@ -267,8 +281,26 @@ export class QcJit {
     };
     const int = (e) => `CAST(${e} AS INTEGER)`;
     const fieldOf = (g) => kind(g) === 'const' ? Math.round(this.image[g]) : null;
-    const load = (ent, fo, fexpr) => fo !== null && !this.routed.has(fo) ? `qc_fq(${ent}, ${fo})` : `qc_f(${ent}, ${fo ?? fexpr})`;
-    const store = (ent, fo, fexpr, v) => fo !== null && !this.routed.has(fo) ? `EXECUTE PROCEDURE qc_sfq(${ent}, ${fo}, ${v});` : `EXECUTE PROCEDURE qc_sf(${ent}, ${fo ?? fexpr}, ${v});`;
+    // a field read or write: a known offset that is not the engine's goes to qc_fields directly; one routed to a
+    // plain ents column reads or writes that column (the world, edict 0, keeps its fields in qc_fields, as qc_f and
+    // qc_sf have it); the rest through qc_f / qc_sf
+    const column = (fo) => (fo !== null ? this.column.get(fo) : undefined);
+    const dml = (x) => x.replace(/\b([rvm]\d+)\b/g, ':$1');   // a variable inside a statement wants its colon
+    const load = (ent, fo, fexpr) => {
+      if (fo !== null && !this.routed.has(fo)) return `qc_fq(${ent}, ${fo})`;
+      const c = column(fo);
+      if (c) return `IIF(${ent} > 0, COALESCE((SELECT e.${c.col} FROM ents e WHERE e.id = CAST(${dml(ent)} AS INTEGER)), 0), qc_fq(0, ${fo}))`;
+      return `qc_f(${ent}, ${fo ?? fexpr})`;
+    };
+    const store = (ent, fo, fexpr, v) => {
+      if (fo !== null && !this.routed.has(fo)) return `EXECUTE PROCEDURE qc_sfq(${ent}, ${fo}, ${v});`;
+      const c = column(fo);
+      if (c) {
+        const val = c.cast ? (c.nullif ? `NULLIF(CAST(${dml(v)} AS ${c.cast}), 0)` : `CAST(${dml(v)} AS ${c.cast})`) : dml(v);
+        return `IF (${ent} > 0) THEN UPDATE ents e SET e.${c.col} = ${val} WHERE e.id = CAST(${dml(ent)} AS INTEGER); ELSE EXECUTE PROCEDURE qc_sfq(0, ${fo}, ${v});`;
+      }
+      return `EXECUTE PROCEDURE qc_sf(${ent}, ${fo ?? fexpr}, ${v});`;
+    };
     const jump = (s, t) => (machine ? `BEGIN pc_ = ${t}; CONTINUE M; END` : t > s ? `LEAVE B${t};` : `CONTINUE L${t};`);
     // is OFS_RETURN read after statement s before the next call overwrites it?
     const returnUsed = (s) => {

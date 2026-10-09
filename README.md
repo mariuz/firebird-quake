@@ -322,6 +322,9 @@ scripts/           the tests, the benchmark, the screenshot tool, the pak fetche
   instead, and the join to the vertices becomes an index walk.
 - **Expressions in the select list are cheap; PSQL statements are not.** Moving the per-vertex
   arithmetic out of the loop body and into the cursor's select list cut the frame query by half.
+- **A join per candidate row costs more than copying its columns.** `leaf_faces` carries each face's
+  plane and sphere, so the frame query culls without probing `faces` by key for every candidate, and
+  it halved.
 - **Rows are the cost.** Emitting ~2000 vertex rows costs ~35 ms; emitting the ~400 face rows they
   belong to costs ~8 ms. Filter before you join: a predicate on the joined row still walks every vertex.
 - **Keep what does not change.** The PVS marking is kept until the eye enters another leaf; items at

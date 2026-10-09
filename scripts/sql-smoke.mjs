@@ -107,6 +107,18 @@ if (door) {
   for (let i = 0; i < 30; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
   const d2 = (await db.query(`SELECT x, y, z, mv_state FROM ents WHERE id = ${door.ID}`)).rows[0];
   assert(d2 && (Math.abs(d2.Z - door.Z) > 1 || Math.abs(d2.X) > 1 || Math.abs(d2.Y) > 1), `door moved (state ${d2?.MV_STATE})`);
+  // the frame query's brush-model cache (vis_faces, rebuilt only when a brush entity moved) follows it
+  await db.query('SELECT * FROM frame_faces_fast');
+  const seen = (await db.query(`SELECT x, y, z FROM vis_ents WHERE ent_id = ${door.ID}`)).rows[0];
+  // (compared here, not in SQL text: the engine's text-to-double conversion is off by an ulp)
+  const at = (await db.query(`SELECT DISTINCT ox, oy, oz FROM vis_faces WHERE ent_id = ${door.ID}`)).rows;
+  const same = (a, b) => Math.abs(a - b) < 1e-9;
+  assert(seen && same(seen.X, d2.X) && same(seen.Y, d2.Y) && same(seen.Z, d2.Z) && at.every((r) => same(r.OX, d2.X) && same(r.OY, d2.Y) && same(r.OZ, d2.Z)),
+    `the frame query saw the door move (vis_ents at its new origin; its ${at.length ? 'vis_faces rows there too' : 'faces out of the PVS'})`);
+  await db.exec(`DELETE FROM ents WHERE id = ${door.ID}`);   // as a killtarget would
+  await db.query('SELECT * FROM frame_faces_fast');
+  const gone = (await db.query(`SELECT (SELECT COUNT(*) FROM vis_ents WHERE ent_id = ${door.ID}) + (SELECT COUNT(*) FROM vis_faces WHERE ent_id = ${door.ID}) n FROM rdb$database`)).rows[0].N;
+  assert(gone === 0, 'and saw it go: no vis_ents or vis_faces row of a removed brush entity');
 }
 
 // every sound we queued exists in the pak

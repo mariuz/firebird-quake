@@ -330,9 +330,14 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
 projection scale, the near plane and the frustum planes. `mark_faces(pvs, leaf)` marks a view leaf's
 world faces once, the first time the eye is in it: every face of every leaf whose PVS bit is set
 (`JOIN`ing `marksurfaces` by range, not `IN`) goes into `leaf_faces` under the leaf, and `leaf_marked`
-records it, so a return to the leaf (crossing a door back) costs nothing; `loadMap` empties both. The
+records it, so a return to the leaf (crossing a door back) costs nothing; `loadMap` empties both. Each
+`leaf_faces` row carries the face's plane and bounding sphere, copied from `faces` when the leaf is
+marked, so the frame queries cull a candidate without a join (the join was half the fast query). The
 current leaf is `viewcfg.vis_leaf`, and the frame queries read its rows from `leaf_faces`, then every
-face of every visible brush model, which `mark_faces` puts into `vis_faces` at its origin each frame.
+face of every visible brush model from `vis_faces`, at the entity's origin and with the same copied
+columns. `vis_faces` is built again only when the view leaf changed or a brush entity is not as
+`vis_ents` (every brush entity's model and origin as of the last build) recorded it: moved, appeared,
+went or changed model; the check is a few primary-key probes, where the rebuild was 0.8 ms a frame.
 
 `frame_faces_fast` (the default): fills `sel_faces` from `vis_faces` by dropping back faces (plane
 test at the eye) and faces whose bounding sphere is outside the frustum, and returns one row per face
@@ -451,7 +456,14 @@ The pak files are never committed (`.gitignore`); the registered `pak1.pak` is o
 - **A procedure's plans are made when it is created**, with the tables empty: a join of a small keyed
   table to a big one can come out as a scan of the big one probing the small one's whole key. Writing
   the join as `f.id = lf.face + 0` takes that path away (the frame queries over `leaf_faces` went from
-  18 ms to 5); a derived table does not, since it is flattened.
+  18 ms to 5 while they joined `faces`; the edict loop's joins use it); a derived table does not, since
+  it is flattened.
+- **A join per candidate row costs more than the columns it fetches**: `leaf_faces` and `vis_faces`
+  carry each face's plane and sphere (eight doubles copied when the leaf is marked), and the fast frame
+  query, which had spent half its time probing `faces` by key, halved. The same holds inside PSQL: a
+  routed field write through one `UPDATE` setting thirty columns by `IIF` cost twice a one-column
+  `UPDATE` (`qc_sf`), and a read through two lookups (`qc_f`) 2.5 times a direct `SELECT` of the column,
+  which the compiled QuakeC now emits for a field offset it knows.
 - **`THEN NULL;` is not a statement**: use `THEN BEGIN END`.
 - **`IIF`/`CASE` over literals pad to the longest**: `TRIM` anything that is compared as a string in JavaScript or used as a file name. SQL ignores trailing blanks in `=`, so this hides until a test compares strings.
 - **Floating-point time drifts**: compare `nextthink <= t + 1e-6`, or a 10 Hz think runs at 8 Hz.

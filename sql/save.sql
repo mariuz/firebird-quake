@@ -67,7 +67,7 @@ BEGIN
   skip = GEN_ID(ent_seq, :seq - GEN_ID(ent_seq, 0));
   DELETE FROM sound_events;
   DELETE FROM fx_events;
-  DELETE FROM vis_faces;
+  DELETE FROM vis_faces; DELETE FROM vis_ents;
   UPDATE viewcfg c SET c.vis_leaf = NULL;
   IF (qc = 1) THEN
   BEGIN
