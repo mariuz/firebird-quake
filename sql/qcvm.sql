@@ -790,7 +790,8 @@ BEGIN
         UPDATE qc_vm v SET v.te_state = 12 WHERE v.id = 1;
       END
       ELSE IF (n = 52 AND tst = 12) THEN UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;
-      ELSE IF (n = 52 AND tst = 1) THEN UPDATE qc_vm v SET v.te_state = 2, v.te_type = CAST(qc_g(7) AS SMALLINT), v.te_n = 0 WHERE v.id = 1;
+      ELSE IF (n = 52 AND tst = 1) THEN UPDATE qc_vm v SET v.te_state = 2, v.te_type = CAST(qc_g(7) AS SMALLINT), v.te_n = 0, v.te_ent = 0 WHERE v.id = 1;
+      ELSE IF (n = 59 AND tst = 2) THEN UPDATE qc_vm v SET v.te_ent = CAST(qc_g(7) AS INTEGER) WHERE v.id = 1;   -- the beam's owner (the page moves the player's own beam with the player)
       ELSE IF (n = 56 AND tst = 2) THEN
       BEGIN
         UPDATE qc_vm v SET v.te_c0 = IIF(:tn = 0, qc_g(7), v.te_c0), v.te_c1 = IIF(:tn = 1, qc_g(7), v.te_c1), v.te_c2 = IIF(:tn = 2, qc_g(7), v.te_c2),
@@ -800,7 +801,7 @@ BEGIN
         BEGIN
           -- TE_SPIKE, SUPERSPIKE, WIZSPIKE, KNIGHTSPIKE: a spike hit; GUNSHOT: a puff; EXPLOSION; TAREXPLOSION; the LIGHTNINGs: a beam; LAVASPLASH; TELEPORT
           SELECT v.te_c0, v.te_c1, v.te_c2, v.te_c3, v.te_c4, v.te_c5 FROM qc_vm v WHERE v.id = 1 INTO x, y, z, a, b, c;
-          IF (tty IN (5, 6, 9)) THEN EXECUTE PROCEDURE fx(4, x, y, z, a, b, c, 0);
+          IF (tty IN (5, 6, 9)) THEN EXECUTE PROCEDURE fx(4, x, y, z, a, b, c, (SELECT v.te_ent FROM qc_vm v WHERE v.id = 1));
           ELSE EXECUTE PROCEDURE fx(CASE tty WHEN 2 THEN 1 WHEN 3 THEN 2 WHEN 4 THEN 8 WHEN 10 THEN 7 WHEN 11 THEN 5 ELSE 6 END, x, y, z, 0, 0, 0, 0);
           UPDATE qc_vm v SET v.te_state = 0 WHERE v.id = 1;
         END

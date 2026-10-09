@@ -58,6 +58,7 @@ let lastDraw = null;       // the last frame's rows, drawn again under the inter
 let muzzleUntil = 0;       // the player's muzzle flash lights the room until then (game time)
 let prevWeaponFrame = 0;
 let beams = [];          // lightning beams to draw briefly
+let playerEnt = 1;       // the player's ents row: its own beam follows it (cl_tent.c)
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql',
   sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10, liquids: 'opaque' };
@@ -246,6 +247,7 @@ async function startMap(name, newGame, { save = null, seed = null } = {}) {
   const { rows } = await db.query('SELECT MAX(id) m FROM sound_events');
   lastSoundId = rows[0].M ?? 0;
   lastFxId = 0;
+  playerEnt = (await db.query('SELECT ent_id e FROM player')).rows[0]?.E ?? 1;
   console.log(`[firebird-quake] ${name} loaded in ${(performance.now() - t0).toFixed(0)} ms`);
   setStatus('');
   $('mapname').textContent = name;
@@ -537,10 +539,12 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   }
   // the see-through liquids (r_wateralpha), over the world and the models
   r.drawDeferred(time);
-  // lightning beams: bolt segments every 30 units
+  // lightning beams: bolt segments every 30 units; the player's own beam starts from where the player is now
+  // (CL_UpdateTEnts moves the view entity's beam to its origin each frame)
   const bolt = res.models.get(res.byName.get('progs/bolt2.mdl'));
   beams = beams.filter((b) => b.until > time);
   for (const b of beams) {
+    if (b.owner === playerEnt) b.a = [last.PX, last.PY, last.PZ];
     const d = [b.b[0] - b.a[0], b.b[1] - b.a[1], b.b[2] - b.a[2]];
     const len = Math.hypot(...d) || 1;
     const yaw = (Math.atan2(d[1], d[0]) * 180) / Math.PI;

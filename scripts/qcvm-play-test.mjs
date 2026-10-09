@@ -220,6 +220,16 @@ for (let i = 0; i < 20 && !boom; i++) {
 }
 const flew = Math.hypot(mx - pl.X, my - pl.Y);
 assert(boom > 0 && flew > 250, `it flies ${flew.toFixed(0)} units and explodes against the wall after ${boom} frames (T_MissileTouch → BecomeExplosion: the explosion sprite)`);
+
+// ── the thunderbolt: its beam is a temp entity with an owner ─────────────
+for (let i = 0; i < 10 && (await fld(1, 'weapon')) !== 64; i++) await frame({ imp: 8 });   // ImpulseCommands waits for the rocket's attack_finished
+assert((await fld(1, 'weapon')) === 64, 'impulse 8: the thunderbolt (IT_LIGHTNING) in hand');
+const fx0 = (await q1('SELECT COALESCE(MAX(id), 0) m FROM fx_events')).M;
+pl = await ent(1);
+await frame({ fire: 1 });
+const beam = await q1(`SELECT n, x, y, z, x2, y2, z2 FROM fx_events WHERE kind = 4 AND id > ${fx0} ORDER BY id`);
+assert(!!beam && beam.N === 1 && Math.abs(beam.Z - (pl.Z + 16)) < 1 && Math.hypot(beam.X2 - beam.X, beam.Y2 - beam.Y) > 250,
+  `W_FireLightning: TE_LIGHTNING2's WriteEntity is the beam's owner (${beam?.N}), its start the player's origin + 16 up, its end at the wall ${beam ? Math.hypot(beam.X2 - beam.X, beam.Y2 - beam.Y).toFixed(0) : '?'} units away`);
 let gone = 0;
 for (let i = 0; i < 10 && !gone; i++) { await frame(); if (!(await q1(`SELECT free FROM qc_edicts WHERE id = ${missile} AND free = 0`))) gone = i + 1; }
 assert(gone > 0 && !(await ent(missile)), `the explosion animates and removes itself (${gone} frames), its ents row with it`);

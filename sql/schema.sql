@@ -499,8 +499,8 @@ CREATE TABLE qc_vm (
   sv_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
   f_touch INTEGER, f_blocked INTEGER, f_v_angle INTEGER, f_avelocity INTEGER, f_gravity INTEGER,
   f_teleport_time INTEGER, f_punchangle INTEGER, f_groundentity INTEGER, f_view_ofs INTEGER, f_health INTEGER,
-  -- a temp entity being written (WriteByte SVC_TEMPENTITY, its type, then its coordinates)
-  te_state SMALLINT DEFAULT 0 NOT NULL, te_type SMALLINT DEFAULT 0 NOT NULL, te_n SMALLINT DEFAULT 0 NOT NULL,
+  -- a temp entity being written (WriteByte SVC_TEMPENTITY, its type, then its coordinates; a beam's WriteEntity is its owner)
+  te_state SMALLINT DEFAULT 0 NOT NULL, te_type SMALLINT DEFAULT 0 NOT NULL, te_n SMALLINT DEFAULT 0 NOT NULL, te_ent INTEGER DEFAULT 0 NOT NULL,
   te_c0 DOUBLE PRECISION, te_c1 DOUBLE PRECISION, te_c2 DOUBLE PRECISION, te_c3 DOUBLE PRECISION, te_c4 DOUBLE PRECISION, te_c5 DOUBLE PRECISION,
   -- localcmd's console buffer, run a line at a time (trigger_setskill sends "skill ", the number, a newline)
   cmdbuf VARCHAR(256) DEFAULT '' NOT NULL,
