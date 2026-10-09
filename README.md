@@ -164,7 +164,7 @@ and need keys; platforms, buttons, trains with path corners and secret doors mov
 plats.qc. Items and weapons from the axe to the thunderbolt, armour, damage momentum, gibs and backpacks
 are items.qc, weapons.qc and combat.qc. The monsters run ai.qc's state machine — `FIND_TARGET`,
 `MOVE_TO_GOAL`, `NEW_CHASE_DIR`, `CHECK_ATTACK` — with each monster's attacks and sounds defined in
-`monster_types` and a few `CASE` branches: the grunt, dog, knight, ogre, scrag, fiend, zombie, shambler
+`monster_types` (its branches on a monster's name are the zombie's pain, the spawn's explosion and the two bosses): the grunt, dog, knight, ogre, scrag, fiend, zombie, shambler
 and Chthon of the shareware episode, and the enforcer, hell knight, vore, spawn, rotfish and
 Shub-Niggurath of the registered one. Per-map gravity (Ziggurat Vertigo), the level's `worldspawn`
 message and type, the intermission and the finale live in `game`. Everything the simulation wants heard

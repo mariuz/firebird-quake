@@ -390,7 +390,17 @@ CREATE TABLE monster_types (
   attack_snd  VARCHAR(64),
   melee_snd   VARCHAR(64),
   gib_health  INTEGER DEFAULT -40 NOT NULL,
-  drop_item   VARCHAR(16)                          -- backpack contents: shells / rockets
+  drop_item   VARCHAR(16),                         -- backpack contents: shells / rockets
+  -- where one monster's .qc differs from ai.qc, as data rather than a branch in monsters.sql
+  melee_start_snd   VARCHAR(64),                   -- played as the melee animation starts (the knight's sword, the ogre's saw)
+  missile_start_snd VARCHAR(64),                   -- played as the missile animation starts (the shambler's crackle, the scrag's)
+  leap_snd    VARCHAR(64),                         -- a leap's landing on the enemy (Tar_JumpTouch)
+  leap_dmg    INTEGER DEFAULT 0 NOT NULL,          -- added to a leap's 10 + rnd * 10 (the fiend's 10 more)
+  leap_up     DOUBLE PRECISION DEFAULT 200 NOT NULL,   -- a leap's upward velocity (the fiend's 250)
+  leap_min    DOUBLE PRECISION DEFAULT 100 NOT NULL,   -- no leap from closer than this (the spawn jumps from anywhere)
+  gib_snd     VARCHAR(64) DEFAULT 'player/udeath.wav' NOT NULL,   -- the zombie's z_gib
+  missile_frames_nm VARCHAR(40),                   -- ',' separated frames that fire only on nightmare (sham_magic11)
+  missile_skip VARCHAR(40)                         -- ',' separated frames never shown (sham_magic6 goes on to sham_magic9)
 );
 
 -- ── The QuakeC VM (sql/qcvm.sql): progs.dat as tables ──────────────────────

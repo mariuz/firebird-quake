@@ -156,10 +156,10 @@ DECLARE chance DOUBLE PRECISION; DECLARE mk VARCHAR(16); DECLARE ac DOUBLE PRECI
 DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION; DECLARE x2 DOUBLE PRECISION; DECLARE y2 DOUBLE PRECISION; DECLARE z2 DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
-DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE d DOUBLE PRECISION;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE d DOUBLE PRECISION; DECLARE leap_min DOUBLE PRECISION;
 BEGIN
-  SELECT e.enemy_id, IIF(t.melee_anim IS NULL, 0, 1), IIF(t.missile_anim IS NULL, 0, 1), e.attack_finished, t.missile_kind, t.attack_chance, t.melee_range
-    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO enemy, has_melee, has_missile, af, mk, ac, mrange;
+  SELECT e.enemy_id, IIF(t.melee_anim IS NULL, 0, 1), IIF(t.missile_anim IS NULL, 0, 1), e.attack_finished, t.missile_kind, t.attack_chance, t.melee_range, t.leap_min
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO enemy, has_melee, has_missile, af, mk, ac, mrange, leap_min;
   IF (enemy IS NULL) THEN RETURN 0;
   -- see if any entities are in the way of the shot
   SELECT e.x, e.y, e.z + e.maxz - 8 FROM ents e WHERE e.id = :eid INTO x1, y1, z1;
@@ -183,7 +183,7 @@ BEGIN
   BEGIN
     -- DemonCheckAttack / dog: jump when 100–400 away and roughly level
     IF (d > 400 OR ABS(z1 - z2) > 64) THEN RETURN 0;
-    IF (d < 100 AND NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.mtype = 'tarbaby')) THEN RETURN 0;   -- the spawn jumps from anywhere
+    IF (d < leap_min) THEN RETURN 0;   -- 100 but for the spawn, which jumps from anywhere
     chance = IIF(r = 1, 0.5e0, 0.2e0);
   END
   ELSE IF (r = 0) THEN chance = 0.9e0;
@@ -210,10 +210,10 @@ DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PREC
 DECLARE evx DOUBLE PRECISION; DECLARE evy DOUBLE PRECISION; DECLARE evz DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
-DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE g INTEGER;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE g INTEGER; DECLARE leap_up DOUBLE PRECISION;
 BEGIN
-  SELECT t.missile_kind, e.enemy_id, t.attack_snd, e.x, e.y, e.z, e.yaw FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid
-    INTO mk, enemy, asnd, x1, y1, z1, yaw;
+  SELECT t.missile_kind, e.enemy_id, t.attack_snd, e.x, e.y, e.z, e.yaw, t.leap_up FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid
+    INTO mk, enemy, asnd, x1, y1, z1, yaw, leap_up;
   IF (enemy IS NULL) THEN EXIT;
   SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz FROM ents e WHERE e.id = :enemy INTO x2, y2, z2, evx, evy, evz;
   IF (x2 IS NULL) THEN EXIT;
@@ -295,7 +295,7 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 2, asnd, 1, 1);
     dx = x2 - x1; dy = y2 - y1; dl = vlen(dx, dy, 0);
     IF (dl = 0) THEN EXIT;
-    UPDATE ents e SET e.vx = :dx / :dl * 300, e.vy = :dy / :dl * 300, e.vz = 200 + IIF(e.mtype = 'demon1', 50, 0),
+    UPDATE ents e SET e.vx = :dx / :dl * 300, e.vy = :dy / :dl * 300, e.vz = :leap_up,
            e.flags = BIN_AND(e.flags, BIN_NOT(512)), e.movetype = 6, e.attack_state = 5 WHERE e.id = :eid;
   END
 END^
@@ -384,17 +384,17 @@ END^
 CREATE OR ALTER PROCEDURE monster_die (eid INTEGER, attacker INTEGER)
 AS
 DECLARE hp INTEGER; DECLARE gh INTEGER; DECLARE hm VARCHAR(40); DECLARE ds VARCHAR(64); DECLARE anims VARCHAR(80); DECLARE drop_ VARCHAR(16);
-DECLARE pick VARCHAR(16); DECLARE q INTEGER; DECLARE mt VARCHAR(16); DECLARE st VARCHAR(12); DECLARE bp INTEGER;
+DECLARE pick VARCHAR(16); DECLARE q INTEGER; DECLARE mt VARCHAR(16); DECLARE st VARCHAR(12); DECLARE bp INTEGER; DECLARE gs VARCHAR(64);
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
 BEGIN
-  SELECT e.health, t.gib_health, t.head_model, t.death_snd, t.death_anims, t.drop_item, e.mtype, e.st, e.x, e.y, e.z
-    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO hp, gh, hm, ds, anims, drop_, mt, st, x, y, z;
+  SELECT e.health, t.gib_health, t.head_model, t.death_snd, t.death_anims, t.drop_item, e.mtype, e.st, e.x, e.y, e.z, t.gib_snd
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO hp, gh, hm, ds, anims, drop_, mt, st, x, y, z, gs;
   IF (st IN ('die', 'dead')) THEN
   BEGIN
     -- gibbing a corpse
     IF (hp < gh AND hm IS NOT NULL) THEN
     BEGIN
-      EXECUTE PROCEDURE snd(eid, 2, 'player/udeath.wav', 1, 1);
+      EXECUTE PROCEDURE snd(eid, 2, gs, 1, 1);
       EXECUTE PROCEDURE throw_gib(eid, 'progs/gib1.mdl', -hp);
       EXECUTE PROCEDURE throw_gib(eid, 'progs/gib2.mdl', -hp);
       EXECUTE PROCEDURE throw_gib(eid, 'progs/gib3.mdl', -hp);
@@ -439,10 +439,10 @@ BEGIN
     EXECUTE PROCEDURE use_targets(eid, player_ent());
     EXIT;
   END
-  -- gib?
-  IF (hp < gh OR mt = 'zombie') THEN
+  -- gib? (a zombie's gib_health is 1: it has no death but the gib)
+  IF (hp < gh) THEN
   BEGIN
-    EXECUTE PROCEDURE snd(eid, 2, IIF(mt = 'zombie', 'zombie/z_gib.wav', 'player/udeath.wav'), 1, 1);
+    EXECUTE PROCEDURE snd(eid, 2, gs, 1, 1);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib1.mdl', -hp);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib2.mdl', -hp);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib3.mdl', -hp);
@@ -518,6 +518,7 @@ DECLARE mt VARCHAR(16); DECLARE ehp INTEGER; DECLARE t DOUBLE PRECISION;
 DECLARE ff INTEGER; DECLARE fc INTEGER; DECLARE atkst SMALLINT; DECLARE tgt VARCHAR(40); DECLARE goal INTEGER;
 DECLARE run_spd DOUBLE PRECISION; DECLARE walk_spd DOUBLE PRECISION; DECLARE stand_a VARCHAR(16); DECLARE walk_a VARCHAR(16); DECLARE run_a VARCHAR(16);
 DECLARE melee_a VARCHAR(16); DECLARE melee_f INTEGER; DECLARE missile_a VARCHAR(16); DECLARE missile_f VARCHAR(40); DECLARE idle_s VARCHAR(64);
+DECLARE melee_ss VARCHAR(64); DECLARE missile_ss VARCHAR(64); DECLARE leap_s VARCHAR(64); DECLARE leap_d INTEGER; DECLARE missile_nm VARCHAR(40); DECLARE missile_sk VARCHAR(40);
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE gx DOUBLE PRECISION; DECLARE gy DOUBLE PRECISION; DECLARE gz DOUBLE PRECISION;
 DECLARE d DOUBLE PRECISION; DECLARE gt VARCHAR(40); DECLARE gw DOUBLE PRECISION; DECLARE pvs d_pvs; DECLARE lf INTEGER; DECLARE ex DOUBLE PRECISION;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
@@ -525,8 +526,10 @@ BEGIN
   t = now_();
   SELECT e.st, e.anim, e.anim_frame, e.model_id, e.enemy_id, e.flags, e.mtype, e.attack_state, e.target, e.goal_id, e.x, e.y, e.z, e.leaf
     FROM ents e WHERE e.id = :eid INTO st, anim, af, mid, enemy, flags, mt, atkst, tgt, goal, x, y, z, lf;
-  SELECT t.run_speed, t.walk_speed, t.stand_anim, t.walk_anim, t.run_anim, t.melee_anim, t.melee_frame, t.missile_anim, t.missile_frames, t.idle_snd
-    FROM monster_types t WHERE t.name = :mt INTO run_spd, walk_spd, stand_a, walk_a, run_a, melee_a, melee_f, missile_a, missile_f, idle_s;
+  SELECT t.run_speed, t.walk_speed, t.stand_anim, t.walk_anim, t.run_anim, t.melee_anim, t.melee_frame, t.missile_anim, t.missile_frames, t.idle_snd,
+         t.melee_start_snd, t.missile_start_snd, t.leap_snd, t.leap_dmg, t.missile_frames_nm, t.missile_skip
+    FROM monster_types t WHERE t.name = :mt INTO run_spd, walk_spd, stand_a, walk_a, run_a, melee_a, melee_f, missile_a, missile_f, idle_s,
+         melee_ss, missile_ss, leap_s, leap_d, missile_nm, missile_sk;
   UPDATE ents e SET e.nextthink = :t + 0.1e0 WHERE e.id = :eid;
   IF (st = 'dead' OR st = 'cruc') THEN
   BEGIN
@@ -660,8 +663,8 @@ BEGIN
         SELECT vlen(a.x - b.x, a.y - b.y, 0) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
         IF (d < 48 AND (SELECT e.attack_finished FROM ents e WHERE e.id = :eid) < t) THEN
         BEGIN
-          IF (mt = 'tarbaby') THEN EXECUTE PROCEDURE snd(eid, 1, 'blob/hit1.wav', 1, 1);   -- Tar_JumpTouch
-          EXECUTE PROCEDURE t_damage(enemy, eid, eid, 10 + FLOOR(rnd() * 10) + IIF(mt = 'demon1', 10, 0));
+          IF (leap_s IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, leap_s, 1, 1);   -- Tar_JumpTouch
+          EXECUTE PROCEDURE t_damage(enemy, eid, eid, 10 + FLOOR(rnd() * 10) + leap_d);
           UPDATE ents e SET e.attack_finished = :t + 1 WHERE e.id = :eid;
         END
       END
@@ -675,9 +678,7 @@ BEGIN
       BEGIN
         UPDATE ents e SET e.st = 'melee', e.attack_state = 1 WHERE e.id = :eid;
         EXECUTE PROCEDURE set_anim(eid, melee_a);
-        IF (mt = 'knight') THEN EXECUTE PROCEDURE snd(eid, 1, 'knight/sword1.wav', 1, 1);
-        IF (mt = 'ogre') THEN EXECUTE PROCEDURE snd(eid, 1, 'ogre/ogsawatk.wav', 1, 1);
-        IF (mt = 'shambler') THEN EXECUTE PROCEDURE snd(eid, 1, 'shambler/melee1.wav', 1, 1);
+        IF (melee_ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, melee_ss, 1, 1);
       END
       EXIT;
     END
@@ -688,8 +689,7 @@ BEGIN
       BEGIN
         UPDATE ents e SET e.st = 'missile', e.attack_state = 1 WHERE e.id = :eid;
         EXECUTE PROCEDURE set_anim(eid, missile_a);
-        IF (mt = 'shambler') THEN EXECUTE PROCEDURE snd(eid, 1, 'shambler/sattck1.wav', 1, 1);
-        IF (mt = 'wizard') THEN EXECUTE PROCEDURE snd(eid, 1, 'wizard/wattack.wav', 1, 1);
+        IF (missile_ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, missile_ss, 1, 1);
       END
       EXIT;
     END
@@ -721,12 +721,12 @@ BEGIN
     END
     IF (st = 'melee' AND af = melee_f) THEN EXECUTE PROCEDURE monster_melee(eid);
     IF (st = 'missile' AND POSITION(',' || af || ',', ',' || missile_f || ',') > 0) THEN EXECUTE PROCEDURE monster_missile(eid);
-    -- shambler.qc: sham_magic11 casts a fourth bolt on nightmare
-    IF (st = 'missile' AND mt = 'shambler' AND af = 10 AND nightmare() = 1) THEN EXECUTE PROCEDURE monster_missile(eid);
+    -- the frames that fire only on nightmare (shambler.qc: sham_magic11 casts a fourth bolt)
+    IF (st = 'missile' AND missile_nm IS NOT NULL AND nightmare() = 1 AND POSITION(',' || af || ',', ',' || missile_nm || ',') > 0) THEN EXECUTE PROCEDURE monster_missile(eid);
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = :st)) THEN EXIT;   -- a leap changed state
-    -- and sham_magic6 goes on to sham_magic9: magic7 and magic8 are never shown
-    IF (st = 'missile' AND mt = 'shambler' AND af = 5) THEN af = 7;
     af = af + 1;
+    -- over the frames never shown (sham_magic6 goes on to sham_magic9)
+    WHILE (st = 'missile' AND missile_sk IS NOT NULL AND POSITION(',' || af || ',', ',' || missile_sk || ',') > 0) DO af = af + 1;
     IF (af >= fc) THEN
     BEGIN
       UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;

@@ -237,8 +237,15 @@ counts, damage taken for the flash.
 
 `monster_types` (from `src/gamedata.js`) describes each of the fifteen monsters: model, head model,
 health, hull size, flags (fly, swim), speeds, the animation names for stand/walk/run/melee/missile,
-pain and death animations, the missile kind, attack and pain chances, the sounds. The code is the
-state machine from `ai.qc` with one `CASE` per monster where they differ:
+pain and death animations, the missile kind, attack and pain chances, the sounds, and the columns
+for where one monster's .qc departs from `ai.qc`: the sound as a melee or missile animation starts
+(the knight's sword, the ogre's saw, the shambler's and the scrag's crackle), a leap's landing sound,
+extra damage, upward speed and shortest range (the spawn's 0: it jumps from anywhere), the gib sound
+(the zombie's, whose `gib_health` of 1 means it has no death but the gib), the missile frames that
+fire only on nightmare and the frames never shown (shambler.qc's `sham_magic11` and the jump from
+`sham_magic6` to `sham_magic9`). The code is the state machine from `ai.qc`; the branches on a
+monster's name that remain are behaviour, not numbers: the zombie's pain (down from a hard hit, up
+again), the spawn's explosion, Chthon's pain, death and removal, and Shub-Niggurath's finale:
 
 - `st` is the state: `stand`, `walk`, `run`, `missile`, `melee`, `pain`, `die`, `dead`, `cruc` (the crucified zombies), `asleep` (Chthon before the rune).
 - `monster_think` runs every 0.1 s (`nextthink`, compared with a 1 µs tolerance since floating-point time drifts): `set_anim`, the animation frame step, `find_target` (sight and sound), `found_target`, `change_yaw` towards `ideal_yaw`, `move_to_goal` (`new_chase_dir`, `step_direction`, `facing_ideal`), `check_attack` (range and `visible`/`infront`), then `monster_missile` (shotgun, grenade, wizard spike, zombie gib, lava ball, lightning, leap, laser, knight spike, vore ball) or `monster_melee`. A monster far from the player and out of its PVS thinks at 3 Hz and strides further.

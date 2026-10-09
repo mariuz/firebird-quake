@@ -46,7 +46,7 @@ export const MONSTERS = [
     melee_anim: 'smash', melee_frame: 7, melee_range: 100, melee_dmg: 12,
     missile_anim: 'shoot', missile_frames: '3', missile_kind: 'grenade', attack_chance: 0.3, pain_chance: 1,
     sight_snd: 'ogre/ogwake.wav', idle_snd: 'ogre/ogidle.wav', pain_snd: 'ogre/ogpain1.wav', death_snd: 'ogre/ogdth.wav',
-    attack_snd: 'weapons/grenade.wav', melee_snd: 'ogre/ogsawatk.wav', gib_health: -80, drop_item: 'rockets',
+    attack_snd: 'weapons/grenade.wav', melee_snd: 'ogre/ogsawatk.wav', melee_start_snd: 'ogre/ogsawatk.wav', gib_health: -80, drop_item: 'rockets',
   },
   {
     name: 'knight', model: 'progs/knight.mdl', head_model: 'progs/h_knight.mdl', health: 75, hull: 1, maxz: 40,
@@ -55,7 +55,7 @@ export const MONSTERS = [
     melee_anim: 'attackb', melee_frame: 6, melee_range: 100, melee_dmg: 6,
     missile_kind: null, attack_chance: 0, pain_chance: 1,
     sight_snd: 'knight/ksight.wav', idle_snd: 'knight/idle.wav', pain_snd: 'knight/khurt.wav', death_snd: 'knight/kdeath.wav',
-    melee_snd: 'knight/sword1.wav', gib_health: -40,
+    melee_snd: 'knight/sword1.wav', melee_start_snd: 'knight/sword1.wav', gib_health: -40,
   },
   {
     name: 'wizard', model: 'progs/wizard.mdl', head_model: 'progs/h_wizard.mdl', health: 80, hull: 1, maxz: 40, flags: 1,
@@ -63,7 +63,7 @@ export const MONSTERS = [
     stand_anim: 'hover', walk_anim: 'fly', run_anim: 'fly', pain_anims: 'pain', death_anims: 'death',
     missile_anim: 'magatt', missile_frames: '3,6', missile_kind: 'wspike', attack_chance: 0.35, pain_chance: 1,
     sight_snd: 'wizard/wsight.wav', idle_snd: 'wizard/widle1.wav', pain_snd: 'wizard/wpain.wav', death_snd: 'wizard/wdeath.wav',
-    attack_snd: 'wizard/wattack.wav', gib_health: -40,
+    attack_snd: 'wizard/wattack.wav', missile_start_snd: 'wizard/wattack.wav', gib_health: -40,
   },
   {
     name: 'demon1', model: 'progs/demon.mdl', head_model: 'progs/h_demon.mdl', health: 300, hull: 2, maxz: 64,
@@ -72,16 +72,17 @@ export const MONSTERS = [
     melee_anim: 'attacka', melee_frame: 5, melee_range: 100, melee_dmg: 10,
     missile_anim: 'leap', missile_frames: '4', missile_kind: 'leap', attack_chance: 0.3, pain_chance: 1,
     sight_snd: 'demon/sight2.wav', idle_snd: 'demon/idle1.wav', pain_snd: 'demon/dpain1.wav', death_snd: 'demon/ddeath.wav',
-    attack_snd: 'demon/djump.wav', melee_snd: 'demon/dhit2.wav', gib_health: -80,
+    attack_snd: 'demon/djump.wav', melee_snd: 'demon/dhit2.wav', leap_dmg: 10, leap_up: 250, gib_health: -80,
   },
   {
     name: 'shambler', model: 'progs/shambler.mdl', head_model: 'progs/h_shams.mdl', health: 600, hull: 2, maxz: 64,
     run_speed: 20, walk_speed: 10, yaw_speed: 20,
     stand_anim: 'stand', walk_anim: 'walk', run_anim: 'run', pain_anims: 'pain', death_anims: 'death',
     melee_anim: 'smash', melee_frame: 9, melee_range: 100, melee_dmg: 40,
-    missile_anim: 'magic', missile_frames: '5,8,9', missile_kind: 'lightning',   // sham_magic6, 9, 10 (and 11 on nightmare, monsters.sql) attack_chance: 0.4, pain_chance: 0.5,
+    missile_anim: 'magic', missile_frames: '5,8,9', missile_frames_nm: '10', missile_skip: '6,7',   // sham_magic6, 9, 10 (11 on nightmare); magic7 and 8 are never shown
+    missile_kind: 'lightning', attack_chance: 0.4, pain_chance: 0.5,
     sight_snd: 'shambler/ssight.wav', idle_snd: 'shambler/sidle.wav', pain_snd: 'shambler/shurt2.wav', death_snd: 'shambler/sdeath.wav',
-    attack_snd: 'shambler/sattck1.wav', melee_snd: 'shambler/smack.wav', gib_health: -60,
+    attack_snd: 'shambler/sattck1.wav', missile_start_snd: 'shambler/sattck1.wav', melee_snd: 'shambler/smack.wav', melee_start_snd: 'shambler/melee1.wav', gib_health: -60,
   },
   {
     name: 'zombie', model: 'progs/zombie.mdl', head_model: 'progs/h_zombie.mdl', health: 60, hull: 1, maxz: 40,
@@ -89,7 +90,7 @@ export const MONSTERS = [
     stand_anim: 'stand', walk_anim: 'walk', run_anim: 'run', pain_anims: 'paina,painb,painc,paind', death_anims: 'paine',
     missile_anim: 'atta', missile_frames: '12', missile_kind: 'gib', attack_chance: 0.4, pain_chance: 1,
     sight_snd: 'zombie/z_idle.wav', idle_snd: 'zombie/z_idle.wav', pain_snd: 'zombie/z_pain.wav', death_snd: 'zombie/z_gib.wav',
-    attack_snd: 'zombie/z_shot1.wav', gib_health: 0,
+    attack_snd: 'zombie/z_shot1.wav', gib_snd: 'zombie/z_gib.wav', gib_health: 1,   // 1: a zombie has no death but the gib
   },
   {
     name: 'boss', model: 'progs/boss.mdl', health: 3, hull: 2, maxz: 256,
@@ -130,7 +131,7 @@ export const MONSTERS = [
     run_speed: 24, walk_speed: 2, yaw_speed: 20,
     stand_anim: 'walk', walk_anim: 'walk', run_anim: 'run', pain_anims: 'fly', death_anims: 'exp',
     missile_anim: 'jump', missile_frames: '4', missile_kind: 'leap', attack_chance: 0.6, pain_chance: 0,
-    sight_snd: 'blob/sight1.wav', death_snd: 'blob/death1.wav', attack_snd: 'blob/land1.wav', gib_health: -1000,
+    sight_snd: 'blob/sight1.wav', death_snd: 'blob/death1.wav', attack_snd: 'blob/land1.wav', leap_snd: 'blob/hit1.wav', leap_min: 0, gib_health: -1000,
   },
   {
     name: 'fish', model: 'progs/fish.mdl', health: 25, hull: 1, maxz: 24, flags: 2,
