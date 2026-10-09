@@ -1,4 +1,6 @@
-// bsp.js – Quake BSP version 29. Everything the SQL side needs is produced
+// bsp.js – Quake BSP version 29, and the larger-map formats BSP2 and 2PSB (QuakeSpasm's bspfile.h: the same
+// lumps with 32-bit indices in the nodes, clipnodes, faces, leaves, marksurfaces and edges; BSP2 also has
+// float bounds in the nodes and leaves). Everything the SQL side needs is produced
 // as plain arrays; everything only the painter needs (texels, lightmaps)
 // stays here.
 
@@ -18,7 +20,14 @@ export class Bsp {
     const bytes = new Uint8Array(buffer);
     this.bytes = bytes;
     const version = dv.getInt32(0, true);
-    if (version !== 29) throw new Error(`${name}: BSP version ${version}, expected 29`);
+    const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+    // 29: 16-bit indices; '2PSB' (RMQ's): 32-bit indices, 16-bit bounds; 'BSP2': 32-bit indices, float bounds
+    const fmt = version === 29 ? 29 : magic === 'BSP2' ? 2 : magic === '2PSB' ? 1 : 0;
+    if (!fmt) throw new Error(`${name}: BSP version ${version} ('${magic}'), expected 29, BSP2 or 2PSB`);
+    this.format = fmt === 29 ? 'BSP29' : fmt === 2 ? 'BSP2' : '2PSB';
+    const wide = fmt !== 29;                                           // 32-bit indices
+    const bound = fmt === 2 ? (p) => dv.getFloat32(p, true) : (p) => dv.getInt16(p, true);
+    const bsz = fmt === 2 ? 4 : 2;                                     // a bound's size
     const lump = (i) => ({ off: dv.getInt32(4 + i * 8, true), len: dv.getInt32(8 + i * 8, true) });
 
     // entities
@@ -47,14 +56,24 @@ export class Bsp {
     // nodes
     l = lump(LUMP.nodes);
     this.nodes = [];
-    for (let p = l.off; p < l.off + l.len; p += 24) {
-      this.nodes.push({
+    const nsz = wide ? 4 + 8 + 6 * bsz + 8 : 24;
+    for (let p = l.off; p < l.off + l.len; p += nsz) {
+      if (!wide) this.nodes.push({
         plane: dv.getInt32(p, true),
         children: [dv.getInt16(p + 4, true), dv.getInt16(p + 6, true)],
         mins: [dv.getInt16(p + 8, true), dv.getInt16(p + 10, true), dv.getInt16(p + 12, true)],
         maxs: [dv.getInt16(p + 14, true), dv.getInt16(p + 16, true), dv.getInt16(p + 18, true)],
         firstFace: dv.getUint16(p + 20, true), numFaces: dv.getUint16(p + 22, true),
       });
+      else {
+        const b = p + 12;
+        this.nodes.push({
+          plane: dv.getInt32(p, true),
+          children: [dv.getInt32(p + 4, true), dv.getInt32(p + 8, true)],
+          mins: [bound(b), bound(b + bsz), bound(b + 2 * bsz)], maxs: [bound(b + 3 * bsz), bound(b + 4 * bsz), bound(b + 5 * bsz)],
+          firstFace: dv.getUint32(b + 6 * bsz, true), numFaces: dv.getUint32(b + 6 * bsz + 4, true),
+        });
+      }
     }
 
     // texinfo
@@ -93,13 +112,20 @@ export class Bsp {
     // faces
     l = lump(LUMP.faces);
     this.faces = [];
-    for (let p = l.off; p < l.off + l.len; p += 20) {
-      this.faces.push({
+    for (let p = l.off; p < l.off + l.len; p += wide ? 28 : 20) {
+      if (!wide) this.faces.push({
         plane: dv.getUint16(p, true), side: dv.getUint16(p + 2, true),
         firstEdge: dv.getInt32(p + 4, true), numEdges: dv.getUint16(p + 8, true),
         texinfo: dv.getUint16(p + 10, true),
         styles: [bytes[p + 12], bytes[p + 13], bytes[p + 14], bytes[p + 15]],
         lightofs: dv.getInt32(p + 16, true),
+      });
+      else this.faces.push({
+        plane: dv.getInt32(p, true), side: dv.getInt32(p + 4, true),
+        firstEdge: dv.getInt32(p + 8, true), numEdges: dv.getInt32(p + 12, true),
+        texinfo: dv.getInt32(p + 16, true),
+        styles: [bytes[p + 20], bytes[p + 21], bytes[p + 22], bytes[p + 23]],
+        lightofs: dv.getInt32(p + 24, true),
       });
     }
 
@@ -110,30 +136,33 @@ export class Bsp {
     // clipnodes
     l = lump(LUMP.clipnodes);
     this.clipnodes = [];
-    for (let p = l.off; p < l.off + l.len; p += 8) {
-      this.clipnodes.push({ plane: dv.getInt32(p, true), children: [dv.getInt16(p + 4, true), dv.getInt16(p + 6, true)] });
+    for (let p = l.off; p < l.off + l.len; p += wide ? 12 : 8) {
+      this.clipnodes.push(wide ? { plane: dv.getInt32(p, true), children: [dv.getInt32(p + 4, true), dv.getInt32(p + 8, true)] }
+                               : { plane: dv.getInt32(p, true), children: [dv.getInt16(p + 4, true), dv.getInt16(p + 6, true)] });
     }
 
     // leaves
     l = lump(LUMP.leaves);
     this.leaves = [];
-    for (let p = l.off; p < l.off + l.len; p += 28) {
+    const lsz = wide ? 8 + 6 * bsz + 8 + 4 : 28;
+    for (let p = l.off; p < l.off + l.len; p += lsz) {
+      const b = p + 8, m = b + 6 * bsz;
       this.leaves.push({
         contents: dv.getInt32(p, true), visofs: dv.getInt32(p + 4, true),
-        mins: [dv.getInt16(p + 8, true), dv.getInt16(p + 10, true), dv.getInt16(p + 12, true)],
-        maxs: [dv.getInt16(p + 14, true), dv.getInt16(p + 16, true), dv.getInt16(p + 18, true)],
-        firstMarksurface: dv.getUint16(p + 20, true), numMarksurfaces: dv.getUint16(p + 22, true),
-        ambient: [bytes[p + 24], bytes[p + 25], bytes[p + 26], bytes[p + 27]],
+        mins: [bound(b), bound(b + bsz), bound(b + 2 * bsz)], maxs: [bound(b + 3 * bsz), bound(b + 4 * bsz), bound(b + 5 * bsz)],
+        firstMarksurface: wide ? dv.getUint32(m, true) : dv.getUint16(m, true),
+        numMarksurfaces: wide ? dv.getUint32(m + 4, true) : dv.getUint16(m + 2, true),
+        ambient: [...bytes.subarray(m + (wide ? 8 : 4), m + (wide ? 12 : 8))],
       });
     }
 
     // marksurfaces
     l = lump(LUMP.marksurfaces);
-    this.marksurfaces = new Uint16Array(bytes.buffer.slice(l.off, l.off + l.len));
+    this.marksurfaces = wide ? new Uint32Array(bytes.buffer.slice(l.off, l.off + l.len)) : new Uint16Array(bytes.buffer.slice(l.off, l.off + l.len));
 
     // edges, surfedges
     l = lump(LUMP.edges);
-    this.edges = new Uint16Array(bytes.buffer.slice(l.off, l.off + l.len));
+    this.edges = wide ? new Uint32Array(bytes.buffer.slice(l.off, l.off + l.len)) : new Uint16Array(bytes.buffer.slice(l.off, l.off + l.len));
     l = lump(LUMP.surfedges);
     this.surfedges = new Int32Array(bytes.buffer.slice(l.off, l.off + l.len));
 

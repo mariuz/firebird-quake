@@ -37,7 +37,7 @@ const TABLES = {
   map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d mpitch:d myaw:d mroll:d spawnflags:i message:s wait_:d delay:d speed:d lip:d health:i light:i style:i sounds:i dmg:d height:d count_:i map:s noise:s worldtype:i',
 };
 
-const SQL_TYPE = { i: 'INTEGER', d: 'DOUBLE PRECISION', s: 'VARCHAR(2048) CHARACTER SET ASCII' };
+const SQL_TYPE = { i: 'INTEGER', d: 'DOUBLE PRECISION', s: 'VARCHAR(8192) CHARACTER SET ASCII' };   // the longest is a leaf's PVS (d_pvs)
 
 /** The LOAD_<table> procedures, generated from the column specs. */
 export function loaderSql() {
@@ -45,7 +45,7 @@ export function loaderSql() {
   for (const [table, spec] of Object.entries(TABLES)) {
     const cols = spec.split(' ').map((c) => c.split(':'));
     out += `CREATE OR ALTER PROCEDURE load_${table} (s VARCHAR(32000) CHARACTER SET ASCII) AS\n`;
-    out += 'DECLARE p INTEGER = 1; DECLARE q INTEGER; DECLARE e INTEGER; DECLARE len INTEGER; DECLARE f VARCHAR(2048) CHARACTER SET ASCII;\n';
+    out += 'DECLARE p INTEGER = 1; DECLARE q INTEGER; DECLARE e INTEGER; DECLARE len INTEGER; DECLARE f VARCHAR(8192) CHARACTER SET ASCII;\n';
     for (const [name, type] of cols) out += `DECLARE v_${name} ${SQL_TYPE[type]};\n`;
     out += 'BEGIN\n  len = CHAR_LENGTH(s);\n  WHILE (p <= len) DO BEGIN\n';
     out += "    e = POSITION(ASCII_CHAR(10), s, p); IF (e = 0) THEN e = len + 1;\n";

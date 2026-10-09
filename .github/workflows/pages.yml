@@ -92,6 +92,10 @@ jobs:
       - name: Shambler lightning and fireballs
         run: npm run test:fire
 
+      # BSP2 and 2PSB: E1M1 rewritten in both formats, the same rows and the same game
+      - name: BSP2 maps
+        run: npm run test:bsp2
+
       # LibreQuake's levels, and lq_e0m7's boss trap (trigger_hurt)
       - name: LibreQuake levels
         run: npm run test:lq

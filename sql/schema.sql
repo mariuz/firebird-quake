@@ -8,6 +8,10 @@
 -- denormalised so the hot loops never need a second lookup); game.sql
 -- simulates the entities and render.sql draws the frame.
 
+-- A leaf's potentially visible set as hex (render.sql, physics.sql): a character per 4 leaves, so 8192
+-- characters hold 32768 leaves (BSP2 maps go far past BSP 29's 8192).
+CREATE DOMAIN d_pvs AS VARCHAR(8192) CHARACTER SET ASCII;
+
 -- ── session / configuration ─────────────────────────────────────────────
 CREATE TABLE game (
   id             SMALLINT NOT NULL PRIMARY KEY,
@@ -112,7 +116,7 @@ CREATE TABLE leaves (
   ambient_sky INTEGER DEFAULT 0 NOT NULL,       -- ambient_level[AMBIENT_SKY] (wind)
   -- the decompressed PVS as hex: leaf j (1-based) visible ⇔ bit (j-1).
   -- '' means everything is visible (no vis data, or the solid leaf).
-  pvs      VARCHAR(2048) CHARACTER SET ASCII
+  pvs      d_pvs
 );
 
 CREATE TABLE marksurfaces (
@@ -491,7 +495,7 @@ CREATE TABLE qc_vm (
   -- localcmd's console buffer, run a line at a time (trigger_setskill sends "skill ", the number, a newline)
   cmdbuf VARCHAR(256) DEFAULT '' NOT NULL,
   -- checkclient's client: the PVS of its eye, kept for 0.1 s (sv.lastcheck, sv.lastchecktime)
-  check_time DOUBLE PRECISION, check_pvs VARCHAR(2048) CHARACTER SET ASCII, check_client INTEGER
+  check_time DOUBLE PRECISION, check_pvs d_pvs, check_client INTEGER
 );
 -- checkclient's cache of each caller's eye leaf, by the eye's position (emptied with the level)
 CREATE TABLE qc_eyeleaf (

@@ -50,7 +50,9 @@ level with `loadMap`.
 shadowing earlier ones (pak0 + pak1). `Wad2` reads `gfx.wad` for the status bar pictures and the
 console font; `loadPalette` the 256 RGB colours.
 
-`Bsp` parses BSP version 29 only. It produces, for the SQL side: planes folded into faces (the plane
+`Bsp` parses BSP version 29 and the larger-map formats **BSP2** (32-bit indices, float bounds) and RMQ's
+**2PSB** (32-bit indices, 16-bit bounds), as QuakeSpasm's `bspfile.h` lays them out (`bsp.format` says
+which); a leaf's PVS is a `d_pvs` domain of 8192 hex characters, 32768 leaves. It produces, for the SQL side: planes folded into faces (the plane
 flipped for `side`), texture info and miptex, the lightmap bytes per face, the ordered vertex list per
 face (edges and surfedges resolved), leaves with their contents, bounding box and the PVS run-length
 decoded into a hex string, marksurfaces, nodes (hull 0) and clipnodes (hulls 1 and 2) with their planes
@@ -382,6 +384,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
 | `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
 | `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `bsp2-test.mjs` | BSP2 and 2PSB: E1M1 rewritten in both (`widen`), the same parse, rows, frame query and play |
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |

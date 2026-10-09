@@ -93,7 +93,7 @@ BEGIN
 END^
 
 -- Is leaf `leaf` in the PVS string `pvs`? ('' = everything visible)
-CREATE OR ALTER FUNCTION pvs_visible (pvs VARCHAR(2048) CHARACTER SET ASCII, leaf INTEGER)
+CREATE OR ALTER FUNCTION pvs_visible (pvs d_pvs, leaf INTEGER)
 RETURNS SMALLINT
 AS
 DECLARE j INTEGER;

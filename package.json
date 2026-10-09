@@ -20,6 +20,7 @@
     "test:dm": "node scripts/dm-test.mjs",
     "test:hazard": "node scripts/hazard-test.mjs",
     "test:fire": "node scripts/fire-test.mjs",
+    "test:bsp2": "node scripts/bsp2-test.mjs",
     "test:lq": "node scripts/lq-test.mjs",
     "test:e1m8": "node scripts/e1m8-test.mjs",
     "test:e1m5": "node scripts/e1m5-test.mjs",
