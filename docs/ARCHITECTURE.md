@@ -337,7 +337,11 @@ layers mapped by the pixel's direction (`skyPixel`), both as special fill modes 
 routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`. With the eye
 under a liquid surface the page calls `warpView` after the 3D (gun and particles included) and before
 the 2D: `D_WarpScreen`'s resampling through the sine table, rows and columns shifted by up to six
-pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcRoll`).
+pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcRoll`). See-through liquids
+(`liquidAlpha` below 1, the **Liquids** setting) are put aside by `drawFaces` when the map was vised for
+that liquid (`Bsp.seeThrough`, from the leaves' PVS) and drawn by `drawDeferred` after the models: depth
+tested, not written, each texel mixed with what is behind through `blendTable(alpha)`, the nearest
+palette colour for every pair.
 
 **Dynamic lights** (`src/dlights.js`, Quake's `cl_dlights`): each frame the page lists the lights:
 rockets and lava balls (the model's `EF_ROCKET` flag, 200 units), explosions from the fx events
@@ -384,6 +388,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
 | `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
 | `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `water-test.mjs` | see-through liquids: LibreQuake's water shows the floor at alpha 0.5, id's unvised slime stays opaque |
 | `bsp2-test.mjs` | BSP2 and 2PSB: E1M1 rewritten in both (`widen`), the same parse, rows, frame query and play |
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |

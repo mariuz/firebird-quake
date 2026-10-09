@@ -210,6 +210,22 @@ export class Bsp {
     }
 
     this.computeFaceExtents();
+
+    // QuakeSpasm's check for "transparent water vis": a liquid can be seen through only if the map was
+    // vised for it, that is if some open leaf's PVS holds leaves of it; otherwise what lies under the
+    // surface is culled and translucency would show the void
+    this.seeThrough = new Set();
+    const liquids = [];
+    this.leaves.forEach((lf, i) => { if (i > 0 && lf.contents <= -3 && lf.contents >= -5) liquids.push(i); });
+    for (let i = 1; i < this.leaves.length && this.seeThrough.size < 3; i++) {
+      const hex = this.pvsHex[i];
+      if (this.leaves[i].contents !== -1 || !hex) continue;
+      for (const j of liquids) {
+        const c = this.leaves[j].contents;
+        if (this.seeThrough.has(c)) continue;
+        if ((parseInt(hex[(j - 1) >> 2], 16) >> ((j - 1) & 3)) & 1) this.seeThrough.add(c);
+      }
+    }
   }
 
   /** The face's ordered vertex indices (surfedges resolved). */
@@ -249,6 +265,9 @@ export class Bsp {
       const tex = this.textures[ti.miptex];
       f.sky = tex && tex.name.startsWith('sky');
       f.liquid = tex && tex.name.startsWith('*');
+      // the liquid's contents by its texture, for translucency: *slime, *lava, *tele (a teleporter, never
+      // see-through), any other * is water
+      f.liquidType = !f.liquid ? 0 : tex.name.startsWith('*slime') ? -4 : tex.name.startsWith('*lava') ? -5 : tex.name.startsWith('*tele') ? 1 : -3;
     }
   }
 }

@@ -95,7 +95,8 @@ Click the view to capture the mouse.
 On touch screens the left half of the view moves, the right half looks, and a tap fires.
 
 The page's settings: the **map** (every `.bsp` in the pak), the **skill**, the **detail**
-(640×400, 320×200 or 160×100), the **renderer** mode (below), the sound volume and the **music**. Quake's
+(640×400, 320×200 or 160×100), the **liquids** (opaque as in Quake, or translucent where the map was vised
+for it, as LibreQuake's are), the **renderer** mode (below), the sound volume and the **music**. Quake's
 music was CD audio and is not in the pak: put `track02.ogg`…`track11.ogg` (or `.mp3`) in
 `public/music/`, or pick that folder in the page, and each map plays its `worldspawn` track; without
 them a synthesised drone fills in, or turn it off.
@@ -259,6 +260,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:boss` | E1M7: the rune wakes Chthon, he rises and throws lava, the lightning does nothing until both terminals are up, three bolts kill him, the exit opens |
 | `npm run test:skill` | the skills: each of the start map's halls sets its skill, nightmare's monsters attack without waiting and flinch at most every five seconds (two hits make a knight flinch twice on normal, once on nightmare), and QuakeC's `localcmd("skill 3")` sets it in QuakeC mode |
 | `npm run test:save` | save games: E1M1 saved mid-play and loaded back exactly (every entity, the client, the totals, the light styles); exported as the page keeps it, loaded onto E1M1 loaded again with other brush model ids; the same in QuakeC mode with progs.dat's globals, fields and run-time strings; no saving dead or in the intermission |
+| `npm run test:water` | see-through liquids (the **Liquids** setting): over lq_e0m2's water the floor shows through at alpha 0.5; over E1M1's slime, which id's vis tools did not see through, nothing changes |
 | `npm run test:bsp2` | the BSP2 and 2PSB formats of larger modern maps: E1M1 rewritten in both loads to the same rows, plays the same 150 tics and draws the same faces as the original |
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
 | `npm run test:hazard` | slime and lava as Quake's `WaterMove` hurts: slime 4 × waterlevel a second and nothing in the biosuit, lava 10 × waterlevel every 0.2 s and once a second in the suit, the PSQL game and QuakeC mode alike |

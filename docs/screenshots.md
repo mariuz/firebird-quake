@@ -520,3 +520,19 @@ marked; the bot by the doorway has just found the player and fired, hence the re
 This one was taken in the page (headless Chromium driving the **Game** setting, a bot moved in front of
 the player with the SQL console's `UPDATE ents … WHERE id = 2`), since the bots need the page's loop;
 `scripts/screenshot.mjs` poses single-player scenes.
+
+## See-through water
+
+LibreQuake's maps were vised for seeing through their liquids, so with the **Liquids** setting at
+translucent (`r_wateralpha` 0.5) the river in lq_e0m2 shows its bed; id's maps were not, and their
+liquids stay opaque.
+
+![the river in lq_e0m2, opaque as Quake draws it](water-opaque-lq_e0m2-0.png) ![the same river see-through, its bed showing](water-translucent-lq_e0m2-0.png)
+
+1. opaque, as Quake draws it
+2. translucent: the warped water mixed half and half with the riverbed through the palette
+
+```bash
+PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs lq_e0m2 docs/water-opaque      --at=-1421,341,-144,0 --sql="UPDATE player SET pitch = 45" --tics=2 --single --fast --wateralpha=1
+PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs lq_e0m2 docs/water-translucent --at=-1421,341,-144,0 --sql="UPDATE player SET pitch = 45" --tics=2 --single --fast --wateralpha=0.5
+```

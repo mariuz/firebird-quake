@@ -55,7 +55,7 @@ let prevWeaponFrame = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql',
-  sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10 };
+  sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10, liquids: 'opaque' };
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
@@ -530,6 +530,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
       r.drawSprite(m.spr, frame, [x, y, z]);
     }
   }
+  // the see-through liquids (r_wateralpha), over the world and the models
+  r.drawDeferred(time);
   // lightning beams: bolt segments every 30 units
   const bolt = res.models.get(res.byName.get('progs/bolt2.mdl'));
   beams = beams.filter((b) => b.until > time);
@@ -662,6 +664,7 @@ async function usePak(buffers, label) {
   const colormap = pak.get('gfx/colormap.lmp');
   wad = new Wad2(pak.get('gfx.wad'));
   renderer = new Renderer(canvas, { palette, colormap });
+  renderer.liquidAlpha = settings.liquids === 'translucent' ? 0.5 : 1;
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
   hud = new Hud(wad, (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
@@ -742,6 +745,8 @@ function setMode(v, restart = true) {
   saveSettings();
   if (restart && map) startMap(map.name, true).catch((err) => setStatus(err.message, true));
 }
+// r_wateralpha: liquids drawn see-through at half where the map was vised for it (LibreQuake's are; id's are not)
+function setLiquids(v) { settings.liquids = v; saveSettings(); $('liquids').value = v; if (renderer) renderer.liquidAlpha = v === 'translucent' ? 0.5 : 1; }
 function setRenderer(v) { settings.renderer = v; saveSettings(); $('renderer').value = v; }
 function setSfx(v) { settings.sfx = v; saveSettings(); $('sfxvol').value = v; audio.unlock(); audio.setVolume(v / 100); }
 function setMusicVolume(v) { settings.music = v; saveSettings(); $('musicvol').value = v; audio.setMusicVolume(v / 100); }
@@ -768,6 +773,7 @@ function menuActions() {
       { label: 'Game', kind: 'value', get: () => ({ single: 'single player', deathmatch: 'deathmatch', coop: 'coop' })[settings.mode], change: (d) => { const m = ['single', 'deathmatch', 'coop']; setMode(m[(m.indexOf(settings.mode) + (d < 0 ? 2 : 1)) % 3]); } },
       { label: 'Bots', kind: 'value', get: () => settings.bots, change: (d) => { settings.bots = clamp(settings.bots + (d < 0 ? -1 : 1), 1, 7); $('bots').value = String(settings.bots); saveSettings(); if (settings.mode !== 'single' && map) startMap(map.name, true).catch((err) => setStatus(err.message, true)); } },
       { label: 'Game logic', kind: 'value', get: () => (settings.logic === 'qc' ? 'QuakeC VM' : 'PSQL'), change: () => setLogic(settings.logic === 'qc' ? 'psql' : 'qc') },
+      { label: 'Liquids', kind: 'value', get: () => settings.liquids, change: () => setLiquids(settings.liquids === 'opaque' ? 'translucent' : 'opaque') },
       { label: 'Renderer', kind: 'value', get: () => (settings.renderer === 'sql' ? 'all in SQL' : 'fast'), change: () => setRenderer(settings.renderer === 'sql' ? 'fast' : 'sql') },
     ],
   };
@@ -796,6 +802,8 @@ $('detail').value = settings.detail;
 $('detail').addEventListener('change', (e) => setDetail(e.target.value));
 $('logic').value = settings.logic;
 $('logic').addEventListener('change', (e) => setLogic(e.target.value));
+$('liquids').value = settings.liquids;
+$('liquids').addEventListener('change', (e) => setLiquids(e.target.value));
 $('renderer').value = settings.renderer;
 $('renderer').addEventListener('change', (e) => setRenderer(e.target.value));
 $('musicvol').value = settings.music;

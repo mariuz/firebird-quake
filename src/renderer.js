@@ -25,7 +25,35 @@ export class Renderer {
     this.models = null;
     this.particles = [];
     this.sbarLines = 24;
+    this.liquidAlpha = 1;        // r_wateralpha: below 1, liquids the map was vised for are drawn see-through
+    this.deferred = [];          // this frame's see-through liquid polygons, drawn after the models
     this.setSize(320, 200);
+  }
+
+  // the colour of `alpha` of src over 1 - alpha of dst, as the nearest palette entry (fullbrights left out so
+  // a mix never glows): an 8-bit frame's translucency, a 64 KB table per alpha
+  blendTable(alpha) {
+    if (this.blend?.alpha === alpha) return this.blend.table;
+    const pal = this.palette, r = new Float32Array(256), g = new Float32Array(256), b = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { r[i] = pal[i] & 255; g[i] = (pal[i] >> 8) & 255; b[i] = (pal[i] >> 16) & 255; }
+    const table = new Uint8Array(65536);
+    for (let s = 0; s < 256; s++) for (let d = 0; d < 256; d++) {
+      const mr = r[s] * alpha + r[d] * (1 - alpha), mg = g[s] * alpha + g[d] * (1 - alpha), mb = b[s] * alpha + b[d] * (1 - alpha);
+      let best = 0, bd = Infinity;
+      for (let k = 0; k < 224; k++) {
+        const dr = r[k] - mr, dg = g[k] - mg, db = b[k] - mb, dist = dr * dr + dg * dg + db * db;
+        if (dist < bd) { bd = dist; best = k; }
+      }
+      table[(s << 8) | d] = best;
+    }
+    this.blend = { alpha, table };
+    return table;
+  }
+
+  /** The see-through liquids put aside by drawFaces, over everything drawn since (call after the models). */
+  drawDeferred(time) {
+    for (const [verts, surf] of this.deferred) this.fillPolygon(verts, surf, 3, time);
+    this.deferred = [];
   }
 
   setSize(w, h) {
@@ -183,6 +211,7 @@ export class Renderer {
   beginFrame(view) {
     this.view = view;
     const { w, h } = this;
+    this.deferred = [];
     this.zb.fill(0);
     this.fb.fill(0);
     const yaw = (view.yaw * Math.PI) / 180, pitch = (view.pitch * Math.PI) / 180;
@@ -256,7 +285,9 @@ export class Renderer {
         const scale = (view.scale / Math.max(near, nearest)) * (info.ti.mipadjust ?? 1);
         const mip = info.f.liquid ? 0 : scale >= 1 ? 0 : scale >= 0.4 ? 1 : scale >= 0.2 ? 2 : 3;
         const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0, ent, mip);
-        if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
+        // a liquid the map was vised for, with r_wateralpha below 1: drawn see-through after the models
+        if (s && info.f.liquid && this.liquidAlpha < 1 && info.bsp.seeThrough?.has(info.f.liquidType)) this.deferred.push([verts, s]);
+        else if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
       }
     }
   }
@@ -293,7 +324,8 @@ export class Renderer {
 
   /**
    * Scan-convert a convex polygon of [sx, sy, z, s, t]. mode 0: textured,
-   * 1: liquid (warped), 2: sky. 1/z, s/z and t/z are affine in screen space.
+   * 1: liquid (warped), 2: sky, 3: a see-through liquid (warped, depth-tested but not written, blended
+   * over the frame). 1/z, s/z and t/z are affine in screen space.
    */
   fillPolygon(poly, surf, mode, time) {
     const { w, h, edgeL, edgeR, fb, zb } = this;
@@ -327,6 +359,7 @@ export class Renderer {
     const sd = surf ? surf.data : null;
     const sw = surf ? surf.w : 0, sh = surf ? surf.h : 0, smin = surf ? surf.smin : 0, tmin = surf ? surf.tmin : 0;
     const mscale = surf ? 1 / (1 << surf.mip) : 1;     // a mip surface: texels 2^mip apart
+    const blend = mode === 3 ? this.blendTable(this.liquidAlpha) : null;
     const sin = this.sinTable;
     const tphase = (time * 20) & 255;
     const view = this.view;
@@ -356,6 +389,16 @@ export class Renderer {
       }
       for (let x = xs; x <= xe; x++, idx++, iz += diz, sz += dsz, tz += dtz) {
         if (iz <= zb[idx]) continue;
+        if (blend) {
+          // see-through: the warp, mixed into what is behind, and the depth left for what lies beneath
+          const z = 1 / iz;
+          let s = sz * z - smin, t = tz * z - tmin;
+          const ss = s, tt = t;
+          s += sin[(tphase + (tt >> 0)) & 255]; t += sin[(tphase + (ss >> 0)) & 255];
+          s = ((s % sw) + sw) % sw; t = ((t % sh) + sh) % sh;
+          fb[idx] = blend[(sd[(t | 0) * sw + (s | 0)] << 8) | fb[idx]];
+          continue;
+        }
         zb[idx] = iz;
         const z = 1 / iz;
         let s = (sz * z - smin) * mscale, t = (tz * z - tmin) * mscale;

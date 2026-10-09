@@ -44,6 +44,7 @@ const pak = new PakSet(pakFiles.map((f) => new Pak(fs.readFileSync(f).buffer)));
 const res = await loadResources(db, pak, { width: W, height: H - 24 });
 const bsp = await loadMap(db, pak, res, mapName);
 const renderer = new Renderer(stubCanvas, { palette: loadPalette(pak.get('gfx/palette.lmp')), colormap: pak.get('gfx/colormap.lmp') });
+renderer.liquidAlpha = Number(process.argv.find((a) => a.startsWith('--wateralpha='))?.slice(13) ?? 1);   // r_wateralpha
 renderer.setSize(W, H);
 renderer.setResources(res);
 renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
@@ -135,6 +136,7 @@ async function shot(name) {
     if (kind.trim() === 'M') renderer.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw, roll], effects & 8 ? 255 : Math.min(255, lightPoint(bsp, x, y, z + 8) + dlightAt(dl, x, y, z)), { time: last.TIME_ });
     else if (kind.trim() === 'S') renderer.drawSprite(m.spr, frame, [x, y, z]);
   }
+  renderer.drawDeferred(last.TIME_);   // see-through liquids (--wateralpha=0.5)
   const vm = last.INTERMISSION ? null : res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
   if (vm) { renderer.zb.fill(0); renderer.drawAlias(vm.mdl, 0, 0, [last.PX, last.PY, last.VIEW_Z + 2], [-last.PITCH, last.YAW, 0], Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32), { near: 1 }); }
   if (last.WATERLEVEL >= 3) renderer.warpView(last.TIME_);   // D_WarpScreen, as the page does

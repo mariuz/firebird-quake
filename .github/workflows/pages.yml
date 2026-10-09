@@ -96,6 +96,10 @@ jobs:
       - name: BSP2 maps
         run: npm run test:bsp2
 
+      # See-through liquids, only where the map was vised for them
+      - name: Transparent water
+        run: npm run test:water
+
       # LibreQuake's levels, and lq_e0m7's boss trap (trigger_hurt)
       - name: LibreQuake levels
         run: npm run test:lq

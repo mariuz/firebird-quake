@@ -20,6 +20,7 @@ npm run test:dm                # deathmatch and coop with PSQL bots (QuakeC mode
 npm run test:hazard            # slime and lava damage, with and without the biosuit, both modes
 npm run test:fire              # the shambler's lightning frames, the fireballs' throw
 npm run test:bsp2              # BSP2 and 2PSB maps: E1M1 rewritten in both, the same rows and the same game
+npm run test:water             # see-through liquids where the map was vised for them (LibreQuake), not elsewhere
 npm run test:lq                # LibreQuake's levels and lq_e0m7's boss trap (needs npm run fetch-librequake)
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
