@@ -254,10 +254,11 @@ BEGIN
   END
   ELSE IF (mk = 'lightning') THEN
   BEGIN
-    -- CastLightning
+    -- CastLightning: from 40 up, aimed at the enemy's origin + 16, traced to self.origin + dir * 600 (from
+    -- the origin, not the bolt's start: so it ends 40 lower than the aim line would)
     dx = x2 - x1; dy = y2 - y1; dz = z2 + 16 - (z1 + 40); dl = vlen(dx, dy, dz);
     IF (dl = 0) THEN EXIT;
-    EXECUTE PROCEDURE trace_move(eid, 0, 0, 0, 0, 0, 0, x1, y1, z1 + 40, x1 + dx / dl * 600, y1 + dy / dl * 600, z1 + 40 + dz / dl * 600, 1)
+    EXECUTE PROCEDURE trace_move(eid, 0, 0, 0, 0, 0, 0, x1, y1, z1 + 40, x1 + dx / dl * 600, y1 + dy / dl * 600, z1 + dz / dl * 600, 1)
       RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
     EXECUTE PROCEDURE snd(eid, 1, 'shambler/sboom.wav', 1, 1);
     EXECUTE PROCEDURE fx(4, x1, y1, z1 + 40, hx, hy, hz, eid);
@@ -720,7 +721,11 @@ BEGIN
     END
     IF (st = 'melee' AND af = melee_f) THEN EXECUTE PROCEDURE monster_melee(eid);
     IF (st = 'missile' AND POSITION(',' || af || ',', ',' || missile_f || ',') > 0) THEN EXECUTE PROCEDURE monster_missile(eid);
+    -- shambler.qc: sham_magic11 casts a fourth bolt on nightmare
+    IF (st = 'missile' AND mt = 'shambler' AND af = 10 AND nightmare() = 1) THEN EXECUTE PROCEDURE monster_missile(eid);
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = :st)) THEN EXIT;   -- a leap changed state
+    -- and sham_magic6 goes on to sham_magic9: magic7 and magic8 are never shown
+    IF (st = 'missile' AND mt = 'shambler' AND af = 5) THEN af = 7;
     af = af + 1;
     IF (af >= fc) THEN
     BEGIN

@@ -79,7 +79,7 @@ export const MONSTERS = [
     run_speed: 20, walk_speed: 10, yaw_speed: 20,
     stand_anim: 'stand', walk_anim: 'walk', run_anim: 'run', pain_anims: 'pain', death_anims: 'death',
     melee_anim: 'smash', melee_frame: 9, melee_range: 100, melee_dmg: 40,
-    missile_anim: 'magic', missile_frames: '7,8,9', missile_kind: 'lightning', attack_chance: 0.4, pain_chance: 0.5,
+    missile_anim: 'magic', missile_frames: '5,8,9', missile_kind: 'lightning',   // sham_magic6, 9, 10 (and 11 on nightmare, monsters.sql) attack_chance: 0.4, pain_chance: 0.5,
     sight_snd: 'shambler/ssight.wav', idle_snd: 'shambler/sidle.wav', pain_snd: 'shambler/shurt2.wav', death_snd: 'shambler/sdeath.wav',
     attack_snd: 'shambler/sattck1.wav', melee_snd: 'shambler/smack.wav', gib_health: -60,
   },

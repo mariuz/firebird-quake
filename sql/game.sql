@@ -1603,7 +1603,9 @@ BEGIN
       EXECUTE PROCEDURE drop_to_floor(eid);
     END
     ELSE IF (cls = 'misc_fireball') THEN
-      UPDATE ents e SET e.solid = 0, e.speed = IIF(COALESCE(:spd, 0) = 0, 1000, :spd), e.think = 'fireball_think', e.nextthink = rnd() * 5 WHERE e.id = :eid;
+      -- misc.qc's "if (!self.speed) self.speed == 1000;" compares instead of assigning: without a speed key a
+      -- fireball rises only random() * 200
+      UPDATE ents e SET e.solid = 0, e.speed = COALESCE(:spd, 0), e.think = 'fireball_think', e.nextthink = rnd() * 5 WHERE e.id = :eid;
     ELSE IF (cls = 'trap_spikeshooter' OR cls = 'trap_shooter') THEN
     BEGIN
       EXECUTE PROCEDURE movedir(COALESCE(ang, 0)) RETURNING_VALUES dx, dy, dz;

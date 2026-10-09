@@ -88,6 +88,10 @@ jobs:
       - name: Hazards
         run: npm run test:hazard
 
+      # The shambler's lightning frames and the lava fireballs
+      - name: Shambler lightning and fireballs
+        run: npm run test:fire
+
       # LibreQuake's levels, and lq_e0m7's boss trap (trigger_hurt)
       - name: LibreQuake levels
         run: npm run test:lq
