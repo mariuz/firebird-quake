@@ -18,6 +18,7 @@ import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
 import saveSql from '../sql/save.sql';
 import demoSql from '../sql/demo.sql';
+import botsSql from '../sql/bots.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
@@ -54,7 +55,7 @@ let prevWeaponFrame = 0;
 let beams = [];          // lightning beams to draw briefly
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql',
-  sensitivity: 3, alwaysRun: true, invertMouse: false };
+  sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10 };
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
@@ -64,6 +65,8 @@ const QUICK_SLOT = 12;     // F6 / F9: Quake's quick.sav, not in the menu's list
 let recording = false;     // a demo is being recorded (sql/demo.sql)
 let demoPlayer = null;     // a demo playing back: its recorded calls replace the input (src/demos.js)
 let demo = null;           // the last demo recorded or opened
+let scores = [];           // deathmatch: every client's frags (qc_scores), refreshed a few times a second
+let scoresAt = 0;
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
 const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
@@ -207,6 +210,9 @@ async function startMap(name, newGame, { save = null, seed = null } = {}) {
     }
     if (save) await db.exec('EXECUTE PROCEDURE qc_enter');   // the save's edicts replace the spawn
     else {
+      // the server's rules (sql/bots.sql): deathmatch or coop, the bots as clients 2..
+      const dm = settings.mode === 'deathmatch' ? 1 : 0, coop = settings.mode === 'coop' ? 1 : 0;
+      await db.exec(`EXECUTE PROCEDURE qc_setup_server(${dm}, ${coop}, ${dm || coop ? settings.bots : 0}, ${dm ? settings.fraglimit : 0}, 0)`);
       setStatus(`Spawning ${name} through QuakeC…`);
       await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
     }
@@ -224,7 +230,7 @@ async function startMap(name, newGame, { save = null, seed = null } = {}) {
   renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;
   renderer.particles = [];
   beams = []; explosions = [];
-  interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null; muzzleUntil = 0; prevWeaponFrame = 0;
+  interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null; muzzleUntil = 0; prevWeaponFrame = 0; scores = []; scoresAt = 0;
   audio.setAmbients(bsp.entities);
   const world = bsp.entities.find((e) => e.classname === 'worldspawn');
   audio.playMusic(Number(world?.sounds ?? 0));
@@ -264,6 +270,10 @@ async function loadGame(slot) {
     if (logic !== settings.logic) { settings.logic = logic; $('logic').value = logic; }
     settings.skill = save.meta.SKILL; $('skill').value = String(save.meta.SKILL); saveSettings();
     await startMap(save.meta.MAP_NAME, true, { save });
+    // a deathmatch or coop save brings its rules back with the game row
+    const g = (await db.query('SELECT deathmatch, coop, maxclients FROM game WHERE id = 1')).rows[0];
+    setMode(g.DEATHMATCH ? 'deathmatch' : g.COOP ? 'coop' : 'single', false);
+    if (g.MAXCLIENTS > 1) { settings.bots = g.MAXCLIENTS - 1; $('bots').value = String(settings.bots); saveSettings(); }
   } catch (err) {
     console.error(err);
     setStatus(sqlMessage(err), true);
@@ -313,6 +323,9 @@ async function playDemo(d = demo) {
     if (recording) await stopRecording();
     await importDemo(db, d);
     settings.logic = d.qc === 1 ? 'qc' : 'psql'; $('logic').value = settings.logic;
+    setMode(d.deathmatch ? 'deathmatch' : d.coop ? 'coop' : 'single', false);
+    if (d.nbots) { settings.bots = d.nbots; $('bots').value = String(d.nbots); }
+    if (d.fraglimit) settings.fraglimit = d.fraglimit;
     settings.skill = d.skill; $('skill').value = String(d.skill); saveSettings();
     await startMap(d.map, true, { seed: d.seed });
     demoPlayer = new DemoPlayer(d);
@@ -374,6 +387,10 @@ async function frame() {
     const input = readInput(tics);
     for (const args of demoPlayer ? demoPlayer.take(tics) : [input]) last = (await db.query(ticSql, args, { rowMode: 'object' })).rows[0];
     if (demoPlayer?.done) { demoPlayer = null; updateDemoButtons(); flash('the demo has ended: the game is yours'); }
+    if (settings.logic === 'qc' && settings.mode !== 'single' && performance.now() - scoresAt > 300) {
+      scoresAt = performance.now();
+      scores = (await db.query('SELECT c, name, frags, alive FROM qc_scores', [], arr)).rows;
+    }
     perf.tic = performance.now() - t;
     // EF_MUZZLEFLASH for the player: a shot starts the weapon's animation (the axe has no flash; the
     // nailguns and the lightning gun cycle their frames, one shot a frame)
@@ -532,7 +549,14 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   else hud.draw(r, last, time);
   if (last.CPRINT && !last.INTERMISSION) hud.drawCenter(r, last.CPRINT, Math.floor(r.h * 0.35));
   if (last.MSG) r.drawString(hud.conchars, last.MSG, 0, 0);
-  if (last.DEAD) hud.drawCenter(r, 'you died\n\npress fire to restart', 60);
+  if (last.DEAD) hud.drawCenter(r, settings.mode === 'single' ? 'you died\n\npress fire to restart' : 'press fire to respawn', 60);
+  // deathmatch: the frags, best first, the player's line marked (Sbar_DrawFrags, as a list)
+  if (settings.mode === 'deathmatch' && scores.length && !last.INTERMISSION) {
+    [...scores].sort((a, b) => b[2] - a[2]).forEach(([c, name, frags], i) => {
+      const line = `${String(frags).padStart(3)} ${String(name ?? '').slice(0, 10)}`;
+      r.drawString(hud.conchars, (c === 1 ? '>' : ' ') + line, r.w - 8 * 15, 10 + i * 8, c !== 1);
+    });
+  }
   // the palette blend: damage, bonus, water
   let tint = null;
   const since = time - last.DMG_TIME;
@@ -601,7 +625,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, save: saveSql, demo: demoSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, save: saveSql, demo: demoSql });
   return instance;
 }
 
@@ -687,7 +711,15 @@ async function setDetail(v) {
 }
 function setLogic(v) {
   settings.logic = v; saveSettings(); $('logic').value = v;
+  if (v !== 'qc' && settings.mode !== 'single') { settings.mode = 'single'; $('mode').value = 'single'; saveSettings(); }   // the bots are QuakeC clients
   if (map) startMap(map.name, true).catch((err) => setStatus(err.message, true));   // a new game under the other logic
+}
+// single player, or a deathmatch or coop game with bots (QuakeC mode: progs.dat's rules, sql/bots.sql)
+function setMode(v, restart = true) {
+  settings.mode = v; $('mode').value = v;
+  if (v !== 'single' && settings.logic !== 'qc') { settings.logic = 'qc'; $('logic').value = 'qc'; }
+  saveSettings();
+  if (restart && map) startMap(map.name, true).catch((err) => setStatus(err.message, true));
 }
 function setRenderer(v) { settings.renderer = v; saveSettings(); $('renderer').value = v; }
 function setSfx(v) { settings.sfx = v; saveSettings(); $('sfxvol').value = v; audio.unlock(); audio.setVolume(v / 100); }
@@ -700,6 +732,7 @@ function menuActions() {
   return {
     newGame,
     quit: newGame,
+    multiplayer: () => setMode('deathmatch'),
     saves: () => saveSlots,
     save: (slot) => saveGame(slot),
     load: (slot) => loadGame(slot),
@@ -711,6 +744,8 @@ function menuActions() {
       { label: 'Sound Volume', kind: 'slider', get: () => settings.sfx / 100, change: (d) => setSfx(clamp(settings.sfx + d * 10, 0, 100)) },
       { label: 'Always Run', kind: 'check', get: () => settings.alwaysRun, change: () => { settings.alwaysRun = !settings.alwaysRun; saveSettings(); } },
       { label: 'Invert Mouse', kind: 'check', get: () => settings.invertMouse, change: () => { settings.invertMouse = !settings.invertMouse; saveSettings(); } },
+      { label: 'Game', kind: 'value', get: () => ({ single: 'single player', deathmatch: 'deathmatch', coop: 'coop' })[settings.mode], change: (d) => { const m = ['single', 'deathmatch', 'coop']; setMode(m[(m.indexOf(settings.mode) + (d < 0 ? 2 : 1)) % 3]); } },
+      { label: 'Bots', kind: 'value', get: () => settings.bots, change: (d) => { settings.bots = clamp(settings.bots + (d < 0 ? -1 : 1), 1, 7); $('bots').value = String(settings.bots); saveSettings(); if (settings.mode !== 'single' && map) startMap(map.name, true).catch((err) => setStatus(err.message, true)); } },
       { label: 'Game logic', kind: 'value', get: () => (settings.logic === 'qc' ? 'QuakeC VM' : 'PSQL'), change: () => setLogic(settings.logic === 'qc' ? 'psql' : 'qc') },
       { label: 'Renderer', kind: 'value', get: () => (settings.renderer === 'sql' ? 'all in SQL' : 'fast'), change: () => setRenderer(settings.renderer === 'sql' ? 'fast' : 'sql') },
     ],
@@ -732,6 +767,10 @@ $('demo-file').addEventListener('change', async (e) => {
   if (!f) return;
   try { demo = JSON.parse(await f.text()); await playDemo(demo); } catch (err) { setStatus(`not a demo: ${err.message}`, true); }
 });
+$('mode').value = settings.mode;
+$('mode').addEventListener('change', (e) => setMode(e.target.value));
+$('bots').value = String(settings.bots);
+$('bots').addEventListener('change', (e) => { settings.bots = Number(e.target.value); saveSettings(); if (settings.mode !== 'single' && map) startMap(map.name, true).catch((err) => setStatus(err.message, true)); });
 $('detail').value = settings.detail;
 $('detail').addEventListener('change', (e) => setDetail(e.target.value));
 $('logic').value = settings.logic;

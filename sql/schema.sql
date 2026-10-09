@@ -35,7 +35,14 @@ CREATE TABLE game (
   intermission   SMALLINT DEFAULT 0 NOT NULL,
   completed_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
   finale_text    VARCHAR(1024),
-  cdtrack        SMALLINT DEFAULT -1 NOT NULL
+  cdtrack        SMALLINT DEFAULT -1 NOT NULL,
+  -- the server's rules (QuakeC mode): deathmatch and coop as the cvars, the clients (1 + the bots of
+  -- sql/bots.sql, in edicts 1..maxclients), fraglimit and timelimit (minutes); kept across levels
+  deathmatch     SMALLINT DEFAULT 0 NOT NULL,
+  coop           SMALLINT DEFAULT 0 NOT NULL,
+  maxclients     SMALLINT DEFAULT 1 NOT NULL,
+  fraglimit      INTEGER DEFAULT 0 NOT NULL,
+  timelimit      INTEGER DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE viewcfg (
@@ -476,7 +483,7 @@ CREATE TABLE qc_vm (
   -- localcmd's console buffer, run a line at a time (trigger_setskill sends "skill ", the number, a newline)
   cmdbuf VARCHAR(256) DEFAULT '' NOT NULL,
   -- checkclient's client: the PVS of its eye, kept for 0.1 s (sv.lastcheck, sv.lastchecktime)
-  check_time DOUBLE PRECISION, check_pvs VARCHAR(2048) CHARACTER SET ASCII
+  check_time DOUBLE PRECISION, check_pvs VARCHAR(2048) CHARACTER SET ASCII, check_client INTEGER
 );
 -- checkclient's cache of each caller's eye leaf, by the eye's position (emptied with the level)
 CREATE TABLE qc_eyeleaf (
@@ -504,7 +511,10 @@ CREATE TABLE demo (
   qc_mode   SMALLINT,
   seed      BIGINT,
   recording SMALLINT DEFAULT 0 NOT NULL,
-  calls     INTEGER DEFAULT 0 NOT NULL      -- demo_tics' rows
+  calls     INTEGER DEFAULT 0 NOT NULL,     -- demo_tics' rows
+  -- the server's rules (qc_setup_server): the bots come from them
+  deathmatch SMALLINT DEFAULT 0 NOT NULL, coop SMALLINT DEFAULT 0 NOT NULL, nbots SMALLINT DEFAULT 0 NOT NULL,
+  fraglimit INTEGER DEFAULT 0 NOT NULL, timelimit INTEGER DEFAULT 0 NOT NULL
 );
 INSERT INTO demo (id) VALUES (1);
 CREATE TABLE demo_tics (
@@ -513,6 +523,28 @@ CREATE TABLE demo_tics (
   fwd     DOUBLE PRECISION NOT NULL, side DOUBLE PRECISION NOT NULL,
   yaw_d   DOUBLE PRECISION NOT NULL, pitch_d DOUBLE PRECISION NOT NULL,
   fire    SMALLINT NOT NULL, jump SMALLINT NOT NULL, run SMALLINT NOT NULL, imp SMALLINT NOT NULL
+);
+
+-- The bots (sql/bots.sql): clients 2..maxclients in QuakeC mode, moved by qc_bot_think. Their name, how
+-- far off they aim (degrees, by skill), and what the brain keeps between frames.
+CREATE TABLE bots (
+  c          INTEGER NOT NULL PRIMARY KEY,     -- the client's edict
+  name       VARCHAR(32) NOT NULL,
+  aim_error  DOUBLE PRECISION NOT NULL,
+  yaw        DOUBLE PRECISION,                 -- the view it holds (NULL: take the body's)
+  pitch      DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  enemy      INTEGER,                          -- whom it fights
+  goal       INTEGER,                          -- the item it runs for
+  aim_ofs    DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- this sighting's aim error
+  look_at    DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- when it looks around again
+  strafe     SMALLINT DEFAULT 1 NOT NULL,
+  strafe_at  DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  turn       DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- degrees still to turn while wandering
+  lastx      DOUBLE PRECISION, lasty DOUBLE PRECISION,
+  stuck      INTEGER DEFAULT 0 NOT NULL,
+  goal_until DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- it gives up on the item then
+  shun       INTEGER,                          -- an item it could not reach, left alone until shun_until
+  shun_until DOUBLE PRECISION DEFAULT 0 NOT NULL
 );
 
 -- ── save games (sql/save.sql) ────────────────────────────────────────────────

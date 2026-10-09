@@ -286,14 +286,22 @@ END^
 
 -- ── edicts ───────────────────────────────────────────────────────────────
 
+-- svs.maxclients: edicts 1..maxclients are the clients (the page's player, then the bots)
+CREATE OR ALTER FUNCTION qc_maxclients RETURNS INTEGER
+AS
+BEGIN
+  RETURN COALESCE((SELECT g.maxclients FROM game g WHERE g.id = 1), 1);
+END^
+
 CREATE OR ALTER FUNCTION qc_spawn () RETURNS INTEGER
 AS
-DECLARE e INTEGER;
+DECLARE e INTEGER; DECLARE mc INTEGER;
 BEGIN
-  SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 1 AND d.id > 1 ORDER BY d.id INTO e;
+  mc = qc_maxclients();
+  SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 1 AND d.id > :mc ORDER BY d.id INTO e;
   IF (e IS NULL) THEN
   BEGIN
-    SELECT COALESCE(MAX(d.id), 1) + 1 FROM qc_edicts d INTO e;
+    SELECT MAXVALUE(COALESCE(MAX(d.id), 0), :mc) + 1 FROM qc_edicts d INTO e;
     INSERT INTO qc_edicts (id, free) VALUES (:e, 0);
   END
   ELSE
@@ -321,6 +329,7 @@ END^
 -- the global image restored, the world and the player's edicts, the VM's cached offsets
 CREATE OR ALTER PROCEDURE qc_reset
 AS
+DECLARE i INTEGER;
 BEGIN
   DELETE FROM qc_globals;
   INSERT INTO qc_globals (ofs, v) SELECT g.ofs, g.v FROM qc_globals0 g;
@@ -332,7 +341,10 @@ BEGIN
   DELETE FROM qc_log;
   UPDATE qc_functions f SET f.active = 0 WHERE f.active <> 0;   -- the calls and compiled flags stay: the procedures do
   INSERT INTO qc_edicts (id, free) VALUES (0, 0);     -- world
-  INSERT INTO qc_edicts (id, free) VALUES (1, 0);     -- the player (maxclients = 1)
+  INSERT INTO qc_edicts (id, free) VALUES (1, 0);     -- the player
+  -- the bots' client edicts, free until they join (qc_client_join_n)
+  i = 2;
+  WHILE (i <= qc_maxclients()) DO BEGIN INSERT INTO qc_edicts (id, free) VALUES (:i, 1); i = i + 1; END
   IF (qc_on() = 1) THEN
   BEGIN
     DELETE FROM ents;
@@ -416,6 +428,7 @@ DECLARE cur DOUBLE PRECISION; DECLARE ideal DOUBLE PRECISION; DECLARE spd DOUBLE
 DECLARE gself INTEGER; DECLARE oself DOUBLE PRECISION; DECLARE ok SMALLINT; DECLARE pv VARCHAR(2048) CHARACTER SET ASCII;
 DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE best DOUBLE PRECISION; DECLARE bent INTEGER;
 DECLARE tst SMALLINT; DECLARE tty SMALLINT; DECLARE tn SMALLINT; DECLARE th INTEGER;
+DECLARE cc INTEGER; DECLARE mcl INTEGER; DECLARE kk INTEGER;
 BEGIN
   SELECT v.g_self, v.f_origin, v.f_mins, v.f_maxs, v.f_size, v.f_absmin, v.f_absmax, v.g_vfwd, v.g_vup, v.g_vright, v.f_chain
     FROM qc_vm v WHERE v.id = 1 INTO gself, vm_fo, vm_mi, vm_ma, vm_sz, vm_amin, vm_amax, vm_fwd, vm_up, vm_right, vm_chain;
@@ -517,16 +530,25 @@ BEGIN
     IF (qc_on() = 1) THEN
     BEGIN
       e = CAST(qc_g(gself) AS INTEGER);
-      SELECT d.x, d.y, d.z, d.flags, v.f_health, v.f_view_ofs, v.check_time, v.check_pvs, v.sv_time FROM qc_vm v LEFT JOIN ents d ON d.id = 1 WHERE v.id = 1
-        INTO x, y, z, i, head, mid, a, pv, b;
-      IF (x IS NOT NULL AND qc_fq(1, head) > 0 AND BIN_AND(i, 128) = 0 AND EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN
+      SELECT v.f_health, v.f_view_ofs, v.check_time, v.check_pvs, v.sv_time, v.check_client FROM qc_vm v WHERE v.id = 1
+        INTO head, mid, a, pv, b, cc;
+      -- PF_newcheckclient: every 0.1 s the next client in turn that is in the game and alive, and its eye's PVS
+      IF (a IS NULL OR b - a >= 0.1e0 OR b < a) THEN
       BEGIN
-        -- PF_newcheckclient: the client's eye PVS, recomputed every 0.1 s
-        IF (a IS NULL OR b - a >= 0.1e0 OR b < a) THEN
+        mcl = qc_maxclients(); kk = 0; i = COALESCE(cc, mcl); cc = NULL; pv = NULL;
+        WHILE (kk < mcl) DO
         BEGIN
-          pv = (SELECT l.pvs FROM leaves l WHERE l.id = point_leaf(:x + qc_fq(1, :mid), :y + qc_fq(1, :mid + 1), :z + qc_fq(1, :mid + 2)));
-          UPDATE qc_vm v SET v.check_time = :b, v.check_pvs = :pv WHERE v.id = 1;
+          i = MOD(i, mcl) + 1; kk = kk + 1;
+          IF (EXISTS (SELECT 1 FROM ents d JOIN qc_edicts q ON q.id = d.id AND q.free = 0 WHERE d.id = :i AND BIN_AND(d.flags, 128) = 0) AND qc_fq(i, head) > 0) THEN
+          BEGIN cc = i; LEAVE; END
         END
+        IF (cc IS NOT NULL) THEN
+          SELECT l.pvs FROM ents d JOIN leaves l ON l.id = point_leaf(d.x + qc_fq(:cc, :mid), d.y + qc_fq(:cc, :mid + 1), d.z + qc_fq(:cc, :mid + 2))
+           WHERE d.id = :cc INTO pv;
+        UPDATE qc_vm v SET v.check_time = :b, v.check_pvs = :pv, v.check_client = :cc WHERE v.id = 1;
+      END
+      IF (cc IS NOT NULL AND pv IS NOT NULL AND qc_fq(cc, head) > 0) THEN
+      BEGIN
         -- the caller's eye, and its leaf: kept while it stands there (a waiting monster asks every think)
         SELECT d.x + COALESCE(MAX(IIF(f.ofs = :mid, f.v, NULL)), 0), d.y + COALESCE(MAX(IIF(f.ofs = :mid + 1, f.v, NULL)), 0), d.z + COALESCE(MAX(IIF(f.ofs = :mid + 2, f.v, NULL)), 0)
           FROM ents d LEFT JOIN qc_fields f ON f.ent = d.id AND f.ofs BETWEEN :mid AND :mid + 2 WHERE d.id = :e GROUP BY d.x, d.y, d.z INTO bx, by_, bz;
@@ -539,7 +561,7 @@ BEGIN
             wm = point_leaf(bx, by_, bz);
             UPDATE OR INSERT INTO qc_eyeleaf (ent, x, y, z, leaf) VALUES (:e, :bx, :by_, :bz, :wm) MATCHING (ent);
           END
-          IF (pvs_visible(pv, wm) = 1) THEN c = 1;
+          IF (pvs_visible(pv, wm) = 1) THEN c = cc;
         END
       END
     END
@@ -557,7 +579,7 @@ BEGIN
   BEGIN
     s = qc_str(CAST(qc_g(IIF(n = 21, 7, 4)) AS INTEGER));
     EXECUTE PROCEDURE qc_print('cmd', s);
-    IF (qc_on() = 1 AND s STARTING WITH 'bf') THEN UPDATE player p SET p.bonus_time = (SELECT g.time_ FROM game g WHERE g.id = 1) WHERE p.id = 1;
+    IF (qc_on() = 1 AND s STARTING WITH 'bf' AND (n = 46 OR CAST(qc_g(4) AS INTEGER) = 1)) THEN UPDATE player p SET p.bonus_time = (SELECT g.time_ FROM game g WHERE g.id = 1) WHERE p.id = 1;
     -- localcmd: the console buffer, a line at a time (QuakeC's newline is the two characters backslash-n);
     -- "skill N" is what trigger_setskill sends, read by cvar("skill") from the next frame on
     IF (n = 46) THEN
@@ -707,7 +729,10 @@ BEGIN
   ELSE IF (n = 45) THEN                             -- cvar(name)
   BEGIN
     s = qc_str(CAST(qc_g(4) AS INTEGER));
-    EXECUTE PROCEDURE qc_sg(1, CASE s WHEN 'skill' THEN COALESCE((SELECT g.skill FROM game g WHERE g.id = 1), 1) WHEN 'sv_gravity' THEN COALESCE((SELECT g.gravity FROM game g WHERE g.id = 1), 800) WHEN 'sv_maxspeed' THEN 320 WHEN 'sv_friction' THEN 4 WHEN 'sv_accelerate' THEN 10 WHEN 'sv_stopspeed' THEN 100 WHEN 'sv_nostep' THEN 0 WHEN 'registered' THEN COALESCE((SELECT g.registered FROM game g WHERE g.id = 1), 0) ELSE 0 END);
+    EXECUTE PROCEDURE qc_sg(1, CASE s WHEN 'skill' THEN COALESCE((SELECT g.skill FROM game g WHERE g.id = 1), 1) WHEN 'sv_gravity' THEN COALESCE((SELECT g.gravity FROM game g WHERE g.id = 1), 800) WHEN 'sv_maxspeed' THEN 320 WHEN 'sv_friction' THEN 4 WHEN 'sv_accelerate' THEN 10 WHEN 'sv_stopspeed' THEN 100 WHEN 'sv_nostep' THEN 0 WHEN 'registered' THEN COALESCE((SELECT g.registered FROM game g WHERE g.id = 1), 0)
+      WHEN 'deathmatch' THEN COALESCE((SELECT g.deathmatch FROM game g WHERE g.id = 1), 0) WHEN 'coop' THEN COALESCE((SELECT g.coop FROM game g WHERE g.id = 1), 0)
+      WHEN 'fraglimit' THEN COALESCE((SELECT g.fraglimit FROM game g WHERE g.id = 1), 0) WHEN 'timelimit' THEN COALESCE((SELECT g.timelimit FROM game g WHERE g.id = 1), 0)
+      ELSE 0 END);
   END
   ELSE IF (n = 47) THEN                             -- nextent(e)
     EXECUTE PROCEDURE qc_sg(1, COALESCE((SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > CAST(qc_g(4) AS INTEGER) ORDER BY d.id), 0));
@@ -812,7 +837,7 @@ BEGIN
   ELSE IF (n = 73) THEN                             -- centerprint(client, s)
   BEGIN
     EXECUTE PROCEDURE qc_print('centerprint', qc_str(CAST(qc_g(7) AS INTEGER)));
-    IF (qc_on() = 1) THEN EXECUTE PROCEDURE cprint(SUBSTRING(REPLACE(qc_str(CAST(qc_g(7) AS INTEGER)), '\n', ASCII_CHAR(10)) FROM 1 FOR 200));
+    IF (qc_on() = 1 AND CAST(qc_g(4) AS INTEGER) = 1) THEN EXECUTE PROCEDURE cprint(SUBSTRING(REPLACE(qc_str(CAST(qc_g(7) AS INTEGER)), '\n', ASCII_CHAR(10)) FROM 1 FOR 200));
   END
   ELSE IF (n = 74) THEN EXECUTE PROCEDURE qc_print('ambientsound', qc_str(CAST(qc_g(7) AS INTEGER)));
   ELSE IF (n = 78) THEN BEGIN END                    -- setspawnparms
@@ -1145,9 +1170,11 @@ DECLARE f_light INTEGER; DECLARE f_style INTEGER; DECLARE f_sounds INTEGER; DECL
 DECLARE tn VARCHAR(40); DECLARE tg VARCHAR(40); DECLARE kt VARCHAR(40); DECLARE mdl VARCHAR(40); DECLARE msg VARCHAR(200); DECLARE mp VARCHAR(32); DECLARE nz VARCHAR(64);
 DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE ang DOUBLE PRECISION; DECLARE mp_ DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mr DOUBLE PRECISION;
 DECLARE wt DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE sp DOUBLE PRECISION; DECLARE lp DOUBLE PRECISION; DECLARE hl INTEGER; DECLARE li INTEGER; DECLARE st INTEGER; DECLARE so INTEGER; DECLARE dm INTEGER; DECLARE hg DOUBLE PRECISION; DECLARE cn INTEGER; DECLARE wtype INTEGER;
+DECLARE dmatch SMALLINT;
 BEGIN
   spawned = 0; failed = 0; skipped = 0;
   skillbit = CASE skill WHEN 0 THEN 256 WHEN 1 THEN 512 ELSE 1024 END;
+  dmatch = COALESCE((SELECT g.deathmatch FROM game g WHERE g.id = 1), 0);
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
   f_cls = qc_fdef('classname'); f_tn = qc_fdef('targetname'); f_tg = qc_fdef('target'); f_kt = qc_fdef('killtarget'); f_model = qc_fdef('model');
   f_org = qc_fdef('origin'); f_ang = qc_fdef('angles'); f_sf = qc_fdef('spawnflags'); f_msg = qc_fdef('message'); f_wait = qc_fdef('wait'); f_delay = qc_fdef('delay');
@@ -1160,7 +1187,8 @@ BEGIN
       FROM map_ents m ORDER BY IIF(m.classname = 'worldspawn', 0, 1), m.id
       INTO mid, cls, sf, tn, tg, kt, mdl, ox, oy, oz, ang, mp_, my, mr, msg, wt, dl, sp, lp, hl, li, st, so, dm, hg, cn, mp, nz, wtype DO
   BEGIN
-    IF (cls <> 'worldspawn' AND BIN_AND(sf, skillbit) <> 0) THEN BEGIN skipped = skipped + 1; CONTINUE; END
+    -- ED_LoadFromFile: in deathmatch only NOT_DEATHMATCH (2048) drops an entity, else the skill's bit
+    IF (cls <> 'worldspawn' AND BIN_AND(sf, IIF(:dmatch <> 0, 2048, skillbit)) <> 0) THEN BEGIN skipped = skipped + 1; CONTINUE; END
     f = qc_fn(cls);
     IF (f IS NULL) THEN
     BEGIN
@@ -1256,32 +1284,38 @@ BEGIN
   EXECUTE PROCEDURE qc_call(f);
 END^
 
--- the client in edict 1: SetNewParms for a new game (carry = 0; otherwise the parms carried over are in the
--- globals already), ClientConnect, PutClientInServer
-CREATE OR ALTER PROCEDURE qc_client_join (t DOUBLE PRECISION, carry SMALLINT)
+-- a client in edict c (1 is the page's player, 2 and up the bots, sql/bots.sql): SetNewParms for a new game
+-- (carry = 0; otherwise the parms carried over are in the globals already), ClientConnect, PutClientInServer
+CREATE OR ALTER PROCEDURE qc_client_join_n (c INTEGER, t DOUBLE PRECISION, carry SMALLINT, name VARCHAR(32))
 AS
 DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE f INTEGER;
 BEGIN
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
   EXECUTE PROCEDURE qc_sg(g_time, t);
   EXECUTE PROCEDURE qc_sg(g_other, 0);
-  UPDATE qc_edicts d SET d.free = 0 WHERE d.id = 1;
-  DELETE FROM qc_fields x WHERE x.ent = 1;
+  UPDATE OR INSERT INTO qc_edicts (id, free) VALUES (:c, 0) MATCHING (id);
+  DELETE FROM qc_fields x WHERE x.ent = :c;
   IF (qc_on() = 1) THEN
   BEGIN
-    DELETE FROM ents x WHERE x.id = 1;
-    INSERT INTO ents (id, classname) VALUES (1, 'player');
+    DELETE FROM ents x WHERE x.id = :c;
+    INSERT INTO ents (id, classname) VALUES (:c, 'player');
   END
-  EXECUTE PROCEDURE qc_set_str(1, qc_fdef('netname'), 'player');
-  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  EXECUTE PROCEDURE qc_set_str(c, qc_fdef('netname'), name);
+  EXECUTE PROCEDURE qc_sg(g_self, c);
   IF (carry = 0) THEN
   BEGIN
     f = qc_fn('SetNewParms'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
   END
-  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  EXECUTE PROCEDURE qc_sg(g_self, c);
   f = qc_fn('ClientConnect'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
-  EXECUTE PROCEDURE qc_sg(g_self, 1);
+  EXECUTE PROCEDURE qc_sg(g_self, c);
   f = qc_fn('PutClientInServer'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+END^
+
+CREATE OR ALTER PROCEDURE qc_client_join (t DOUBLE PRECISION, carry SMALLINT)
+AS
+BEGIN
+  EXECUTE PROCEDURE qc_client_join_n(1, t, carry, 'player');
 END^
 
 CREATE OR ALTER PROCEDURE qc_client_connect (t DOUBLE PRECISION)
@@ -1496,7 +1530,7 @@ END^
 
 -- SV_ClientThink (sv_user.c): the input into the client's fields, its view angles, and its movement
 -- intent: ground friction and acceleration, air acceleration, or swimming
-CREATE OR ALTER PROCEDURE qc_client_think (t DOUBLE PRECISION, dt DOUBLE PRECISION, fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION,
+CREATE OR ALTER PROCEDURE qc_client_think (c INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION, fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION,
   pitch DOUBLE PRECISION, yaw DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, impulse SMALLINT)
 AS
 DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE wl SMALLINT; DECLARE onground SMALLINT;
@@ -1511,28 +1545,28 @@ DECLARE speed DOUBLE PRECISION; DECLARE newspeed DOUBLE PRECISION; DECLARE contr
 DECLARE cur DOUBLE PRECISION; DECLARE addspeed DOUBLE PRECISION; DECLARE accelspeed DOUBLE PRECISION; DECLARE wishspd DOUBLE PRECISION;
 DECLARE tf DOUBLE PRECISION; DECLARE va INTEGER;
 BEGIN
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN EXIT;
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN EXIT;
   -- SV_ReadClientMove: the buttons, the impulse, the view angles
-  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button0'), fire);
-  EXECUTE PROCEDURE qc_sf(1, qc_fdef('button2'), jump);
-  IF (impulse <> 0) THEN EXECUTE PROCEDURE qc_sf(1, qc_fdef('impulse'), impulse);
+  EXECUTE PROCEDURE qc_sf(c, qc_fdef('button0'), fire);
+  EXECUTE PROCEDURE qc_sf(c, qc_fdef('button2'), jump);
+  IF (impulse <> 0) THEN EXECUTE PROCEDURE qc_sf(c, qc_fdef('impulse'), impulse);
   va = (SELECT v.f_v_angle FROM qc_vm v WHERE v.id = 1);
-  EXECUTE PROCEDURE qc_sf(1, va, pitch); EXECUTE PROCEDURE qc_sf(1, va + 1, yaw); EXECUTE PROCEDURE qc_sf(1, va + 2, 0);
-  SELECT d.movetype, d.flags, d.waterlevel, d.x, d.y, d.z, d.minz, d.vx, d.vy, d.vz FROM ents d WHERE d.id = 1 INTO mt, fl, wl, px, py, pz, mnz, vx, vy, vz;
+  EXECUTE PROCEDURE qc_sf(c, va, pitch); EXECUTE PROCEDURE qc_sf(c, va + 1, yaw); EXECUTE PROCEDURE qc_sf(c, va + 2, 0);
+  SELECT d.movetype, d.flags, d.waterlevel, d.x, d.y, d.z, d.minz, d.vx, d.vy, d.vz FROM ents d WHERE d.id = :c INTO mt, fl, wl, px, py, pz, mnz, vx, vy, vz;
   IF (mt = 0) THEN EXIT;
   onground = IIF(BIN_AND(fl, 512) <> 0, 1, 0);
   -- DropPunchAngle
   fpa = (SELECT v.f_punchangle FROM qc_vm v WHERE v.id = 1);
-  a0 = qc_f(1, fpa); a1 = qc_f(1, fpa + 1); a2 = qc_f(1, fpa + 2);
+  a0 = qc_f(c, fpa); a1 = qc_f(c, fpa + 1); a2 = qc_f(c, fpa + 2);
   len = SQRT(a0 * a0 + a1 * a1 + a2 * a2);
   IF (len > 0) THEN
   BEGIN
     len2 = MAXVALUE(0, len - 10 * dt);
-    EXECUTE PROCEDURE qc_sf(1, fpa, a0 * len2 / len); EXECUTE PROCEDURE qc_sf(1, fpa + 1, a1 * len2 / len); EXECUTE PROCEDURE qc_sf(1, fpa + 2, a2 * len2 / len);
+    EXECUTE PROCEDURE qc_sf(c, fpa, a0 * len2 / len); EXECUTE PROCEDURE qc_sf(c, fpa + 1, a1 * len2 / len); EXECUTE PROCEDURE qc_sf(c, fpa + 2, a2 * len2 / len);
   END
-  IF (qc_f(1, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) <= 0) THEN EXIT;
+  IF (qc_f(c, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) <= 0) THEN EXIT;
   -- the body turns with the view; the model's pitch is a third of it
-  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0 WHERE d.id = 1;
+  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0 WHERE d.id = :c;
   IF (wl >= 2 AND mt <> 8) THEN
   BEGIN
     -- SV_WaterMove: the full view direction, drifting down without input
@@ -1564,7 +1598,7 @@ BEGIN
   ELSE
   BEGIN
     -- SV_AirMove: the body's angles (pitch a third of the view's), the wish velocity flat
-    IF (t < qc_f(1, (SELECT v.f_teleport_time FROM qc_vm v WHERE v.id = 1)) AND fmove < 0) THEN fmove = 0;
+    IF (t < qc_f(c, (SELECT v.f_teleport_time FROM qc_vm v WHERE v.id = 1)) AND fmove < 0) THEN fmove = 0;
     ap = -pitch / 3 * 0.0174532925e0; ay = yaw * 0.0174532925e0;
     fx = COS(ap) * COS(ay); fy = COS(ap) * SIN(ay); rx = SIN(ay); ry = -COS(ay);
     wx = fx * fmove + rx * smove; wy = fy * fmove + ry * smove; wz = IIF(mt <> 3, upmove, 0);
@@ -1578,7 +1612,7 @@ BEGIN
       speed = SQRT(vx * vx + vy * vy);
       IF (speed > 0) THEN
       BEGIN
-        SELECT r.fraction FROM trace_move(1, 0, 0, 0, 0, 0, 0, :px + :vx / :speed * 16, :py + :vy / :speed * 16, :pz + :mnz,
+        SELECT r.fraction FROM trace_move(:c, 0, 0, 0, 0, 0, 0, :px + :vx / :speed * 16, :py + :vy / :speed * 16, :pz + :mnz,
                                              :px + :vx / :speed * 16, :py + :vy / :speed * 16, :pz + :mnz - 34, 1) r INTO tf;
         friction = IIF(tf = 1, 8, 4);
         control = IIF(speed < 100, 100, speed);
@@ -1607,52 +1641,52 @@ BEGIN
       END
     END
   END
-  UPDATE ents d SET d.vx = :vx, d.vy = :vy, d.vz = :vz WHERE d.id = 1;
+  UPDATE ents d SET d.vx = :vx, d.vy = :vy, d.vz = :vz WHERE d.id = :c;
 END^
 
 -- SV_Physics_Client: PlayerPreThink, the think, gravity unless swimming or water-jumping, the walk with
 -- its step, the triggers touched, PlayerPostThink
-CREATE OR ALTER PROCEDURE qc_physics_client (t DOUBLE PRECISION, dt DOUBLE PRECISION)
+CREATE OR ALTER PROCEDURE qc_physics_client (c INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
 AS
 DECLARE f INTEGER; DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE alive SMALLINT; DECLARE wl SMALLINT; DECLARE wt INTEGER;
 DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
 BEGIN
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = 1 AND d.free = 0)) THEN EXIT;
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN EXIT;
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
-  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, c); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('PlayerPreThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
-  EXECUTE PROCEDURE qc_clamp_velocity(1);
-  SELECT d.movetype FROM ents d WHERE d.id = 1 INTO mt;
+  EXECUTE PROCEDURE qc_clamp_velocity(c);
+  SELECT d.movetype FROM ents d WHERE d.id = :c INTO mt;
   IF (mt = 3) THEN
   BEGIN
-    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
+    EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
     IF (alive = 0) THEN EXIT;
-    EXECUTE PROCEDURE check_water(1) RETURNING_VALUES wl, wt;
-    UPDATE ents d SET d.waterlevel = :wl, d.watertype = :wt WHERE d.id = 1;
-    SELECT d.flags FROM ents d WHERE d.id = 1 INTO fl;
-    IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(1, dt);
-    EXECUTE PROCEDURE walk_move(1, dt);
+    EXECUTE PROCEDURE check_water(c) RETURNING_VALUES wl, wt;
+    UPDATE ents d SET d.waterlevel = :wl, d.watertype = :wt WHERE d.id = :c;
+    SELECT d.flags FROM ents d WHERE d.id = :c INTO fl;
+    IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(c, dt);
+    EXECUTE PROCEDURE walk_move(c, dt);
   END
   ELSE IF (mt IN (6, 10)) THEN
   BEGIN
-    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
-    IF (alive = 1) THEN EXECUTE PROCEDURE qc_toss(1, dt);
+    EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
+    IF (alive = 1) THEN EXECUTE PROCEDURE qc_toss(c, dt);
   END
   ELSE IF (mt = 5) THEN
   BEGIN
-    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
-    EXECUTE PROCEDURE fly_move(1, dt) RETURNING_VALUES blk, hit;
+    EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
+    EXECUTE PROCEDURE fly_move(c, dt) RETURNING_VALUES blk, hit;
   END
   ELSE IF (mt = 8) THEN
   BEGIN
-    EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
-    UPDATE ents d SET d.x = d.x + d.vx * :dt, d.y = d.y + d.vy * :dt, d.z = d.z + d.vz * :dt WHERE d.id = 1;
+    EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
+    UPDATE ents d SET d.x = d.x + d.vx * :dt, d.y = d.y + d.vy * :dt, d.z = d.z + d.vz * :dt WHERE d.id = :c;
   END
-  ELSE EXECUTE PROCEDURE qc_run_think(1, t, dt) RETURNING_VALUES alive;
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = 1)) THEN EXIT;
-  EXECUTE PROCEDURE link_ent(1);
-  IF (mt <> 8) THEN EXECUTE PROCEDURE qc_touch_triggers(1);
-  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 1); EXECUTE PROCEDURE qc_sg(g_other, 0);
+  ELSE EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
+  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
+  EXECUTE PROCEDURE link_ent(c);
+  IF (mt <> 8) THEN EXECUTE PROCEDURE qc_touch_triggers(c);
+  EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, c); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('PlayerPostThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
 END^
 
@@ -1661,7 +1695,7 @@ CREATE OR ALTER PROCEDURE qc_physics_ent (e INTEGER, t DOUBLE PRECISION, dt DOUB
 AS
 DECLARE mt SMALLINT; DECLARE alive SMALLINT; DECLARE fav INTEGER;
 BEGIN
-  IF (e = 1) THEN BEGIN EXECUTE PROCEDURE qc_physics_client(t, dt); EXIT; END
+  IF (e >= 1 AND e <= qc_maxclients()) THEN BEGIN EXECUTE PROCEDURE qc_physics_client(e, t, dt); EXIT; END
   SELECT d.movetype FROM ents d WHERE d.id = :e INTO mt;
   IF (e = 0 OR mt IS NULL OR mt IN (0, 3)) THEN EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
   ELSE IF (mt = 7) THEN EXECUTE PROCEDURE qc_physics_pusher(e, t, dt);
@@ -1685,6 +1719,12 @@ BEGIN
   ELSE EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
 END^
 
+-- a bot's move for the frame (sql/bots.sql): what SV_ReadClientMove would read from its connection
+CREATE OR ALTER PROCEDURE qc_bot_think (c INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
+RETURNS (fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION, pitch DOUBLE PRECISION, yaw DOUBLE PRECISION,
+         fire SMALLINT, jump SMALLINT, impulse SMALLINT)
+AS BEGIN END^
+
 -- A server frame in QuakeC mode (Host_ServerFrame): the client's move, StartFrame, then every edict's
 -- physics in edict order, from time t for dt seconds. The client's input: forward, side and up move
 -- (Quake units per second, 400 forward when running), the view pitch and yaw, fire, jump, the impulse.
@@ -1695,6 +1735,8 @@ RETURNS (ran INTEGER, failed INTEGER)
 AS
 DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE g_ft INTEGER; DECLARE f_nt INTEGER; DECLARE f INTEGER;
 DECLARE e INTEGER; DECLARE last INTEGER; DECLARE fpa INTEGER;
+DECLARE mc INTEGER; DECLARE c INTEGER; DECLARE bf DOUBLE PRECISION; DECLARE bs DOUBLE PRECISION; DECLARE bu DOUBLE PRECISION;
+DECLARE bp DOUBLE PRECISION; DECLARE byw DOUBLE PRECISION; DECLARE bfi SMALLINT; DECLARE bj SMALLINT; DECLARE bi SMALLINT;
 BEGIN
   ran = 0; failed = 0;
   IF (qc_on() = 0) THEN EXCEPTION qc_error 'qc_server_frame needs QuakeC mode (qc_enter)';
@@ -1703,9 +1745,24 @@ BEGIN
   SELECT v.g_self, v.g_other, v.g_time, v.g_frametime, v.f_nextthink FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, g_ft, f_nt;
   EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_ft, dt);
   BEGIN
-    EXECUTE PROCEDURE qc_client_think(t, dt, fmove, smove, upmove, pitch, yaw, fire, jump, impulse);
+    EXECUTE PROCEDURE qc_client_think(1, t, dt, fmove, smove, upmove, pitch, yaw, fire, jump, impulse);
   WHEN ANY DO
     EXECUTE PROCEDURE qc_print('error', 'client think failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+  END
+  -- SV_RunClients for the bots: each one's move from qc_bot_think, as if read from its connection
+  mc = qc_maxclients();
+  c = 2;
+  WHILE (c <= mc) DO
+  BEGIN
+    IF (EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN
+    BEGIN
+      bf = 0; bs = 0; bu = 0; bp = 0; byw = 0; bfi = 0; bj = 0; bi = 0;
+      SELECT b.fmove, b.smove, b.upmove, b.pitch, b.yaw, b.fire, b.jump, b.impulse FROM qc_bot_think(:c, :t, :dt) b INTO bf, bs, bu, bp, byw, bfi, bj, bi;
+      EXECUTE PROCEDURE qc_client_think(c, t, dt, bf, bs, bu, bp, byw, bfi, bj, bi);
+    WHEN ANY DO
+      EXECUTE PROCEDURE qc_print('error', 'bot ' || c || ' think failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
+    END
+    c = c + 1;
   END
   EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 0); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('StartFrame');
@@ -1718,7 +1775,7 @@ BEGIN
     e = NULL;
     SELECT FIRST 1 d.id FROM qc_edicts d
       WHERE d.free = 0 AND d.id > :last AND (
-        d.id <= 1
+        d.id <= :mc
         OR EXISTS (SELECT 1 FROM qc_fields n WHERE n.ent = d.id AND n.ofs = :f_nt AND n.v > 0 AND n.v <= :t + :dt + 1e-6)
         OR EXISTS (SELECT 1 FROM ents x JOIN qc_fields n ON n.ent = x.id AND n.ofs = :f_nt AND n.v > 0 WHERE x.id = d.id AND x.movetype = 7)
         OR EXISTS (SELECT 1 FROM ents x WHERE x.id = d.id AND (
@@ -1782,12 +1839,21 @@ BEGIN
   FOR SELECT s.ofs, s.v FROM qc_saved s INTO o, v DO EXECUTE PROCEDURE qc_sg(o, v);
   mn = (SELECT g.map_name FROM game g WHERE g.id = 1);
   EXECUTE PROCEDURE qc_sg(qc_gdef('mapname'), qc_newstr(mn));
+  -- SV_SpawnServer: the deathmatch and coop globals come from the server's rules
+  EXECUTE PROCEDURE qc_sg(qc_gdef('deathmatch'), (SELECT g.deathmatch FROM game g WHERE g.id = 1));
+  EXECUTE PROCEDURE qc_sg(qc_gdef('coop'), (SELECT g.coop FROM game g WHERE g.id = 1));
   EXECUTE PROCEDURE qc_sf(0, qc_fdef('model'), qc_newstr('maps/' || mn || '.bsp'));
   UPDATE game g SET g.time_ = 1.0, g.tic = 0, g.next_map = NULL, g.exit_kind = 0, g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1 WHERE g.id = 1;
   UPDATE player p SET p.msg = NULL, p.msg_time = 0, p.cprint = NULL, p.cprint_time = 0, p.bonus_time = -10, p.dmg_time = -10,
                       p.dmg_take = 0, p.dmg_save = 0, p.pitch = 0, p.punchangle = 0, p.view_ofs = 22, p.stepz = 0 WHERE p.id = 1;
   SELECT r.spawned, r.failed, r.skipped FROM qc_spawn_map(:skill, 1.0) r INTO a, b, c;
   EXECUTE PROCEDURE qc_client_join(1.0, carry);
+  -- the bots come in after the player, as clients connecting (sql/bots.sql)
+  FOR SELECT b.c, b.name FROM bots b WHERE b.c <= qc_maxclients() ORDER BY b.c INTO a, mn DO
+  BEGIN
+    UPDATE bots b SET b.yaw = NULL, b.enemy = NULL, b.goal = NULL, b.look_at = 0, b.turn = 0, b.stuck = 0, b.lastx = NULL WHERE b.c = :a;
+    EXECUTE PROCEDURE qc_client_join_n(a, 1.0, 0, mn);
+  END
   -- the level's name, as the PSQL game shows it
   UPDATE player p SET p.cprint = (SELECT g.level_msg FROM game g WHERE g.id = 1), p.cprint_time = 3 WHERE p.id = 1;
 END^

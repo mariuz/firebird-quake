@@ -41,6 +41,14 @@
           <option value="psql">PSQL game</option>
           <option value="qc">QuakeC VM (progs.dat)</option>
         </select></label>
+        <label title="Single player, or Quake's deathmatch or coop rules (progs.dat's, in the QuakeC VM) against bots played by PSQL">Game <select id="mode">
+          <option value="single">Single player</option>
+          <option value="deathmatch">Deathmatch with bots</option>
+          <option value="coop">Coop with bots</option>
+        </select> <select id="bots" title="How many bots">
+          <option value="1">1 bot</option><option value="2">2 bots</option><option value="3">3 bots</option>
+          <option value="5">5 bots</option><option value="7">7 bots</option>
+        </select></label>
         <label title="How much of the renderer runs in SQL">Renderer <select id="renderer">
           <option value="fast">SQL picks faces, JS projects (fast)</option>
           <option value="sql">SQL projects every vertex</option>

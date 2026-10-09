@@ -506,3 +506,17 @@ node scripts/screenshot.mjs e1m1 docs/menu-main    --tics=2 --menu=main    --sin
 node scripts/screenshot.mjs e1m1 docs/menu-single  --tics=2 --menu=single  --single --fast
 node scripts/screenshot.mjs e1m1 docs/menu-options --tics=2 --menu=options --single --fast
 ```
+
+## Deathmatch
+
+E1M1 as a deathmatch against three bots (the **Game** setting): progs.dat's rules in the QuakeC VM,
+the bots' moves made in PSQL by `sql/bots.sql`. The frag list is in the corner, the player's line
+marked; the bot by the doorway has just found the player and fired, hence the red flash and the 91.
+
+![a bot firing at the player in E1M1's hall, the frag list in the corner](deathmatch-e1m1-0.png)
+
+1. Grunt, a bot, firing at the player; the frag list of the four clients
+
+This one was taken in the page (headless Chromium driving the **Game** setting, a bot moved in front of
+the player with the SQL console's `UPDATE ents … WHERE id = 2`), since the bots need the page's loop;
+`scripts/screenshot.mjs` poses single-player scenes.

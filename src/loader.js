@@ -81,7 +81,7 @@ export async function bulkLoad(db, table, rows) {
   await flush();
 }
 
-export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm', 'save', 'demo'];
+export const SQL_FILES = ['schema', 'physics', 'game', 'weapons', 'monsters', 'render', 'qcvm', 'bots', 'save', 'demo'];
 
 export async function createSchema(db, sql) {
   await db.exec(sql.schema);
@@ -110,6 +110,7 @@ export const SAVED_TABLES = {
   qc_strings: { qc: true, where: 'ofs < 0' },
   qc_vm: { qc: true, where: '' },
   qc_saved: { qc: true, where: '' },
+  bots: { qc: true, where: '' },
 };
 
 /** The sv_ tables and the two copying procedures, generated from the live tables' columns so that a

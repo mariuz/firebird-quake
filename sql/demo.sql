@@ -25,7 +25,10 @@ BEGIN
   DELETE FROM demo_tics;
   UPDATE demo d SET d.map_name = (SELECT g.map_name FROM game g WHERE g.id = 1), d.skill = (SELECT g.skill FROM game g WHERE g.id = 1),
          d.qc_mode = (SELECT g.qc_mode FROM game g WHERE g.id = 1), d.seed = (SELECT r.level_seed FROM rng r WHERE r.id = 1),
-         d.recording = 1, d.calls = 0
+         d.recording = 1, d.calls = 0,
+         d.deathmatch = (SELECT g.deathmatch FROM game g WHERE g.id = 1), d.coop = (SELECT g.coop FROM game g WHERE g.id = 1),
+         d.nbots = (SELECT g.maxclients - 1 FROM game g WHERE g.id = 1), d.fraglimit = (SELECT g.fraglimit FROM game g WHERE g.id = 1),
+         d.timelimit = (SELECT g.timelimit FROM game g WHERE g.id = 1)
    WHERE d.id = 1;
 END^
 

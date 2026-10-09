@@ -34,7 +34,7 @@ COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworke
 service worker that re-issues every response with the headers after one reload.
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
-physics, game, weapons, monsters, render, qcvm, save, demo`, splitting each on `SET TERM`; the generated
+physics, game, weapons, monsters, render, qcvm, bots, save, demo`, splitting each on `SET TERM`; the generated
 `load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
 6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
@@ -266,6 +266,39 @@ which sets the light styles; then E1M1 spawned through its spawn functions and f
 LibreQuake's `progs.dat` (an extended QuakeC) loads but stops at its own `vectoyaw`, which is not
 builtin 13 there; supporting its extensions is roadmap work.
 
+## 8b. Deathmatch, coop and bots (`sql/bots.sql`)
+
+QuakeC mode has Quake's multiplayer rules for free, because they are progs.dat's: `ClientObituary`,
+`respawn`, `SelectSpawnPoint`, `CheckRules`, the weapons that stay and the items that come back, the
+monsters that remove themselves in deathmatch. The engine's share is more than one client:
+
+- **The rules** are `game.deathmatch`, `coop`, `maxclients`, `fraglimit` and `timelimit`, set by
+  `qc_setup_server(deathmatch, coop, nbots, fraglimit, timelimit)` and kept across levels. The
+  `deathmatch` and `coop` QuakeC **globals** are set by `qc_begin_map` before the spawn, as
+  `SV_SpawnServer` does (progs.dat reads the globals; the cvars too, through `cvar()`). The spawn drops
+  what `ED_LoadFromFile` drops: in deathmatch only `NOT_DEATHMATCH` (2048), the skill bits otherwise.
+- **The clients** are edicts 1..maxclients (`qc_maxclients()`): `qc_reset` reserves them, `qc_spawn`
+  allocates above them, `qc_client_join_n(c, t, carry, name)` connects one (`ClientConnect`,
+  `PutClientInServer`), `qc_client_think(c, …)` and `qc_physics_client(c, …)` run any of them, the
+  edict loop visits all of them every frame, and `checkclient` takes turns between the live ones every
+  0.1 s as `PF_newcheckclient` does. `centerprint`, `sprint` and `stuffcmd` reach the page only for
+  client 1; `bprint` reaches everyone (the obituaries show on the message line).
+- **The bots** are clients 2..: `qc_server_frame` asks `qc_bot_think(c, t, dt)` for each one's move (the
+  same forward/side/up speeds, view angles, buttons and impulse a player's packet carries) before the
+  physics. The brain keeps its state in the `bots` table: every 0.3 s it looks for the nearest enemy
+  it can trace a line to (another client in deathmatch, a `FL_MONSTER` in coop), else the nearest item
+  (`item_*`, `weapon_*`) not far above it; it turns at most 540° a second towards its target with a
+  per-sighting aim error (20° on easy to 3° on nightmare), runs in, keeps its distance, circle-strafes
+  and fires when roughly on target; without a target it runs on, turning away from walls within 64
+  units and from floors more than 60 units down or under lava or slime; stuck for 7 frames, it jumps
+  and turns; an item it cannot reach (4 s, or stuck) is shunned for 10 s. Dead, it lets go of fire
+  and presses it again to respawn; in the intermission it touches nothing (any client's button would
+  end it). Its random choices are `rnd()`, so a demo replays the bots.
+- **The page**: the **Game** setting (single player, deathmatch, coop) and **Bots** (1 to 7) start a
+  game in QuakeC mode with `qc_setup_server` before `qc_begin_map`; `qc_scores` (client, name, frags,
+  alive) feeds the frag list drawn in the corner. Demos store the rules (the `demo` row) and saves
+  keep them in the `game` row, with the `bots` table among the saved ones.
+
 ## 9. The renderer in SQL (`sql/render.sql`)
 
 `view_setup` computes the camera from the player's row and `viewcfg`: forward/right/up, the
@@ -341,6 +374,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fetch-pak.mjs` | the shareware `pak0.pak` from `quake106.zip` (LHA inside: 7-Zip, `lha` or `lhasa`); `--librequake` LibreQuake lite into `public/pak/lq1/` |
 | `sql-check.mjs` | compiles every SQL file against the engine, reports the first error with its line |
 | `sql-smoke.mjs [map]` | loads a map, walks, shoots, opens a door, renders, checks every queued and referenced sound exists; `PAK`/`PAK1` choose the paks |
+| `dm-test.mjs` | deathmatch and coop with bots: the spawns, a bot fragging the player and the player a bot, respawning, fraglimit, a coop bot shooting a grunt, a bot demo replaying |
 | `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |
 | `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |

@@ -14,7 +14,7 @@ const SLIDER_RANGE = 10;
 export class Menu {
   /**
    * lmp(name): a picture of the pak (or null); conchars: the console font; play(sound): a menu sound;
-   * actions: { newGame(), quit(), saves() → [12 slot names or null], load(slot), save(slot),
+   * actions: { newGame(), quit(), multiplayer(), saves() → [12 slot names or null], load(slot), save(slot),
    *            options: [{ label, get(), change(dir), kind: 'slider' | 'check' | 'value' | 'action' }] }
    */
   constructor({ lmp, conchars, play = () => {}, actions }) {
@@ -54,7 +54,7 @@ export class Menu {
         this.message = null;
         switch (this.cursor.main) {
           case 0: this.state = 'single'; break;
-          case 1: this.message = 'there is one player: no multiplayer yet'; break;
+          case 1: this.state = null; this.actions.multiplayer?.(); break;   // a deathmatch with bots (sql/bots.sql)
           case 2: this.state = 'options'; break;
           case 3: this.state = 'help'; this.helpPage = 0; break;
           default: this.state = 'quit'; break;

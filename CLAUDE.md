@@ -16,6 +16,7 @@ npm test                       # SQL smoke test on E1M1
 npm run test:boss | test:registered | test:infight | test:skill | test:e1m2 … test:e1m8   # the scene tests
 npm run test:save              # save games: saved, played on, loaded back, in both modes and after a reload
 npm run test:demo              # demos: a game recorded and played back bit for bit (QCJIT=all: playback compiled)
+npm run test:dm                # deathmatch and coop with PSQL bots (QuakeC mode): frags, respawns, fraglimit, a bot demo
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
 npm run test:qctic             # the page's QuakeC mode: qc_tic's row, the intermission, a level change
