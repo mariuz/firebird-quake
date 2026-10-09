@@ -120,7 +120,7 @@ console.log(`worldspawn: ${ds} statements in ${dt.toFixed(0)} ms (${(dt / ds * 1
 
 // ── E1M1 spawned through its QuakeC spawn functions, then five frames of thinks ─
 const res = await loadResources(db, pak);
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 const engineEnts = (await q1("SELECT COUNT(*) n FROM ents WHERE classname <> 'player'")).N;
 const mapEnts = (await q1('SELECT COUNT(*) n FROM map_ents')).N;
 await db.exec('EXECUTE PROCEDURE qc_reset');

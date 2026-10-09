@@ -57,7 +57,7 @@ async function deathmatch(nbots, { coop = 0, fraglimit = 0, seed = 11 } = {}) {
   await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
 }
 
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 await loadProgs(db, pak);
 
 // ── E1M1 as a deathmatch with two bots ──────────────────────────────────────
@@ -159,7 +159,7 @@ assert((await field(grunt, 'health')) < ghp, `and shoots it (health ${ghp} → $
 
 // ── a deathmatch demo: the bots replay as well ─────────────────────────────
 await db.exec('EXECUTE PROCEDURE qc_leave');
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 await db.exec('EXECUTE PROCEDURE qc_setup_server(1, 0, 2, 0, 0)');
 await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
 await db.exec('EXECUTE PROCEDURE demo_record');

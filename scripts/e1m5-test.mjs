@@ -35,7 +35,7 @@ const teleport = async (x, y, z, yaw) => {
 };
 
 // ── the crucified zombies ───────────────────────────────────────────────
-await loadMap(db, pak, res, 'start', { skill: 1 });
+await loadMap(db, pak, res, 'start', { skill: 1, seed: 1 });
 let s = await tic();
 const cruc = await qa("SELECT id, st, solid, takedamage, health, frame, anim FROM ents WHERE mtype = 'zombie' AND st = 'cruc'");
 assert(cruc.length === 9, `nine crucified zombies hang on the start map's walls (${cruc.length})`);
@@ -55,7 +55,7 @@ assert(moaned > 0, 'one of them moaned');
 assert((await qa("SELECT id FROM frame_ents")).length >= 0, 'the frame query lists them when in view');
 
 // ── Gloom Keep's moat ───────────────────────────────────────────────────
-await loadMap(db, pak, res, 'e1m5', { skill: 1 });
+await loadMap(db, pak, res, 'e1m5', { skill: 1, seed: 1 });
 s = await tic();
 assert(s.LEVEL_MSG === 'Gloom Keep', `the level is ${s.LEVEL_MSG}`);
 // a point in the moat: water in the point hull (which is what water levels use; the clip

@@ -25,7 +25,7 @@ const db = new FirebirdBrowser('memory://quake', { transport: new DirectTranspor
 await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 const res = await loadResources(db, pak);
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });   // seeded: movetogoal's random detours are the same every run
 const progs = await loadProgs(db, pak);
 if (process.env.QCJIT === 'all') {                 // every function compiled to its own procedure
   const jit = new QcJit(db, progs);

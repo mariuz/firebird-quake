@@ -29,7 +29,7 @@ const tic = (a = [1, 0, 0, 0, 0, 0, 0, 1, 0]) => q1('SELECT * FROM quake_tic(?,?
 // a long open floor (500 units east of a dog's post, the far end of E1M1), the locals dead and not solid,
 // the player in god mode, facing along it
 const spot = async () => {
-  await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+  await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
   const pe = (await q1('SELECT ent_id e FROM player')).E;
   await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE mtype IS NOT NULL`);
   await db.exec(`UPDATE ents SET x = -72, y = 2896, z = -56, yaw = 0, vx = 0, vy = 0, vz = 0, flags = BIN_OR(flags, 64) WHERE id = ${pe}`);

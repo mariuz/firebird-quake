@@ -29,7 +29,7 @@ const tic = (a = [1, 0, 0, 0, 0, 0, 0, 1, 0]) => q1('SELECT * FROM quake_tic(?,?
 const run = async (n) => { let s; for (let i = 0; i < n; i++) s = await tic(); return s; };
 
 // ── the start map's halls ────────────────────────────────────────────────
-await loadMap(db, pak, res, 'start', { skill: 1 });
+await loadMap(db, pak, res, 'start', { skill: 1, seed: 1 });
 const pe = (await q1('SELECT ent_id e FROM player')).E;
 const halls = await qa("SELECT id, TRIM(message) msg, (minx + maxx) / 2 cx, (miny + maxy) / 2 cy, minz, maxz FROM ents WHERE classname = 'trigger_setskill' ORDER BY id");
 assert(halls.length >= 4, `the start map has its skill halls: ${halls.map((h) => h.MSG).join(', ')}`);
@@ -42,7 +42,7 @@ for (const h of halls) {
 
 // ── nightmare: no wait before attacking, no flinching for five seconds ────
 const knightOn = async (skill) => {
-  await loadMap(db, pak, res, 'e1m1', { skill });
+  await loadMap(db, pak, res, 'e1m1', { skill, seed: 1 });
   await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE mtype IS NOT NULL`);
   await db.exec(`UPDATE ents SET flags = BIN_OR(flags, 64) WHERE id = (SELECT ent_id FROM player)`);   // god mode
   await tic();
@@ -73,7 +73,7 @@ assert(nm[0] === 'pain' && nm[1] !== 'pain', `on nightmare, it flinches once, th
 assert((await st(k)).PF > r.TIME_ + 3, 'pain_finished is five seconds ahead');
 
 // ── QuakeC mode: trigger_setskill's localcmd ─────────────────────────────
-await loadMap(db, pak, res, 'start', { skill: 1 });
+await loadMap(db, pak, res, 'start', { skill: 1, seed: 1 });
 await loadProgs(db, pak);
 for (const part of ['skill ', '3', '\\n']) {
   await db.exec(`EXECUTE PROCEDURE qc_sg(4, qc_newstr('${part}'))`);

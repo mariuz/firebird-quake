@@ -34,7 +34,7 @@ const res = await loadResources(db, pak);
 console.log(`resources     ${(t() - t0).toFixed(0)} ms (${res.models.size} models)`);
 
 t0 = t();
-const bsp = await loadMap(db, pak, res, mapName);
+const bsp = await loadMap(db, pak, res, mapName, { seed: 1 });   // seeded: the same random choices every run
 console.log(`map ${mapName}      ${(t() - t0).toFixed(0)} ms`);
 
 const counts = (await db.query(

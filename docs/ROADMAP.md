@@ -43,7 +43,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 ## Tooling and tests
 
 - ~~**CI takes about three minutes**~~ (it had grown to eight in one job) done: the tests run as a matrix of five groups side by side after one job caches the paks, and the site is built when they all pass.
-- **Flakiness** has three sources, all seen: random first thinks (wait 0.75 s before asserting on monsters), random AI choices near the scene (kill the bystanders), and event expiry (look each tic). The seeded `rnd()` makes each fixed: a test that passes `seed` to `loadMap` gets the same first thinks and the same AI choices every run.
+- ~~**Flakiness**~~ done: every scene test loads its levels with `seed: 1` (only the demo test records from a random seed, on purpose), so random first thinks and AI choices are the same every run; the last flake (the QuakeC dog's `movetogoal` detours in `test:qcai`, which failed once in CI) is gone with it. Event expiry (look each tic) is still the tests' own care.
 - ~~`bench.mjs` should also time the painter~~ done: `scripts/paint-bench.mjs` (`npm run bench:paint`) paints four scenes at both resolutions, warm and cold.
 - The screenshots page has every level of episodes 1 and 2, the first three of episode 3, and (from where the player starts) every LibreQuake lite level; E3M4 to E3M7 and episode 4 are not pictured (they need the registered pak).
 - ~~A **LibreQuake scene test**~~ done: `npm run test:lq` (every level, and lq_e0m7's boss trap).

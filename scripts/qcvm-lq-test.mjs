@@ -27,7 +27,7 @@ const db = new FirebirdBrowser('memory://lq', { transport: new DirectTransport()
 await createSchema(db, sql);
 const pak = new PakSet(['pak0.pak', 'pak1.pak'].filter((f) => fs.existsSync(path.join(dir, f))).map((f) => new Pak(fs.readFileSync(path.join(dir, f)).buffer)));
 const res = await loadResources(db, pak);
-await loadMap(db, pak, res, MAP, { skill: 1 });
+await loadMap(db, pak, res, MAP, { skill: 1, seed: 1 });
 const progs = await loadProgs(db, pak);
 const q1 = (s) => db.query(s).then((r) => r.rows[0]);
 const qa = (s) => db.query(s).then((r) => r.rows);

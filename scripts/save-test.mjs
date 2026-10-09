@@ -48,7 +48,7 @@ const qcSnapshot = async () => JSON.stringify({
 });
 
 // ── the PSQL game ──────────────────────────────────────────────────────────
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 for (let i = 0; i < 20; i++) await tic(1, i === 10 ? 1 : 0);
 let r = await tic();
 const saved = await snapshot();
@@ -79,9 +79,9 @@ const exported = JSON.stringify(await exportSave(db, 0));
 const worldBefore = (await q1('SELECT world_model w FROM game')).W;
 await db.exec('EXECUTE PROCEDURE delete_save(0)');
 assert(!(await q1('SELECT COUNT(*) n FROM sv_ents WHERE slot = 0')).N, `delete_save empties the slot (the export is ${(exported.length / 1024).toFixed(0)} KB of JSON)`);
-await loadMap(db, pak, res, 'e1m2', { skill: 1 });
+await loadMap(db, pak, res, 'e1m2', { skill: 1, seed: 1 });
 for (let i = 0; i < 5; i++) await tic(1);
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 const worldNow = (await q1('SELECT world_model w FROM game')).W;
 assert(worldNow !== worldBefore, `E1M1's world model is ${worldNow} now, ${worldBefore} when saved`);
 await importSave(db, JSON.parse(exported), 5);
@@ -102,12 +102,12 @@ assert(await refused('EXECUTE PROCEDURE save_game(1)', "Can't savegame with a de
 await db.exec(`UPDATE ents SET deadflag = 0, health = 100 WHERE id = ${pe}; UPDATE game SET intermission = 1, exit_kind = 1`);
 assert(await refused('EXECUTE PROCEDURE save_game(1)', "Can't save in intermission"), "nor in the intermission");
 assert(await refused('EXECUTE PROCEDURE load_game(1)', 'empty'), 'an empty slot is refused');
-await loadMap(db, pak, res, 'e1m2', { skill: 1 });
+await loadMap(db, pak, res, 'e1m2', { skill: 1, seed: 1 });
 assert(await refused('EXECUTE PROCEDURE load_game(5)', "load the save's map first"), "a save is loaded only onto its own map");
 
 // ── QuakeC mode ────────────────────────────────────────────────────────────
 await db.exec('EXECUTE PROCEDURE qc_leave');
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 await loadProgs(db, pak);
 await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
 for (let i = 0; i < 30; i++) r = await qcTic(1, i === 15 ? 1 : 0);
@@ -121,7 +121,7 @@ const qcExported = JSON.stringify(await exportSave(db, 2));
 for (let i = 0; i < 40; i++) await qcTic(1, i % 8 === 0 ? 1 : 0, 2);
 assert((await qcSnapshot()) !== qcSaved, 'forty QuakeC frames later the VM has moved on');
 // the page: the map again, QuakeC mode entered without a spawn, the slot imported, load_game
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 await db.exec('EXECUTE PROCEDURE qc_enter');
 await importSave(db, JSON.parse(qcExported), 6);
 await db.exec('EXECUTE PROCEDURE load_game(6)');
@@ -132,7 +132,7 @@ assert(r.HEALTH > 0 && Math.hypot(r.PX - qcPos.x, r.PY - qcPos.y) < 400, `progs.
 
 // a PSQL save loaded after QuakeC mode leaves QuakeC mode
 await db.exec('EXECUTE PROCEDURE qc_leave');
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 await importSave(db, JSON.parse(exported), 0);
 await db.exec('EXECUTE PROCEDURE load_game(0)');
 assert((await snapshot()) === saved && (await q1('SELECT qc_mode m FROM game')).M === 0, 'the PSQL save loads back over QuakeC mode, in the PSQL game');

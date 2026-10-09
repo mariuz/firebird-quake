@@ -44,13 +44,13 @@ async function jump() {
 }
 
 // ── the normal world first, for comparison ──────────────────────────────
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 assert((await q1('SELECT gravity g FROM game')).G === 800, 'E1M1 has sv_gravity 800');
 const normal = await jump();
 assert(normal.height > 35 && normal.height < 60, `an E1M1 jump rises ${normal.height.toFixed(0)} units (Quake: ~45)`);
 
 // ── Ziggurat Vertigo ───────────────────────────────────────────────────
-await loadMap(db, pak, res, 'e1m8', { skill: 1 });
+await loadMap(db, pak, res, 'e1m8', { skill: 1, seed: 1 });
 let s = await tic();
 assert(s.MAP_NAME === 'e1m8' && s.LEVEL_MSG === 'Ziggurat Vertigo', `the level is ${s.LEVEL_MSG}`);
 assert((await q1('SELECT gravity g FROM game')).G === 100, 'worldspawn sets sv_gravity 100 on E1M8');
@@ -111,7 +111,7 @@ const s2 = await tic();
 assert(Math.abs(s2.PX - s.PX) < 0.01 && Math.abs(s2.PZ - s.PZ) < 0.01, 'and the camera stays put');
 
 // and back on E1M5 gravity is normal again
-await loadMap(db, pak, res, 'e1m5', { skill: 1, newGame: false });
+await loadMap(db, pak, res, 'e1m5', { skill: 1, newGame: false, seed: 1 });
 assert((await q1('SELECT gravity g FROM game')).G === 800, 'E1M5 restores sv_gravity 800');
 
 await db.close();

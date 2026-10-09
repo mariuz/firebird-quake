@@ -52,12 +52,12 @@ const standIn = async (b) => {
 };
 
 // ── the PSQL game's row, for its shape ─────────────────────────────────────
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 const psqlRow = await q1('SELECT * FROM quake_tic(1, 0, 0, 0, 0, 0, 0, 1, 0)');
 
 // ── E1M1 in QuakeC mode, as the page starts it ─────────────────────────────
 await db.exec('EXECUTE PROCEDURE qc_leave');
-await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 const progs = await loadProgs(db, pak);
 if (process.env.QCJIT === 'all') {                 // every function compiled to its own procedure
   const jit = new QcJit(db, progs);
@@ -127,7 +127,7 @@ assert(r.EXIT_KIND === 1 && r.NEXT_MAP === 'e1m2', `after the wait, fire: ExitIn
 // ── the level change, as the page makes it ────────────────────────────────
 const carried = { shells: r.SHELLS, health: r.HEALTH, items: r.ITEMS };
 await db.exec('EXECUTE PROCEDURE qc_change_parms');
-await loadMap(db, pak, res, 'e1m2', { skill: 1, newGame: false });
+await loadMap(db, pak, res, 'e1m2', { skill: 1, newGame: false, seed: 1 });
 await db.exec('EXECUTE PROCEDURE qc_begin_map(1, 1)');
 r = await qcTic();
 assert(r.MAP_NAME === 'e1m2' && r.LEVEL_MSG === 'Castle of the Damned' && r.EXIT_KIND === 0 && r.TOTAL_MONSTERS > 0, `E1M2 spawned by progs.dat: ${r.TOTAL_MONSTERS} monsters`);

@@ -30,7 +30,7 @@ const run = async (n, a) => { let s; for (let i = 0; i < n; i++) s = await tic(a
 
 // a quiet open spot in E1M1 (the wide hall beyond the first grunt), facing +x
 const spot = async () => {
-  await loadMap(db, pak, res, 'e1m1', { skill: 1 });
+  await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
   const pe = (await q1('SELECT ent_id e FROM player')).E;
   await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, nextthink = NULL WHERE mtype IS NOT NULL`);   // the locals stay out of it
   await db.exec(`UPDATE ents SET x = 160, y = 576, z = 48, yaw = 180, vx = 0, vy = 0, vz = 0, flags = BIN_OR(flags, 64) WHERE id = ${pe}`);  // god mode

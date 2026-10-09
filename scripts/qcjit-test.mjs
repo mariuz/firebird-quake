@@ -110,7 +110,7 @@ await db.close();
 const db2 = new FirebirdBrowser('memory://play', { transport: new DirectTransport() });
 await createSchema(db2, sql);
 const res2 = await loadResources(db2, pak);
-await loadMap(db2, pak, res2, 'e1m1', { skill: 1 });
+await loadMap(db2, pak, res2, 'e1m1', { skill: 1, seed: 1 });
 const jit2 = new QcJit(db2, await loadProgs(db2, pak));
 await jit2.init();
 await db2.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');

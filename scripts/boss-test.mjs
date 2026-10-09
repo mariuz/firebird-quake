@@ -23,7 +23,7 @@ const db = new FirebirdBrowser('memory://quake', { transport: new DirectTranspor
 await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 const res = await loadResources(db, pak);
-await loadMap(db, pak, res, 'e1m7', { skill: 1 });
+await loadMap(db, pak, res, 'e1m7', { skill: 1, seed: 1 });
 
 const q1 = (s, p = []) => db.query(s, p).then((r) => r.rows[0]);
 const qa = (s, p = []) => db.query(s, p).then((r) => r.rows);
@@ -56,7 +56,7 @@ assert(b.HEALTH === 3, 'lightning with the terminals down does not hurt Chthon')
 assert((await q1('SELECT COUNT(*) n FROM fx_events WHERE kind = 4')).N === 0, 'no bolt was drawn');
 
 // restart cleanly: the real wake-up is the rune
-await loadMap(db, pak, res, 'e1m7', { skill: 1 });
+await loadMap(db, pak, res, 'e1m7', { skill: 1, seed: 1 });
 pe = (await q1('SELECT ent_id e FROM player')).E;   // a new player entity
 b = await boss();
 await teleport(sigil.X, sigil.Y, sigil.Z + 48, 0);   // feet above the floor it dropped onto

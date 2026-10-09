@@ -23,7 +23,7 @@ const db = new FirebirdBrowser('memory://quake', { transport: new DirectTranspor
 await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 const res = await loadResources(db, pak);
-await loadMap(db, pak, res, 'e1m2', { skill: 1 });
+await loadMap(db, pak, res, 'e1m2', { skill: 1, seed: 1 });
 const q1 = (s, p = []) => db.query(s, p).then((r) => r.rows[0]);
 const qa = (s, p = []) => db.query(s, p).then((r) => r.rows);
 const tic = (a = [1, 0, 0, 0, 0, 0, 0, 1, 0]) => q1('SELECT * FROM quake_tic(?,?,?,?,?,?,?,?,?)', a);
