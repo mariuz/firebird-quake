@@ -16,146 +16,119 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  # The paks, fetched once and cached for the test jobs: the shareware pak0.pak (inside an LHA archive in
+  # quake106.zip) and LibreQuake lite (free game data, BSD-3: a whole free game in public/pak/lq1/, and a
+  # pak1.pak whose models give the registered monsters a free look beside the shareware pak0.pak)
+  paks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      # The shareware pak sits inside an LHA archive in quake106.zip
-      - run: sudo apt-get install -y lhasa
-
       - name: Cache the paks (shareware, LibreQuake)
         id: pak
         uses: actions/cache@v4
         with:
           path: public/pak/
           key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
-
-      - name: Fetch the shareware pak
+      - name: Fetch the paks
         if: steps.pak.outputs.cache-hit != 'true'
-        run: npm run fetch-pak
+        run: |
+          sudo apt-get install -y lhasa
+          npm run fetch-pak
+          npm run fetch-pak -- --librequake
 
-      # LibreQuake lite (free game data, BSD-3): a whole free game in public/pak/lq1/, and a pak1.pak
-      # whose models give the registered monsters a free look beside the shareware pak0.pak
-      - name: Fetch LibreQuake
-        if: steps.pak.outputs.cache-hit != 'true'
-        run: npm run fetch-pak -- --librequake
+  # The tests, in groups that run side by side (each about as long as the others); every test runs the
+  # game's SQL inside the real Firebird WASM engine under Node
+  test:
+    needs: paks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # demos played back bit for bit; the skills; infighting; Ziggurat Vertigo's low gravity
+          - group: demos and monsters
+            run: |
+              npm run test:demo
+              npm run test:skill
+              npm run test:infight
+              npm run test:e1m8
+              npm run test:boss
+          # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode,
+          # its monsters
+          - group: QuakeC
+            run: |
+              npm run test:qcjit
+              npm run test:qcvm
+              npm run test:qcplay
+              npm run test:qctic
+              npm run test:qcai
+          # LibreQuake: its smoke test, levels, boss trap and progs.dat; deathmatch bots; BSP2 maps
+          - group: LibreQuake and deathmatch
+            run: |
+              PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/sql-smoke.mjs start
+              npm run test:lq
+              npm run test:qclq
+              npm run test:dm
+              npm run test:bsp2
+          # the smoke test on E1M1; saves; slime and lava; the registered monsters; the shambler and the
+          # fireballs; see-through water
+          - group: game rules
+            run: |
+              npm test
+              npm run test:save
+              npm run test:hazard
+              npm run test:registered
+              npm run test:fire
+              npm run test:water
+          # episode 1's set pieces: the drawbridge, the zombie pits, the underwater secret, the flooded moat,
+          # the gold key
+          - group: episode 1
+            run: |
+              npm run test:e1m2
+              npm run test:e1m3
+              npm run test:e1m4
+              npm run test:e1m5
+              npm run test:e1m6
+    name: test (${{ matrix.group }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: The paks, from the cache
+        uses: actions/cache/restore@v4
+        with:
+          path: public/pak/
+          key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
+          fail-on-cache-miss: true
+      - name: ${{ matrix.group }}
+        run: ${{ matrix.run }}
 
-      # Runs the game's SQL inside the real Firebird WASM engine under Node:
-      # loads E1M1, walks, shoots, opens a door, renders frames.
-      - name: SQL smoke test
-        run: npm test
-
-      # The same game logic over LibreQuake's data: its models carry no frame names, so the id frame
-      # layouts (src/framelayouts.js) drive them
-      - name: LibreQuake smoke test
-        run: PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/sql-smoke.mjs start
-
-      # Picks up the rune, Chthon rises, lava, both terminals, three bolts, the exit opens
-      - name: The House of Chthon
-        run: npm run test:boss
-
-      # The pak1 monsters' AI (enforcer, death knight, vore, spawn, rotfish, Shub-Niggurath), without pak1
-      - name: The registered monsters
-        run: npm run test:registered
-
-      - name: Monsters fighting monsters
-        run: npm run test:infight
-
-      - name: The skills, nightmare included
-        run: npm run test:skill
-
-      # E1M1 saved mid-play and loaded back, in both modes, also onto a reloaded map
-      - name: Save games
-        run: npm run test:save
-
-      # A game recorded and played back bit for bit, in both modes, fresh and after another level
-      - name: Demos
-        run: npm run test:demo
-
-      # Deathmatch and coop in QuakeC mode against bots played by PSQL
-      - name: Deathmatch and bots
-        run: npm run test:dm
-
-      # Slime and lava damage as WaterMove does it, both modes
-      - name: Hazards
-        run: npm run test:hazard
-
-      # The shambler's lightning frames and the lava fireballs
-      - name: Shambler lightning and fireballs
-        run: npm run test:fire
-
-      # BSP2 and 2PSB: E1M1 rewritten in both formats, the same rows and the same game
-      - name: BSP2 maps
-        run: npm run test:bsp2
-
-      # See-through liquids, only where the map was vised for them
-      - name: Transparent water
-        run: npm run test:water
-
-      # LibreQuake's levels, and lq_e0m7's boss trap (trigger_hurt)
-      - name: LibreQuake levels
-        run: npm run test:lq
-
-      # Ziggurat Vertigo: low gravity, long jumps, grenades that fly, the exit to E1M5
-      - name: Ziggurat Vertigo
-        run: npm run test:e1m8
-
-      # The crucified zombies (start map) and Gloom Keep's flooded moat: swimming, breath, drowning
-      - name: Crucified zombies and the flooded moat
-        run: npm run test:e1m5
-
-      # Castle of the Damned: the drawbridge slab sinks into the moat and the player wades across
-      - name: The drawbridge
-        run: npm run test:e1m2
-
-      # The Necropolis: the gold key springs the zombie pits; zombies shrug off pellets, go down, get up, throw flesh, die only gibbed
-      - name: The zombie pits
-        run: npm run test:e1m3
-
-      # The Grisly Grotto: two buttons open the underwater door, swim through, surface by the ledge for the secret, water-jump out, take the exit to E1M8
-      - name: The underwater secret
-        run: npm run test:e1m4
-
-      # The Door To Chthon: the gold runekey doors refuse, the key wakes its guard, the doors take the key and open, the exit to E1M7
-      - name: The gold key
-        run: npm run test:e1m6
-
-      # The QuakeC VM in PSQL runs the real progs.dat: pure functions, builtins, entity fields, worldspawn
-      - name: The QuakeC VM
-        run: npm run test:qcvm
-
-      # QuakeC mode: E1M1 played by the original progs.dat on the engine's physics
-      - name: QuakeC on the engine's physics
-        run: npm run test:qcplay
-
-      # The page's QuakeC mode: qc_tic's row, the intermission, and a level change carrying the parms
-      - name: The page in QuakeC mode
-        run: npm run test:qctic
-
-      # progs.dat's monsters on the engine: a grunt sees, shoots and dies; a dog runs at the player
-      - name: QuakeC monsters
-        run: npm run test:qcai
-
-      - name: QuakeC compiled to PSQL
-        run: npm run test:qcjit
-
-      - name: LibreQuake in QuakeC mode
-        run: npm run test:qclq
-
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: The paks, from the cache
+        uses: actions/cache/restore@v4
+        with:
+          path: public/pak/
+          key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
+          fail-on-cache-miss: true
       - name: Headless screenshots
         run: npm run screenshots
-
       - name: Build site
         run: npm run build
-
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

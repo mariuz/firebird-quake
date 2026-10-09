@@ -65,8 +65,8 @@ call `RAND()` in game code (only `init_map` does, to pick a seed), or demos stop
 Copy the nearest `scripts/e1mN-test.mjs`: `teleport`, `run`, `sounds`, `q1`/`qa` helpers; find
 positions with the entity table (`SELECT ... FROM ents WHERE classname = ...`) and `test_position`;
 fire procedures directly (`door_fire`, `button_fire`, `trigger_fire`, `boss_awake`) to stage; assert
-on `ents` and the tic row. Add it to `package.json` and as a step in `.github/workflows/pages.yml`,
-and a row in the README's test table.
+on `ents` and the tic row. Add it to `package.json`, to one of the test groups of the matrix in
+`.github/workflows/pages.yml` (keep the groups about equally long), and a row in the README's test table.
 
 ## Adding screenshots of a level
 

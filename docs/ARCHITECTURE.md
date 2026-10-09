@@ -412,10 +412,13 @@ Timings on a desktop (E1M1, `npm run bench`): a tic 6 ms idle and 12 ms walking;
 
 ## 14. CI and deployment (`.github/workflows/pages.yml`)
 
-Every push to `main`: install, cache or fetch the paks (shareware and LibreQuake), the SQL smoke test,
-the LibreQuake smoke test, the nine scene tests one step each, headless screenshots, the build, and
-the deploy to GitHub Pages at https://mariuz.github.io/firebird-quake/. The pak files are never
-committed (`.gitignore`); the registered `pak1.pak` is only ever local.
+Every push to `main`: the `paks` job fetches the shareware pak and LibreQuake into the Actions cache
+(once; a hit skips it), then the `test` job runs as a matrix of five groups side by side (demos and
+monsters, QuakeC, LibreQuake and deathmatch, game rules, episode 1), each restoring the paks from the
+cache and running its tests one after another, about as long as the others; when all pass, `build`
+renders the headless screenshots and builds the site, and `deploy` publishes it to GitHub Pages at
+https://mariuz.github.io/firebird-quake/. A new test goes into the group that keeps the groups even.
+The pak files are never committed (`.gitignore`); the registered `pak1.pak` is only ever local.
 
 ## 15. Firebird lessons, in full
 

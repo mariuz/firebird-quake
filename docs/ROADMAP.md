@@ -42,7 +42,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 ## Tooling and tests
 
-- **CI takes about three minutes** because the nine scene tests run one after another; a matrix job per test would halve it.
+- ~~**CI takes about three minutes**~~ (it had grown to eight in one job) done: the tests run as a matrix of five groups side by side after one job caches the paks, and the site is built when they all pass.
 - **Flakiness** has three sources, all seen: random first thinks (wait 0.75 s before asserting on monsters), random AI choices near the scene (kill the bystanders), and event expiry (look each tic). The seeded `rnd()` makes each fixed: a test that passes `seed` to `loadMap` gets the same first thinks and the same AI choices every run.
 - ~~`bench.mjs` should also time the painter~~ done: `scripts/paint-bench.mjs` (`npm run bench:paint`) paints four scenes at both resolutions, warm and cold.
 - The screenshots page has every level of episodes 1 and 2 and the first three of episode 3; E3M4 to E3M7, episode 4, and LibreQuake's levels are not pictured.
