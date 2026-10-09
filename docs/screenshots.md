@@ -536,3 +536,26 @@ liquids stay opaque.
 PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs lq_e0m2 docs/water-opaque      --at=-1421,341,-144,0 --sql="UPDATE player SET pitch = 45" --tics=2 --single --fast --wateralpha=1
 PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs lq_e0m2 docs/water-translucent --at=-1421,341,-144,0 --sql="UPDATE player SET pitch = 45" --tics=2 --single --fast --wateralpha=0.5
 ```
+
+## LibreQuake
+
+LibreQuake lite's levels (`npm run fetch-librequake`), each from where its player starts: the free
+game data on the same SQL, its models driven by id's frame layouts. `npm run test:lq` plays them.
+
+![start, Tainted Tech Threshold](lq-start-start-0.png) ![lq_e0m1, Baseless Base Banter](lq-start-lq_e0m1-0.png) ![lq_e0m2, Cruel Cave Conundrum](lq-start-lq_e0m2-0.png) ![lq_e0m3, Mountainous Mining Menace](lq-start-lq_e0m3-0.png) ![lq_e0m4, Feint-free funtime](lq-start-lq_e0m4-0.png) ![lq_e0m5, Adequate Aquatic Adventure](lq-start-lq_e0m5-0.png) ![lq_e0m6, Great Greek Grinder](lq-start-lq_e0m6-0.png) ![lq_e0m7, Beyond Baneful Boundaries](lq-start-lq_e0m7-0.png) ![lq_e0m8, Satan's Smelly Spawn](lq-start-lq_e0m8-0.png)
+
+1. start: Tainted Tech Threshold
+2. lq_e0m1: Baseless Base Banter
+3. lq_e0m2: Cruel Cave Conundrum
+4. lq_e0m3: Mountainous Mining Menace
+5. lq_e0m4: Feint-free funtime
+6. lq_e0m5: Adequate Aquatic Adventure
+7. lq_e0m6: Great Greek Grinder
+8. lq_e0m7: Beyond Baneful Boundaries
+9. lq_e0m8: Satan's Smelly Spawn
+
+```bash
+for m in start lq_e0m1 lq_e0m2 lq_e0m3 lq_e0m4 lq_e0m5 lq_e0m6 lq_e0m7 lq_e0m8; do
+  PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/screenshot.mjs $m docs/lq-start --tics=8 --single --fast
+done
+```
