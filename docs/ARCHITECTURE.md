@@ -306,10 +306,12 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
 ## 9. The renderer in SQL (`sql/render.sql`)
 
 `view_setup` computes the camera from the player's row and `viewcfg`: forward/right/up, the
-projection scale, the near plane and the frustum planes. `mark_faces(pvs, leaf)` runs once per leaf
-change: it clears `vis_faces` and inserts every face of every leaf whose PVS bit is set (`JOIN`ing
-`marksurfaces` by range, not `IN`), plus every face of every visible brush model at its origin. The
-leaf is remembered in `viewcfg.vis_leaf`, so nothing is recomputed while the eye stays in a leaf.
+projection scale, the near plane and the frustum planes. `mark_faces(pvs, leaf)` marks a view leaf's
+world faces once, the first time the eye is in it: every face of every leaf whose PVS bit is set
+(`JOIN`ing `marksurfaces` by range, not `IN`) goes into `leaf_faces` under the leaf, and `leaf_marked`
+records it, so a return to the leaf (crossing a door back) costs nothing; `loadMap` empties both. The
+current leaf is `viewcfg.vis_leaf`, and the frame queries read its rows from `leaf_faces`, then every
+face of every visible brush model, which `mark_faces` puts into `vis_faces` at its origin each frame.
 
 `frame_faces_fast` (the default): fills `sel_faces` from `vis_faces` by dropping back faces (plane
 test at the eye) and faces whose bounding sphere is outside the frustum, and returns one row per face
@@ -422,6 +424,10 @@ committed (`.gitignore`); the registered `pak1.pak` is only ever local.
 - **`VARCHAR` beyond 8191** needs `CHARACTER SET ASCII` (the PVS strings, the loader chunks).
 - **No binary parameters** in the WASM build: bind text, parse in PSQL.
 - **`INSERT ... VALUES` takes one row**; bulk goes through the generated loaders.
+- **A procedure's plans are made when it is created**, with the tables empty: a join of a small keyed
+  table to a big one can come out as a scan of the big one probing the small one's whole key. Writing
+  the join as `f.id = lf.face + 0` takes that path away (the frame queries over `leaf_faces` went from
+  18 ms to 5); a derived table does not, since it is flattened.
 - **`THEN NULL;` is not a statement**: use `THEN BEGIN END`.
 - **`IIF`/`CASE` over literals pad to the longest**: `TRIM` anything that is compared as a string in JavaScript or used as a file name. SQL ignores trailing blanks in `=`, so this hides until a test compares strings.
 - **Floating-point time drifts**: compare `nextthink <= t + 1e-6`, or a 10 Hz think runs at 8 Hz.

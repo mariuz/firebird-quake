@@ -55,9 +55,19 @@ END^
 
 SET TERM ; ^
 
--- the marked faces (PSQL has no arrays; Quake has visframe): the world's
--- faces in the PVS of the leaf the eye is in (kept until the eye moves to
--- another leaf) at origin 0, and each visible brush model's at its own
+-- the world's faces in the PVS of each view leaf visited (R_MarkLeaves' result, kept per leaf: the first
+-- visit to a leaf marks them, a return to it costs nothing), emptied with the map by loadMap
+CREATE TABLE leaf_faces (
+  vleaf INTEGER NOT NULL,
+  face  INTEGER NOT NULL,
+  PRIMARY KEY (vleaf, face)
+);
+CREATE TABLE leaf_marked (
+  vleaf INTEGER NOT NULL PRIMARY KEY
+);
+
+-- this frame's visible brush-model entities' faces, each at its entity's origin (PSQL has no arrays;
+-- Quake has visframe); the world's are in leaf_faces under viewcfg.vis_leaf
 CREATE TABLE vis_faces (
   face   INTEGER NOT NULL,
   ent_id INTEGER NOT NULL,
@@ -75,10 +85,10 @@ CREATE GLOBAL TEMPORARY TABLE sel_faces (
 
 SET TERM ^ ;
 
--- mark_faces: R_MarkLeaves. Once per view leaf, every face of every leaf in
--- the PVS goes into VIS_FACES at origin 0 (kept until the eye moves to
--- another leaf); every frame, the brush-model entities whose leaves are in
--- the PVS are added at their own origin.
+-- mark_faces: R_MarkLeaves. The first time the eye is in a leaf, every face of every leaf in its PVS goes
+-- into leaf_faces under it (a return to a leaf finds them there: no 15 ms spike crossing a door again);
+-- viewcfg.vis_leaf says which leaf the frame queries read; every frame the brush-model entities whose
+-- leaves are in the PVS go into vis_faces at their own origin.
 CREATE OR ALTER PROCEDURE mark_faces (pvs d_pvs, vleaf INTEGER)
 AS
 DECLARE cur INTEGER; DECLARE world INTEGER;
@@ -89,16 +99,19 @@ BEGIN
   SELECT c.vis_leaf FROM viewcfg c WHERE c.id = 1 INTO cur;
   IF (cur IS DISTINCT FROM vleaf) THEN
   BEGIN
-    DELETE FROM vis_faces;
-    INSERT INTO vis_faces (face, ent_id, ox, oy, oz)
-    SELECT DISTINCT m.face, 0, 0, 0, 0
-      FROM leaves l
-      JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms
-     WHERE l.id > 0 AND l.contents <> -2 AND l.num_ms > 0
-       AND (:pvs = '' OR BIN_AND(POSITION(SUBSTRING(:pvs FROM BIN_SHR(l.id - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(l.id - 1, 3))) <> 0);
+    IF (NOT EXISTS (SELECT 1 FROM leaf_marked k WHERE k.vleaf = :vleaf)) THEN
+    BEGIN
+      INSERT INTO leaf_faces (vleaf, face)
+      SELECT DISTINCT :vleaf, m.face
+        FROM leaves l
+        JOIN marksurfaces m ON m.id >= l.first_ms AND m.id < l.first_ms + l.num_ms
+       WHERE l.id > 0 AND l.contents <> -2 AND l.num_ms > 0
+         AND (:pvs = '' OR BIN_AND(POSITION(SUBSTRING(:pvs FROM BIN_SHR(l.id - 1, 2) + 1 FOR 1), '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(l.id - 1, 3))) <> 0);
+      INSERT INTO leaf_marked (vleaf) VALUES (:vleaf);
+    END
     UPDATE viewcfg c SET c.vis_leaf = :vleaf WHERE c.id = 1;
   END
-  ELSE DELETE FROM vis_faces v WHERE v.ent_id <> 0;
+  DELETE FROM vis_faces;
 
   FOR SELECT e.id, e.model_id, e.x, e.y, e.z, e.leafs FROM ents e JOIN models m ON m.id = e.model_id
        WHERE m.kind = 'B' AND e.model_id <> :world INTO eid, emid, ox, oy, oz, leafs
@@ -140,6 +153,22 @@ BEGIN
   EXECUTE PROCEDURE view_setup RETURNING_VALUES ex, ey, ez, fx, fy, fz, rx, ry, rz, ux, uy, uz, w, h, sc, nearz, kx, ky, pvs, vleaf;
   qx = SQRT(1 + kx * kx); qy = SQRT(1 + ky * ky);
   EXECUTE PROCEDURE mark_faces(pvs, vleaf);
+  -- the world's faces in the view leaf's PVS, at origin 0
+  ent_id = 0; ox = 0; oy = 0; oz = 0;
+  FOR SELECT f.id
+        -- the leaf's faces, then each one's row: "+ 0" keeps the plan (made when the tables were empty) from
+        -- scanning every face and probing leaf_faces by its whole key instead
+        FROM leaf_faces lf
+        JOIN faces f ON f.id = lf.face + 0
+       WHERE lf.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
+         AND (f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz + f.radius >= :nearz
+         AND ABS((f.cx - :ex) * :rx + (f.cy - :ey) * :ry + (f.cz - :ez) * :rz)
+             <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :kx + f.radius * :qx
+         AND ABS((f.cx - :ex) * :ux + (f.cy - :ey) * :uy + (f.cz - :ez) * :uz)
+             <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :ky + f.radius * :qy
+        INTO face
+  DO SUSPEND;
+  -- then the visible brush models' faces, each at its entity's origin
   FOR SELECT v.face, v.ent_id, v.ox, v.oy, v.oz
         FROM vis_faces v
         JOIN faces f ON f.id = v.face
@@ -181,6 +210,16 @@ BEGIN
   -- same arithmetic as PSQL statements. Vertices behind the near plane
   -- project to NULL; the painter clips those edges in view space.
   DELETE FROM sel_faces;
+  INSERT INTO sel_faces (face, ent_id, ox, oy, oz)
+  SELECT f.id, 0, 0, 0, 0
+    FROM leaf_faces lf
+    JOIN faces f ON f.id = lf.face + 0
+   WHERE lf.vleaf = :vleaf AND f.nx * :ex + f.ny * :ey + f.nz * :ez - f.dist > 0
+     AND (f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz + f.radius >= :nearz
+     AND ABS((f.cx - :ex) * :rx + (f.cy - :ey) * :ry + (f.cz - :ez) * :rz)
+         <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :kx + f.radius * :qx
+     AND ABS((f.cx - :ex) * :ux + (f.cy - :ey) * :uy + (f.cz - :ez) * :uz)
+         <= ((f.cx - :ex) * :fx + (f.cy - :ey) * :fy + (f.cz - :ez) * :fz) * :ky + f.radius * :qy;
   INSERT INTO sel_faces (face, ent_id, ox, oy, oz)
   SELECT v.face, v.ent_id, v.ox, v.oy, v.oz
     FROM vis_faces v

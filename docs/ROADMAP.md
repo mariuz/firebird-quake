@@ -36,7 +36,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 ## Performance
 
 - A tic is 5 to 12 ms and a frame's queries 7 to 15 ms, and the painter 2 to 7 ms with the surface cache warm (`npm run bench:paint`), up to 15 ms when a scene's surfaces are all built afresh; the SQL side is now the larger share of a frame.
-- `mark_faces` on a leaf change is 15 ms: a spike when crossing doors. Marking by PVS could be cached per leaf in a table keyed by leaf id (space: faces × leaves, too much for a full table, fine for the leaves visited).
+- ~~`mark_faces` on a leaf change is 15 ms~~ done: a view leaf's world faces are marked once into `leaf_faces` (keyed by leaf) and read from there by the frame queries, so returning to a leaf costs nothing (`npm run bench`: a frame in a leaf seen before 5 ms, against about 21 when it was marked again; the first visit 16 ms; the same leaf 5 ms, from 6). The cache grows with the leaves visited (a few hundred rows each) and is emptied with the map.
 - `frame_faces` (the slow mode) remains four times the fast mode; it exists to prove the projection in SQL and for `--compare`.
 - The loaders: E1M1 loads in two seconds, the registered episodes' big maps in four to five; the per-row parsing in PSQL could be replaced by `EXECUTE BLOCK`s with many parameters if the engine ever binds binary.
 
