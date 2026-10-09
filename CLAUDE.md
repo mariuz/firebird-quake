@@ -17,6 +17,8 @@ npm run test:boss | test:registered | test:infight | test:skill | test:e1m2 … 
 npm run test:save              # save games: saved, played on, loaded back, in both modes and after a reload
 npm run test:demo              # demos: a game recorded and played back bit for bit (QCJIT=all: playback compiled)
 npm run test:dm                # deathmatch and coop with PSQL bots (QuakeC mode): frags, respawns, fraglimit, a bot demo
+npm run test:hazard            # slime and lava damage, with and without the biosuit, both modes
+npm run test:lq                # LibreQuake's levels and lq_e0m7's boss trap (needs npm run fetch-librequake)
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
 npm run test:qctic             # the page's QuakeC mode: qc_tic's row, the intermission, a level change

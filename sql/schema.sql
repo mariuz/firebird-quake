@@ -174,7 +174,7 @@ CREATE TABLE map_ents (
   light      INTEGER,
   style      INTEGER,
   sounds     INTEGER,
-  dmg        INTEGER,
+  dmg        DOUBLE PRECISION,          -- fractional in some maps (LibreQuake's trigger_hurt of 0.1)
   height     DOUBLE PRECISION,
   count_     INTEGER,
   map        VARCHAR(32),
@@ -182,6 +182,14 @@ CREATE TABLE map_ents (
   worldtype  INTEGER
 );
 CREATE INDEX map_ents_class ON map_ents (classname);
+-- every key of every entity as written (ED_ParseEdict sets any key that names a QuakeC field, so mods and
+-- LibreQuake can give a monster armorvalue; qc_spawn_map sets those map_ents has no column for)
+CREATE TABLE map_keys (
+  ent INTEGER NOT NULL,
+  k   VARCHAR(64) NOT NULL,
+  v   VARCHAR(2048) CHARACTER SET ASCII,
+  PRIMARY KEY (ent, k)
+);
 CREATE INDEX map_ents_tname ON map_ents (targetname);
 
 -- ── live entities (Quake's edicts) ──────────────────────────────────────

@@ -821,7 +821,17 @@ BEGIN
       END
     END
   END
-  ELSE IF (n = 69) THEN EXECUTE PROCEDURE qc_free(CAST(qc_g(4) AS INTEGER));                           -- makestatic
+  ELSE IF (n = 69) THEN                             -- makestatic(e): drawn from now on as a static entity, the edict freed
+  BEGIN
+    e = CAST(qc_g(4) AS INTEGER);
+    -- SV_MakeStatic_f's baseline: the model, frame, skin, origin and angles, in an ents row of their own above the
+    -- edicts (not solid, never thinks), which the renderer draws like any other
+    IF (qc_on() = 1) THEN
+      INSERT INTO ents (id, classname, model_id, frame, skin, effects, x, y, z, pitch, yaw, roll, solid, movetype, leaf, leafs)
+      SELECT 500000 + GEN_ID(ent_seq, 1), 'static', d.model_id, d.frame, d.skin, d.effects, d.x, d.y, d.z, d.pitch, d.yaw, d.roll, 0, 0, d.leaf, d.leafs
+        FROM ents d WHERE d.id = :e AND d.model_id IS NOT NULL;
+    EXECUTE PROCEDURE qc_free(e);
+  END
   ELSE IF (n = 70) THEN                             -- changelevel(map): the first one counts (svs.changelevel_issued)
   BEGIN
     s = qc_str(CAST(qc_g(4) AS INTEGER));
@@ -1169,8 +1179,9 @@ DECLARE f_sf INTEGER; DECLARE f_msg INTEGER; DECLARE f_wait INTEGER; DECLARE f_d
 DECLARE f_light INTEGER; DECLARE f_style INTEGER; DECLARE f_sounds INTEGER; DECLARE f_dmg INTEGER; DECLARE f_height INTEGER; DECLARE f_count INTEGER; DECLARE f_map INTEGER; DECLARE f_noise INTEGER; DECLARE f_wt INTEGER;
 DECLARE tn VARCHAR(40); DECLARE tg VARCHAR(40); DECLARE kt VARCHAR(40); DECLARE mdl VARCHAR(40); DECLARE msg VARCHAR(200); DECLARE mp VARCHAR(32); DECLARE nz VARCHAR(64);
 DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE ang DOUBLE PRECISION; DECLARE mp_ DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mr DOUBLE PRECISION;
-DECLARE wt DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE sp DOUBLE PRECISION; DECLARE lp DOUBLE PRECISION; DECLARE hl INTEGER; DECLARE li INTEGER; DECLARE st INTEGER; DECLARE so INTEGER; DECLARE dm INTEGER; DECLARE hg DOUBLE PRECISION; DECLARE cn INTEGER; DECLARE wtype INTEGER;
+DECLARE wt DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE sp DOUBLE PRECISION; DECLARE lp DOUBLE PRECISION; DECLARE hl INTEGER; DECLARE li INTEGER; DECLARE st INTEGER; DECLARE so INTEGER; DECLARE dm DOUBLE PRECISION; DECLARE hg DOUBLE PRECISION; DECLARE cn INTEGER; DECLARE wtype INTEGER;
 DECLARE dmatch SMALLINT;
+DECLARE kk VARCHAR(64); DECLARE kv VARCHAR(2048) CHARACTER SET ASCII; DECLARE ktp SMALLINT; DECLARE kofs INTEGER; DECLARE kp1 INTEGER; DECLARE kp2 INTEGER;
 BEGIN
   spawned = 0; failed = 0; skipped = 0;
   skillbit = CASE skill WHEN 0 THEN 256 WHEN 1 THEN 512 ELSE 1024 END;
@@ -1207,6 +1218,27 @@ BEGIN
     EXECUTE PROCEDURE qc_set_num(e, f_wait, wt); EXECUTE PROCEDURE qc_set_num(e, f_delay, dl); EXECUTE PROCEDURE qc_set_num(e, f_speed, sp); EXECUTE PROCEDURE qc_set_num(e, f_lip, lp);
     EXECUTE PROCEDURE qc_set_num(e, f_health, hl); EXECUTE PROCEDURE qc_set_num(e, f_light, li); EXECUTE PROCEDURE qc_set_num(e, f_style, st); EXECUTE PROCEDURE qc_set_num(e, f_sounds, so);
     EXECUTE PROCEDURE qc_set_num(e, f_dmg, dm); EXECUTE PROCEDURE qc_set_num(e, f_height, hg); EXECUTE PROCEDURE qc_set_num(e, f_count, cn); EXECUTE PROCEDURE qc_set_num(e, f_wt, wtype);
+    -- ED_ParseEpair for every other key that names a field: a string, a float, a vector, a function
+    -- (keys starting with _ are the compiler's, and an entity field cannot be written in a map)
+    FOR SELECT k.k, k.v, d.type_, d.ofs FROM map_keys k JOIN qc_defs d ON d.kind = 1 AND d.name = k.k
+         WHERE k.ent = :mid AND k.k NOT STARTING WITH '_' AND k.k NOT IN ('classname', 'targetname', 'target', 'killtarget', 'model', 'message', 'map',
+               'noise', 'origin', 'angle', 'angles', 'mangle', 'spawnflags', 'wait', 'delay', 'speed', 'lip', 'health', 'light', 'style', 'sounds', 'dmg',
+               'height', 'count', 'worldtype')
+          INTO kk, kv, ktp, kofs DO
+    BEGIN
+      IF (ktp = 1) THEN EXECUTE PROCEDURE qc_set_str(e, kofs, kv);
+      ELSE IF (ktp = 2) THEN EXECUTE PROCEDURE qc_set_num(e, kofs, CAST(TRIM(kv) AS DOUBLE PRECISION));
+      ELSE IF (ktp = 3) THEN
+      BEGIN
+        kv = TRIM(kv) || ' 0 0'; kp1 = POSITION(' ', kv); kp2 = POSITION(' ', kv, kp1 + 1);
+        EXECUTE PROCEDURE qc_set_num(e, kofs, CAST(SUBSTRING(kv FROM 1 FOR kp1 - 1) AS DOUBLE PRECISION));
+        EXECUTE PROCEDURE qc_set_num(e, kofs + 1, CAST(SUBSTRING(kv FROM kp1 + 1 FOR kp2 - kp1 - 1) AS DOUBLE PRECISION));
+        EXECUTE PROCEDURE qc_set_num(e, kofs + 2, CAST(SUBSTRING(kv FROM kp2 + 1 FOR POSITION(' ', kv || ' ', kp2 + 1) - kp2 - 1) AS DOUBLE PRECISION));
+      END
+      ELSE IF (ktp = 6) THEN EXECUTE PROCEDURE qc_set_num(e, kofs, COALESCE(qc_fn(TRIM(kv)), 0));
+    WHEN ANY DO
+      EXECUTE PROCEDURE qc_print('dprint', 'Can''t parse ' || kk || ' "' || SUBSTRING(kv FROM 1 FOR 60) || '" of map entity ' || mid);
+    END
     EXECUTE PROCEDURE qc_sg(g_self, e);
     BEGIN
       EXECUTE PROCEDURE qc_call(f);

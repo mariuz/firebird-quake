@@ -308,11 +308,17 @@ BEGIN
     END
   END
   ELSE UPDATE player p SET p.air_finished = :t + 12 WHERE p.id = 1;
-  IF (wl > 0 AND wt IN (-4, -5) AND dltime < t) THEN
+  -- WaterMove: lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel
+  -- every second (not at all in the biosuit); a hit waits until time is past dmgtime
+  IF (wl > 0 AND wt = -5 AND dltime < t) THEN
   BEGIN
-    UPDATE player p SET p.dmg_lava_time = :t + 0.2e0 WHERE p.id = 1;
-    IF ((SELECT p.radsuit_finished FROM player p WHERE p.id = 1) < t) THEN
-      EXECUTE PROCEDURE t_damage(pe, 0, 0, IIF(wt = -5, 10, 4) * wl);
+    UPDATE player p SET p.dmg_lava_time = :t + IIF(p.radsuit_finished > :t, 1, 0.2e0) WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, 10 * wl);
+  END
+  ELSE IF (wl > 0 AND wt = -4 AND dltime < t AND (SELECT p.radsuit_finished FROM player p WHERE p.id = 1) < t) THEN
+  BEGIN
+    UPDATE player p SET p.dmg_lava_time = :t + 1 WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, 4 * wl);
   END
   IF (wl > 0 AND wt = -3 AND dltime < t AND BIN_AND(flags, 16) = 0) THEN
     EXECUTE PROCEDURE snd(pe, 2, 'player/inh2o.wav', 1, 1);
@@ -431,8 +437,10 @@ BEGIN
       END
     END
   END
-  -- gravity (not during the water jump)
-  IF (onground = 0 AND wl < 2 AND wj = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
+  -- SV_AddGravity, every frame but swimming or water-jumping, on the ground too: the walk then presses into
+  -- the floor and finds it again (without it FL_ONGROUND went off every other frame, halving friction
+  -- and dropping jumps)
+  IF (wl < 2 AND wj = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
   -- move
@@ -533,8 +541,10 @@ BEGIN
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(524288)) WHERE p.id = 1 AND p.invisible_finished < :t AND BIN_AND(p.items, 524288) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(4194304)) WHERE p.id = 1 AND p.super_damage_finished < :t AND BIN_AND(p.items, 4194304) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(2097152)) WHERE p.id = 1 AND p.radsuit_finished < :t AND BIN_AND(p.items, 2097152) <> 0;
-  -- megahealth rots
-  UPDATE ents e SET e.health = e.health - 1 WHERE e.id = :pe AND e.health > 100 AND MOD((SELECT g.tic FROM game g WHERE g.id = 1), 20) = 0;
+  -- item_megahealth_rot: health over 100 from a megahealth (IT_SUPERHEALTH) rots a point a second; any
+  -- other health over 100 stays
+  UPDATE ents e SET e.health = e.health - 1 WHERE e.id = :pe AND e.health > 100 AND MOD((SELECT g.tic FROM game g WHERE g.id = 1), 20) = 0
+     AND BIN_AND((SELECT p.items FROM player p WHERE p.id = 1), 65536) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(65536)) WHERE p.id = 1 AND (SELECT e.health FROM ents e WHERE e.id = :pe) <= 100;
 
   -- weapon

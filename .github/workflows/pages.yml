@@ -84,6 +84,14 @@ jobs:
       - name: Deathmatch and bots
         run: npm run test:dm
 
+      # Slime and lava damage as WaterMove does it, both modes
+      - name: Hazards
+        run: npm run test:hazard
+
+      # LibreQuake's levels, and lq_e0m7's boss trap (trigger_hurt)
+      - name: LibreQuake levels
+        run: npm run test:lq
+
       # Ziggurat Vertigo: low gravity, long jumps, grenades that fly, the exit to E1M5
       - name: Ziggurat Vertigo
         run: npm run test:e1m8

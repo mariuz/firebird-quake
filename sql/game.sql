@@ -1304,7 +1304,7 @@ DECLARE mid INTEGER; DECLARE cls VARCHAR(40); DECLARE tn VARCHAR(40); DECLARE tg
 DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE ang DOUBLE PRECISION;
 DECLARE mp DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mr DOUBLE PRECISION;
 DECLARE sf INTEGER; DECLARE msg VARCHAR(200); DECLARE wt DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION; DECLARE spd DOUBLE PRECISION;
-DECLARE lip DOUBLE PRECISION; DECLARE hp INTEGER; DECLARE lt INTEGER; DECLARE sty INTEGER; DECLARE snds INTEGER; DECLARE dmg INTEGER;
+DECLARE lip DOUBLE PRECISION; DECLARE hp INTEGER; DECLARE lt INTEGER; DECLARE sty INTEGER; DECLARE snds INTEGER; DECLARE dmg DOUBLE PRECISION;
 DECLARE hgt DOUBLE PRECISION; DECLARE cnt INTEGER; DECLARE map_ VARCHAR(32); DECLARE noise VARCHAR(64); DECLARE wtype INTEGER;
 DECLARE eid INTEGER; DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION;
 DECLARE sx DOUBLE PRECISION; DECLARE sy DOUBLE PRECISION; DECLARE sz DOUBLE PRECISION; DECLARE dist DOUBLE PRECISION;
@@ -1372,7 +1372,8 @@ BEGIN
     IF (cls = 'info_player_start') THEN
     BEGIN
       UPDATE ents e SET e.classname = 'player', e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 32,
-             e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.anim = 'stand' WHERE e.id = :eid;
+             e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.anim = 'stand',
+             e.z = e.z + 1 WHERE e.id = :eid;                       -- PutClientInServer: spot.origin + '0 0 1'
       EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
       UPDATE player p SET p.ent_id = :eid WHERE p.id = 1;
       EXECUTE PROCEDURE link_ent(eid);
@@ -1382,7 +1383,7 @@ BEGIN
       IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.classname = 'player')) THEN
       BEGIN
         UPDATE ents e SET e.classname = 'player', e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 32,
-               e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8 WHERE e.id = :eid;
+               e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.z = e.z + 1 WHERE e.id = :eid;
         EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
         UPDATE player p SET p.ent_id = :eid WHERE p.id = 1;
       END
@@ -1500,7 +1501,8 @@ BEGIN
         UPDATE ents e SET e.speed = IIF(COALESCE(:spd, 0) = 0, 1000, :spd), e.p1x = :dx, e.p1y = :dy, e.p1z = :dz WHERE e.id = :eid;
       END
       ELSE IF (cls = 'trigger_hurt') THEN
-        UPDATE ents e SET e.dmg = IIF(COALESCE(:dmg, 0) = 0, 5, :dmg) WHERE e.id = :eid;
+        -- hurt_touch's dmg: 5 when missing or 0; a fraction (LibreQuake's 0.1) rounds to nothing on integer health
+        UPDATE ents e SET e.dmg = IIF(COALESCE(:dmg, 0) = 0, 5, FLOOR(:dmg)) WHERE e.id = :eid;
       ELSE IF (cls = 'trigger_monsterjump') THEN
         UPDATE ents e SET e.speed = IIF(COALESCE(:spd, 0) = 0, 200, :spd), e.height = IIF(COALESCE(:hgt, 0) = 0, 200, :hgt) WHERE e.id = :eid;
     END
@@ -1585,6 +1587,12 @@ BEGIN
     BEGIN
       EXECUTE PROCEDURE set_model(eid, 'progs/flame2.mdl');
       UPDATE ents e SET e.solid = 0, e.frame = IIF(:cls = 'light_flame_large_yellow', 0, 1), e.effects = 8 WHERE e.id = :eid;
+      EXECUTE PROCEDURE link_ent(eid);
+    END
+    ELSE IF (cls = 'light_globe') THEN                           -- the s_light sprite, made static
+    BEGIN
+      EXECUTE PROCEDURE set_model(eid, 'progs/s_light.spr');
+      UPDATE ents e SET e.solid = 0, e.effects = 8 WHERE e.id = :eid;
       EXECUTE PROCEDURE link_ent(eid);
     END
     ELSE IF (cls = 'misc_explobox' OR cls = 'misc_explobox2') THEN

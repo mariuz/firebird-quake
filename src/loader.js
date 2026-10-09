@@ -33,7 +33,8 @@ const TABLES = {
   qc_strings: 'ofs:i s:s',
   qc_globals0: 'ofs:i v:d',
   qc_parmmap: 'fnum:i dst:i src:i',
-  map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d mpitch:d myaw:d mroll:d spawnflags:i message:s wait_:d delay:d speed:d lip:d health:i light:i style:i sounds:i dmg:i height:d count_:i map:s noise:s worldtype:i',
+  map_keys: 'ent:i k:s v:s',
+  map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d mpitch:d myaw:d mroll:d spawnflags:i message:s wait_:d delay:d speed:d lip:d health:i light:i style:i sounds:i dmg:d height:d count_:i map:s noise:s worldtype:i',
 };
 
 const SQL_TYPE = { i: 'INTEGER', d: 'DOUBLE PRECISION', s: 'VARCHAR(2048) CHARACTER SET ASCII' };
@@ -289,7 +290,7 @@ const ENT_COLS = ['classname', 'targetname', 'target', 'killtarget', 'model', 'a
 /** SV_SpawnServer: replace the current map with `name` from the PAK. */
 export async function loadMap(db, pak, res, name, { skill = 1, newGame = true, seed = null } = {}) {
   const bsp = new Bsp(pak.buffer(`maps/${name}.bsp`), `maps/${name}.bsp`);
-  await db.exec(`DELETE FROM sound_events; DELETE FROM fx_events; DELETE FROM ents; DELETE FROM map_ents; DELETE FROM vis_faces; UPDATE viewcfg SET vis_leaf = NULL;
+  await db.exec(`DELETE FROM sound_events; DELETE FROM fx_events; DELETE FROM ents; DELETE FROM map_ents; DELETE FROM map_keys; DELETE FROM vis_faces; UPDATE viewcfg SET vis_leaf = NULL;
     DELETE FROM face_verts WHERE face < ${ITEM_ID_BASE}; DELETE FROM faces WHERE id < ${ITEM_ID_BASE}; DELETE FROM miptex WHERE id < ${ITEM_ID_BASE};
     DELETE FROM hulls; DELETE FROM leaves; DELETE FROM marksurfaces; DELETE FROM models WHERE kind = 'B' AND id < ${res.itemBase}`);
   // world model ids: previous world models are gone, reuse the registry slots
@@ -316,6 +317,7 @@ export async function loadMap(db, pak, res, name, { skill = 1, newGame = true, s
       e.noise ?? null, n('worldtype')];
   });
   await bulkLoad(db, 'map_ents', entRows);
+  await bulkLoad(db, 'map_keys', bsp.entities.flatMap((e, i) => Object.entries(e).filter(([k]) => k.length <= 64).map(([k, v]) => [i, k, v])));
 
   // seed: the random numbers' seed (a demo or a test replays from it), else init_map picks one
   if (seed !== null) await db.exec(`UPDATE rng SET next_seed = ${Math.floor(seed)} WHERE id = 1`);

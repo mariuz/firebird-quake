@@ -825,6 +825,9 @@ CREATE GLOBAL TEMPORARY TABLE pushed (
 ) ON COMMIT DELETE ROWS;
 SET TERM ^ ;
 
+-- forward declaration (body in qcvm.sql): the triggers a QuakeC edict touches
+CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER) AS BEGIN END^
+
 CREATE OR ALTER PROCEDURE push_move (eid INTEGER, movetime DOUBLE PRECISION)
 AS
 DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
@@ -852,7 +855,9 @@ BEGIN
        WHERE e.id <> :eid AND e.movetype NOT IN (0, 7, 8) AND e.solid <> 0 AND e.health > -1
          AND e.x + e.maxx >= :px + :mnx + MINVALUE(0, :mx) - 1 AND e.x + e.minx <= :px + :mxx + MAXVALUE(0, :mx) + 1
          AND e.y + e.maxy >= :py + :mny + MINVALUE(0, :my) - 1 AND e.y + e.miny <= :py + :mxy + MAXVALUE(0, :my) + 1
-         AND e.z + e.maxz >= :pz + :mnz + MINVALUE(0, :mz) - 1 AND e.z + e.minz <= :pz + :mxz + MAXVALUE(0, :mz) + 1
+         -- 2 units over the top: a brush model's bounds are padded by one, so a monster resting on it is a unit
+         -- above them (the riding test below allows as much)
+         AND e.z + e.maxz >= :pz + :mnz + MINVALUE(0, :mz) - 1 AND e.z + e.minz <= :pz + :mxz + MAXVALUE(0, :mz) + 2
         INTO c, cmt, cx, cy, cz, csolid
   DO
   BEGIN
@@ -862,7 +867,9 @@ BEGIN
       IF (cz + (SELECT e.minz FROM ents e WHERE e.id = :c) < pz - mz + mxz - 2 OR cz + (SELECT e.minz FROM ents e WHERE e.id = :c) > pz - mz + mxz + 2) THEN CONTINUE;
       IF (cx + (SELECT e.maxx FROM ents e WHERE e.id = :c) < px + mnx OR cx + (SELECT e.minx FROM ents e WHERE e.id = :c) > px + mxx) THEN CONTINUE;
       IF (cy + (SELECT e.maxy FROM ents e WHERE e.id = :c) < py + mny OR cy + (SELECT e.miny FROM ents e WHERE e.id = :c) > py + mxy) THEN CONTINUE;
-      IF (mz < 0) THEN CONTINUE;         -- standing on a sinking plat: gravity brings us down
+      -- standing on a sinking pusher: a walker (the player) follows by gravity; anything else rides it down,
+      -- as SV_PushMove carries what has it for groundentity (a monster stays FL_ONGROUND and would hang in the air)
+      IF (mz < 0 AND cmt = 3) THEN CONTINUE;
     END
     -- try moving the contacted entity along
     INSERT INTO pushed (ent, ox, oy, oz) VALUES (:c, :cx, :cy, :cz);
@@ -870,6 +877,9 @@ BEGIN
     IF (test_position(c, cx + mx, cy + my, cz + mz) = 0) THEN
     BEGIN
       EXECUTE PROCEDURE link_ent(c);
+      -- SV_LinkEdict(check, true): what a pusher carries touches the triggers it is carried into (QuakeC mode;
+      -- the PSQL game checks its monsters' triggers in run_physics)
+      IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN EXECUTE PROCEDURE qc_touch_triggers(c);
       IF (c = pe) THEN UPDATE player p SET p.oldz = p.oldz + :mz WHERE p.id = 1;
       CONTINUE;
     END
@@ -983,6 +993,7 @@ AS
 DECLARE eid INTEGER; DECLARE mt SMALLINT; DECLARE think VARCHAR(24); DECLARE nt DOUBLE PRECISION; DECLARE t DOUBLE PRECISION;
 DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE pe INTEGER;
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
+DECLARE tdm INTEGER;
 BEGIN
   t = now_();
   pe = player_ent();
@@ -1029,6 +1040,18 @@ BEGIN
                e.vy = SIN(e.yaw * 0.0174532925e0) * (SELECT tr.speed FROM ents tr WHERE tr.id = :tid),
                e.vz = (SELECT tr.height FROM ents tr WHERE tr.id = :tid), e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
     END
+  END
+  -- hurt_touch: a trigger_hurt hurts a monster in it as it hurts the player, then rests a second (it goes
+  -- SOLID_NOT until hurt_on), whoever it hurt (lq_e0m7's boss dies so, in the lava under its pillar)
+  FOR SELECT m.id, tr.id, tr.dmg FROM ents m JOIN ents tr ON tr.solid = 1 AND tr.classname = 'trigger_hurt'
+           AND tr.x + tr.maxx >= m.x + m.minx AND tr.x + tr.minx <= m.x + m.maxx
+           AND tr.y + tr.maxy >= m.y + m.miny AND tr.y + tr.miny <= m.y + m.maxy
+           AND tr.z + tr.maxz >= m.z + m.minz AND tr.z + tr.minz <= m.z + m.maxz
+         WHERE BIN_AND(m.flags, 32) <> 0 AND m.health > 0 AND m.takedamage <> 0 AND (tr.nextthink IS NULL OR tr.nextthink < :t)
+          INTO eid, tid, tdm DO
+  BEGIN
+    UPDATE ents e SET e.nextthink = :t + 1 WHERE e.id = :tid AND (e.nextthink IS NULL OR e.nextthink < :t);
+    IF (ROW_COUNT > 0) THEN EXECUTE PROCEDURE t_damage(eid, tid, tid, tdm);
   END
 END^
 
