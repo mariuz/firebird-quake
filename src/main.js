@@ -615,6 +615,7 @@ async function runConsole() {
   const sqlText = $('sql').value.trim();
   if (!sqlText || !db) return;
   const out = $('sql-out');
+  remember(sqlText);
   const t0 = performance.now();
   try {
     const r = /^\s*(select|with|execute\s+block)/i.test(sqlText)
@@ -631,7 +632,72 @@ async function runConsole() {
 }
 const fmt = (v) => (typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : String(v));
 $('run-sql').addEventListener('click', runConsole);
-$('sql').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runConsole(); });
+
+// History: every statement run, kept in localStorage; ↑ and ↓ walk it from the first or last line of the
+// text (Alt+↑/↓ from anywhere), the statement being typed kept at the end. Completion: Tab completes the
+// word before the caret from the database's own names (tables, columns, procedures, functions, read once
+// from the RDB$ tables) and the usual keywords; Tab again cycles the matches, listed in the output.
+const HISTORY_KEY = 'firebird-quake:sql-history';
+let history = [];
+try { history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { /* none */ }
+let histPos = history.length, draft = '';
+function remember(text) {
+  history = [...history.filter((h) => h !== text), text].slice(-100);
+  histPos = history.length;
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* ignore */ }
+}
+let names = null, namesLoading = null;
+function catalogue() {   // started when the console is first focused; a Tab before it is done completes nothing
+  if (names || namesLoading || !db) return;
+  const q = async (s) => (await db.query(s, [], { rowMode: 'array' })).rows.map((r) => String(r[0]).trim().toLowerCase());
+  namesLoading = (async () => { names = [...new Set([
+    ...await q('SELECT rdb$relation_name FROM rdb$relations WHERE COALESCE(rdb$system_flag, 0) = 0'),
+    ...await q('SELECT DISTINCT rdb$field_name FROM rdb$relation_fields WHERE COALESCE(rdb$system_flag, 0) = 0'),
+    ...await q('SELECT rdb$procedure_name FROM rdb$procedures WHERE COALESCE(rdb$system_flag, 0) = 0'),
+    ...await q('SELECT rdb$function_name FROM rdb$functions WHERE COALESCE(rdb$system_flag, 0) = 0'),
+    ...('select from where and or not in is null order by group having join on as update set delete insert into values '
+      + 'execute procedure block returns begin end declare variable first rows count sum min max avg distinct cast integer '
+      + 'double precision varchar coalesce iif case when then else exists between like starting with').split(' '),
+  ])].sort(); })();
+}
+$('sql').addEventListener('focus', catalogue);
+let completion = null;   // the Tab in progress: the text it made, where the word starts and ends, the matches, which is shown
+$('sql').addEventListener('keydown', (e) => {
+  const ta = e.target;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { runConsole(); return; }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const up = e.key === 'ArrowUp';
+    if (!e.altKey && (up ? ta.value.slice(0, ta.selectionStart).includes('\n') : ta.value.slice(ta.selectionEnd).includes('\n'))) return;
+    if (up ? histPos === 0 : histPos >= history.length) return;
+    e.preventDefault();
+    if (histPos === history.length) draft = ta.value;
+    histPos += up ? -1 : 1;
+    ta.value = histPos === history.length ? draft : history[histPos];
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    return;
+  }
+  if (e.key === 'Tab' && !e.shiftKey) {
+    e.preventDefault();
+    if (!names) { catalogue(); return; }
+    const end = ta.selectionStart;
+    if (!completion || completion.end !== end || completion.value !== ta.value) {
+      const start = ta.value.slice(0, end).search(/[\w$]*$/);
+      const prefix = ta.value.slice(start, end);
+      if (!prefix) return;
+      const upper = prefix === prefix.toUpperCase() && /[A-Z]/.test(prefix);
+      completion = { start, end, i: -1, matches: names.filter((n) => n.startsWith(prefix.toLowerCase()) && n !== prefix.toLowerCase()).map((n) => (upper ? n.toUpperCase() : n)) };
+    }
+    if (!completion.matches.length) return;
+    completion.i = (completion.i + 1) % completion.matches.length;
+    const word = completion.matches[completion.i];
+    ta.setRangeText(word, completion.start, completion.end, 'end');
+    completion.end = completion.start + word.length;
+    completion.value = ta.value;
+    if (completion.matches.length > 1) $('sql-out').textContent = completion.matches.slice(0, 60).join('  ') + (completion.matches.length > 60 ? ' …' : '');
+    return;
+  }
+  completion = null;
+});
 for (const b of document.querySelectorAll('[data-sql]')) b.addEventListener('click', () => { $('sql').value = b.dataset.sql; runConsole(); });
 
 // ── boot ────────────────────────────────────────────────────────────────

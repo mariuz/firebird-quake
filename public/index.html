@@ -99,7 +99,7 @@
         <button data-sql="UPDATE ents SET flags = BIN_OR(flags, 64) WHERE classname = 'player'">god</button>
       </div>
       <textarea id="sql" spellcheck="false" rows="4">SELECT classname, COUNT(*) n FROM ents GROUP BY classname ORDER BY n DESC</textarea>
-      <div class="run"><button id="run-sql">Run</button> <small>Ctrl+Enter</small></div>
+      <div class="run"><button id="run-sql">Run</button> <small>Ctrl+Enter runs · ↑ ↓ history · Tab completes a name</small></div>
       <pre id="sql-out" class="out"></pre>
     </section>
 

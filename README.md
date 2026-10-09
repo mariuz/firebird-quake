@@ -117,8 +117,9 @@ UPDATE ents SET health = 1 WHERE mtype IS NOT NULL AND health > 0;
 UPDATE ents SET flags = BIN_OR(flags, 64) WHERE classname = 'player';   -- god mode
 ```
 
-`window.quake` exposes the database, the renderer, the audio and the settings to the browser's own
-console as well.
+Ctrl+Enter runs; ↑ and ↓ walk the statements run before (kept across reloads); Tab completes a
+table, column, procedure or function name, or a keyword, and cycles the matches. `window.quake`
+exposes the database, the renderer, the audio and the settings to the browser's own console as well.
 
 ## How it works
 
