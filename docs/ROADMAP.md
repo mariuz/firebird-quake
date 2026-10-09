@@ -28,8 +28,8 @@ does not do yet, roughly by how much it would change the experience. Items marke
 ## The renderer
 
 - **Resolution and scaling**: the view is 320×200 or 160×100 scaled by CSS. A 640×400 mode would need the painter's per-pixel loops to get faster first (the span loop is the hot path; typed-array tricks and avoiding per-pixel divides beyond the 8-pixel step would help), or a second Worker for the painter.
-- **Underwater warp**, **view roll** when strafing, **fullbright texture pixels** (the colormap handles them, but the surface cache does not mark them), **coloured lighting** (not Quake, not needed).
-- **Mip levels**: one mip level is used; distant faces shimmer. Picking the mip by the span's 1/z is cheap.
+- ~~**Underwater warp**~~ done (`Renderer.warpView`, `D_WarpScreen`): with the eye in water, slime or lava the finished 3D view is resampled through Quake's sine table. ~~**View roll** when strafing~~ done (`V_CalcRoll`: 2° at 200 units a second sideways, from the player's motion between frames). **Fullbright texture pixels** need nothing: Quake's colormap keeps colours 224–255 unchanged at every light level (all 2048 entries), and the surface cache goes through it. **Coloured lighting** (not Quake, not needed).
+- ~~**Mip levels**~~ done: each face picks its mip by `D_MipLevelForScale` (its nearest point, the view's pixels per unit, the texinfo's `mipadjust`; thresholds 1, 0.4, 0.2), and the surface cache builds it at 1/2^mip the size from the texture's mip with the lightmap sampled 16 >> mip texels apart. Distant faces no longer shimmer, and the raster got faster (E1M1's start view: 50 ms against 77). The nearest distance is rounded to a thousandth before the thresholds: the grid puts many faces exactly 160, 400 or 800 units away, where the SQL projection's last digits would otherwise pick another level than the JS one (`--compare`).
 - **BSP2 / 2PSB and large maps**: the parser accepts BSP 29 only, so many modern maps will not load. The loader's `TABLES` are not the limit; `Bsp` is.
 - **Transparent water**: Quake did not have it; `alpha` on `ents` exists for the oldone's gates and could carry it.
 

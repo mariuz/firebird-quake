@@ -482,9 +482,24 @@ function handleFx(rows, time) {
   }
 }
 
+// V_CalcRoll: strafing rolls the view up to cl_rollangle (2°), fully from cl_rollspeed (200 units a second);
+// the sideways speed is the player's motion between frames along the view's right
+let rollFrom = null;
+function viewRoll(time) {
+  let roll = 0;
+  if (rollFrom && time > rollFrom.t) {
+    const vx = (last.PX - rollFrom.x) / (time - rollFrom.t), vy = (last.PY - rollFrom.y) / (time - rollFrom.t);
+    const yaw = (last.YAW * Math.PI) / 180;
+    const side = vx * Math.sin(yaw) - vy * Math.cos(yaw);
+    roll = Math.sign(side) * (Math.abs(side) < 200 ? (Math.abs(side) * 2) / 200 : 2);
+  } else if (rollFrom) roll = rollFrom.roll;
+  if (!rollFrom || time > rollFrom.t) rollFrom = { x: last.PX, y: last.PY, t: time, roll };
+  return roll;
+}
+
 function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   const r = renderer;
-  const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, roll: last.DEAD ? 60 : 0, fov: settings.fov };
+  const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, roll: last.DEAD ? 60 : last.INTERMISSION ? 0 : viewRoll(time), fov: settings.fov };
   r.beginFrame(view);
   const dl = r.dlights = frameDlights({ ents, models: res.models, explosions, qc: settings.logic === 'qc', time,
     player: { x: last.PX, y: last.PY, z: last.PZ, yaw: last.YAW, muzzle: muzzleUntil > time - 0.05 && !last.DEAD, glow: !!(last.QUAD || last.INVINCIBLE) } });
@@ -541,6 +556,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
     }
   }
   prevPos = { x: last.PX, y: last.PY };
+  // the eye under water, slime or lava: the warp, over everything 3D and under the 2D
+  if (last.WATERLEVEL >= 3) r.warpView(time);
 
   // 2D
   // the intermission (the stats, or the finale's text) replaces the status bar, as in Sbar_Draw

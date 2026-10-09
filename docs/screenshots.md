@@ -101,9 +101,9 @@ node scripts/screenshot.mjs e1m4 docs/ledge    --at=1288,1350,845,90 --tics=4 --
 
 ## E1M5, Gloom Keep
 
-![under the water of the flooded moat, where the E1M5 test holds its breath](flooded-e1m5-0.png) ![the moat courtyard with its round window](moat-e1m5-0.png) ![the stained-glass hall](glass-e1m5-0.png) ![a knight on the checkered floor](knight-e1m5-0.png) ![an ogre at the wooden gate](goldkey-e1m5-0.png)
+![under the water of the flooded moat, where the E1M5 test holds its breath, through D_WarpScreen's ripple](flooded-e1m5-0.png) ![the moat courtyard with its round window](moat-e1m5-0.png) ![the stained-glass hall](glass-e1m5-0.png) ![a knight on the checkered floor](knight-e1m5-0.png) ![an ogre at the wooden gate](goldkey-e1m5-0.png)
 
-1. under the water of the flooded moat, where the E1M5 test holds its breath
+1. under the water of the flooded moat, where the E1M5 test holds its breath, rippling through `D_WarpScreen`'s warp
 2. the moat courtyard with its round window
 3. the stained-glass hall
 4. a knight on the checkered floor

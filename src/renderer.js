@@ -57,7 +57,7 @@ export class Renderer {
   }
 
   // ─â”€ surface cache (R_DrawSurface) ─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€
-  surface(faceId, styles, time, frame, ent = 0) {
+  surface(faceId, styles, time, frame, ent = 0, mip = 0) {
     const info = this.faceInfo.get(faceId);
     if (!info) return null;
     const { bsp, f } = info;
@@ -75,16 +75,16 @@ export class Renderer {
       const v = styles[f.styles[i]] ?? 1;
       light = light * 7 + Math.round(v * 16);
     }
-    key = faceId + ':' + light + ':' + tex.name;
+    key = faceId + ':' + light + ':' + tex.name + ':' + mip;
     // a face a dynamic light reaches is built for this frame alone, as Quake rebuilds its surface; a
     // brush model's faces see the light moved into the model's frame (its origin from the face list)
     const o = !this.dlights.length ? null : ent === 0 ? NO_OFFSET : this.entOrigin.get(ent);
     const lit = o ? this.faceDlights(info, o) : null;
-    if (lit) return this.buildSurface(bsp, f, tex, styles, lit);
+    if (lit) return this.buildSurface(bsp, f, tex, styles, lit, mip);
     let s = this.surfCache.get(key);
     if (s) return s;
     if (this.surfCache.size > SURF_CACHE_MAX) this.surfCache.clear();
-    s = this.buildSurface(bsp, f, tex, styles);
+    s = this.buildSurface(bsp, f, tex, styles, null, mip);
     this.surfCache.set(key, s);
     return s;
   }
@@ -110,9 +110,11 @@ export class Renderer {
     return out;
   }
 
-  buildSurface(bsp, f, tex, styles, dlights = null) {
-    const sw = Math.max(1, f.extents[0]);
-    const sh = Math.max(1, f.extents[1]);
+  // R_DrawSurface at a mip level: the surface 1/2^mip the size, from the texture's mip, the lightmap's
+  // luxels 16 >> mip texels apart
+  buildSurface(bsp, f, tex, styles, dlights = null, mip = 0) {
+    const sw = Math.max(1, f.extents[0] >> mip);
+    const sh = Math.max(1, f.extents[1] >> mip);
     const data = new Uint8Array(sw * sh);
     const lw = f.lightW;
     const lh = f.lightH;
@@ -141,26 +143,29 @@ export class Renderer {
       }
     }
     const cm = this.colormap;
-    const texw = tex.w, texh = tex.h, mip = tex.mips[0];
+    const texw = tex.w >> mip, texh = tex.h >> mip, pix = tex.mips[mip];
     const smin = f.texturemins[0], tmin = f.texturemins[1];
+    const smip = smin >> mip, tmip = tmin >> mip;
     for (let v = 0; v < sh; v++) {
-      const ty = (((v + tmin) % texh) + texh) % texh;
-      const lv = v >> 4, lf = (v & 15) / 16;
+      const ty = (((v + tmip) % texh) + texh) % texh;
+      const vf = v << mip;                      // the full-size texel row, for the lightmap
+      const lv = Math.min(vf >> 4, lh - 1), lf = (vf & 15) / 16;
       const lv1 = Math.min(lv + 1, lh - 1);
       const row = v * sw;
       for (let u = 0; u < sw; u++) {
-        const tx = (((u + smin) % texw) + texw) % texw;
-        const lu = u >> 4, luf = (u & 15) / 16;
+        const tx = (((u + smip) % texw) + texw) % texw;
+        const uf = u << mip;
+        const lu = Math.min(uf >> 4, lw - 1), luf = (uf & 15) / 16;
         const lu1 = Math.min(lu + 1, lw - 1);
         const l0 = block[lv * lw + lu] * (1 - luf) + block[lv * lw + lu1] * luf;
         const l1 = block[lv1 * lw + lu] * (1 - luf) + block[lv1 * lw + lu1] * luf;
         const l = l0 * (1 - lf) + l1 * lf;
         let shade = (255 - l) >> 2;
         if (shade < 0) shade = 0; else if (shade > 63) shade = 63;
-        data[row + u] = cm[(shade << 8) | mip[ty * texw + tx]];
+        data[row + u] = cm[(shade << 8) | pix[ty * texw + tx]];
       }
     }
-    return { data, w: sw, h: sh, smin, tmin };
+    return { data, w: sw, h: sh, smin, tmin, mip };
   }
 
   // ─â”€ a frame ─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─â”€â”€â”€─
@@ -230,7 +235,16 @@ export class Renderer {
       }
       if (info.f.sky) this.fillPolygon(verts, null, 2, time);
       else {
-        const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0, ent);
+        // D_MipLevelForScale: the face's nearest point, the view's pixels per unit and the texture's mipadjust;
+        // liquids warp the full texture
+        let nearest = Infinity;
+        for (const p of poly) if (p[2] < nearest) nearest = p[2];
+        // the grid puts many faces exactly on a threshold (160, 400, 800 units at 320 wide): rounded, the SQL
+        // projection (a few 1e-7 off) and the JS one choose alike
+        nearest = Math.round(nearest * 1000) / 1000;
+        const scale = (view.scale / Math.max(near, nearest)) * (info.ti.mipadjust ?? 1);
+        const mip = info.f.liquid ? 0 : scale >= 1 ? 0 : scale >= 0.4 ? 1 : scale >= 0.2 ? 2 : 3;
+        const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0, ent, mip);
         if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
       }
     }
@@ -301,6 +315,7 @@ export class Renderer {
     }
     const sd = surf ? surf.data : null;
     const sw = surf ? surf.w : 0, sh = surf ? surf.h : 0, smin = surf ? surf.smin : 0, tmin = surf ? surf.tmin : 0;
+    const mscale = surf ? 1 / (1 << surf.mip) : 1;     // a mip surface: texels 2^mip apart
     const sin = this.sinTable;
     const tphase = (time * 20) & 255;
     const view = this.view;
@@ -332,7 +347,7 @@ export class Renderer {
         if (iz <= zb[idx]) continue;
         zb[idx] = iz;
         const z = 1 / iz;
-        let s = sz * z - smin, t = tz * z - tmin;
+        let s = (sz * z - smin) * mscale, t = (tz * z - tmin) * mscale;
         if (mode === 1) {
           const ss = s, tt = t;
           s += sin[(tphase + (tt >> 0)) & 255];
@@ -610,6 +625,33 @@ export class Renderer {
   }
 
   // Draw_FadeScreen: every other pixel black, under the menu
+  // D_WarpScreen: under water, slime or lava the 3D view is resampled through Quake's sine table, rows
+  // and columns shifted by up to AMP2 * 2 pixels, cycling at 20 steps a second (before the 2D is drawn)
+  warpView(time) {
+    const { w, fb } = this;
+    const h = this.h - this.sbarLines;
+    const AMP2 = 3, CYCLE = 128;
+    if (!this.warpTurb) {
+      this.warpTurb = new Int32Array(1280);
+      for (let i = 0; i < 1280; i++) this.warpTurb[i] = Math.trunc(AMP2 + Math.sin((i * Math.PI * 2) / CYCLE) * AMP2);
+    }
+    if (this.warpW !== w || this.warpH !== h) {
+      this.warpW = w; this.warpH = h;
+      this.warpRows = new Int32Array(h + AMP2 * 2);
+      for (let v = 0; v < h + AMP2 * 2; v++) this.warpRows[v] = Math.trunc((v * h) / (h + AMP2 * 2)) * w;
+      this.warpCols = new Int32Array(w + AMP2 * 2);
+      for (let u = 0; u < w + AMP2 * 2; u++) this.warpCols[u] = Math.trunc((u * w) / (w + AMP2 * 2));
+      this.warpSrc = new Uint8Array(w * h);
+    }
+    const src = this.warpSrc, rows = this.warpRows, cols = this.warpCols, turb = this.warpTurb;
+    src.set(fb.subarray(0, w * h));
+    const off = Math.floor(time * 20) & (CYCLE - 1);
+    for (let v = 0; v < h; v++) {
+      const tv = turb[off + v], d = v * w;
+      for (let u = 0; u < w; u++) fb[d + u] = src[rows[v + turb[off + u]] + cols[tv + u]];
+    }
+  }
+
   fadeScreen() {
     const { fb, w, h } = this;
     for (let y = 0; y < h; y++) for (let x = y & 1; x < w; x += 2) fb[y * w + x] = 0;

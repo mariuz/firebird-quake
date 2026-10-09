@@ -137,6 +137,7 @@ async function shot(name) {
   }
   const vm = last.INTERMISSION ? null : res.models.get(res.byName.get(VIEW_MODELS[last.WEAPON]));
   if (vm) { renderer.zb.fill(0); renderer.drawAlias(vm.mdl, 0, 0, [last.PX, last.PY, last.VIEW_Z + 2], [-last.PITCH, last.YAW, 0], Math.max(lightPoint(bsp, last.PX, last.PY, last.PZ), 32), { near: 1 }); }
+  if (last.WATERLEVEL >= 3) renderer.warpView(last.TIME_);   // D_WarpScreen, as the page does
   // the intermission's stats or the finale's text (all of it typed) in place of the status bar, as the page does
   if (last.INTERMISSION === 2) hud.drawFinale(renderer, last.FINALE_TEXT ?? '', 1e3);
   else if (last.INTERMISSION === 1) hud.drawIntermission(renderer, last);

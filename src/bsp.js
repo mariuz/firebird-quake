@@ -66,6 +66,10 @@ export class Bsp {
         t: [dv.getFloat32(p + 16, true), dv.getFloat32(p + 20, true), dv.getFloat32(p + 24, true)], toff: dv.getFloat32(p + 28, true),
         miptex: dv.getInt32(p + 32, true), flags: dv.getInt32(p + 36, true),
       });
+      // Mod_LoadTexinfo's mipadjust: a texture stretched over the surface (short texel vectors) keeps more detail
+      const ti = this.texinfo[this.texinfo.length - 1];
+      const len = (Math.hypot(...ti.s) + Math.hypot(...ti.t)) / 2;
+      ti.mipadjust = len < 0.32 ? 4 : len < 0.49 ? 3 : len < 0.99 ? 2 : 1;
     }
 
     // textures (miptex)

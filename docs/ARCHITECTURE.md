@@ -327,9 +327,14 @@ against the near plane in view space, then `fillPolygon` scan-converts with pers
 spans: 1/z, s/z and t/z are affine in screen space, so each span walks them and divides every 8 pixels.
 Texels come from a **surface cache**: the miptex tiled under the face's lightmap (the four light
 styles summed) and pushed through the colormap once per face and light level, up to
-`SURF_CACHE_MAX` entries. Liquids are drawn with the sine warp, the sky with Quake's two scrolling
+`SURF_CACHE_MAX` entries, at the face's **mip level** (`D_MipLevelForScale` from its nearest point and the
+texinfo's `mipadjust`: a surface 1/2^mip the size from the texture's mip, the lightmap's luxels 16 >> mip
+texels apart; liquids always at mip 0). Liquids are drawn with the sine warp, the sky with Quake's two scrolling
 layers mapped by the pixel's direction (`skyPixel`), both as special fill modes of the same span
-routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`.
+routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`. With the eye
+under a liquid surface the page calls `warpView` after the 3D (gun and particles included) and before
+the 2D: `D_WarpScreen`'s resampling through the sine table, rows and columns shifted by up to six
+pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcRoll`).
 
 **Dynamic lights** (`src/dlights.js`, Quake's `cl_dlights`): each frame the page lists the lights:
 rockets and lava balls (the model's `EF_ROCKET` flag, 200 units), explosions from the fx events
