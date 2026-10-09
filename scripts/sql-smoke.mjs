@@ -113,7 +113,7 @@ if (door) {
 const snds = (await db.query('SELECT DISTINCT snd FROM sound_events')).rows.map((r) => r.SND);
 const missing = snds.filter((n) => !pak.has('sound/' + n));
 assert(missing.length === 0, `all queued sounds exist in the pak (${missing.join(', ') || 'none missing'})`);
-// and every sound name in monster_types / game.sql exists
+// and every sound name in monster_types / the SQL exists
 const refs = [...new Set([...Object.values(sql).join('\n').matchAll(/'([a-z0-9_\/]+\.wav)'/g)].map((m) => m[1]))];
 // the registered episodes' monsters have sounds the shareware pak does not carry
 const registeredOnly = /^(enforcer|hknight|shalrath|blob|fish|boss2)\//;

@@ -155,7 +155,7 @@ carrying) are sv_phys.c; the clip planes and the pushed entities live in global 
 because PSQL has no arrays. A primary-key lookup costs about 4 µs in the WASM engine, so a trace is
 well under a millisecond.
 
-### The game is PSQL (`sql/game.sql`, `sql/weapons.sql`, `sql/monsters.sql`)
+### The game is PSQL (`sql/game.sql` and the files after it, `sql/weapons.sql`, `sql/monsters.sql`)
 
 `QUAKE_TIC` runs the player (client.qc: water, jumping, the water jump, friction, acceleration, the
 trigger and item touches, powerups, drowning), the pushers (with `SUB_CalcMove` semantics), the thinks
@@ -297,7 +297,12 @@ Posed and staged shots of every level, with their commands, are in [docs/screens
 ```
 sql/schema.sql     tables: the BSP, the models, the edicts, the player, the game, the events
 sql/physics.sql    traces against the hulls, linking, water, the movement procedures
-sql/game.sql       spawning, movers, triggers, items, damage, projectiles, the entity lump
+sql/game.sql       progs.dat's utilities and entity helpers, and the stubs the next five call
+sql/movers.sql     doors, plats, buttons, trains, secret doors
+sql/triggers.sql   SUB_UseTargets and the triggers, changelevel, teleporters
+sql/items.sql      the pickups
+sql/combat.sql     damage, the projectiles, impacts
+sql/spawn.sql      the entity lump: every classname's spawn function
 sql/weapons.sql    the player's tic: movement, firing, impulses
 sql/monsters.sql   the AI, the pushers, the think and physics loops, QUAKE_TIC, INIT_MAP
 sql/render.sql     visibility and projection

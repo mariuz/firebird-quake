@@ -34,12 +34,14 @@ COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworke
 service worker that re-issues every response with the headers after one reload.
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
-physics, game, weapons, monsters, render, qcvm, bots, save, demo`, splitting each on `SET TERM`; the generated
+physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, bots, save, demo`, splitting each on `SET TERM`; the generated
 `load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
 6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
 PROCEDURE x (...) AS BEGIN END^`) for the procedures it calls before defining them, and the stub's
-signature must match the real one exactly.
+signature must match the real one exactly. progs.dat's part is six files read as one: `game.sql` holds
+the stubs for all of them, the utilities and the entity helpers, then `movers.sql`, `triggers.sql`,
+`items.sql`, `combat.sql` and `spawn.sql` (section 6).
 
 Then the page picks a data set (section 11), loads it with `loadResources`, and `startMap` loads a
 level with `loadMap`.
@@ -134,7 +136,13 @@ A direct port of `world.c` and `sv_phys.c`:
 - `toss_move`: gravity (`game.gravity`), bounce (`movetype` 10), rest when landing on a floor (flag 512), the entity is only relinked when it moved: items at rest cost nothing per tic.
 - `push_entity`/`push_move`: a pusher (door, plat, train) moves, carrying what stands on it and crushing or blocking on what it hits (`mover_blocked`), with the `pushed` table to undo a blocked move.
 
-## 6. The game (`sql/game.sql`)
+## 6. The game (`sql/game.sql` and the files after it)
+
+`game.sql` has the forward declarations, the utilities (`snd`, `fx`, `cprint`, `vlen`, `visible`…) and
+the entity helpers (`spawn_ent`, `set_model`, `drop_to_floor`); `movers.sql` the doors, plats, buttons,
+trains and secret doors; `triggers.sql` `use_targets` and the triggers; `items.sql` the pickups;
+`combat.sql` damage, the projectiles and `impact`; `spawn.sql` `spawn_map_ents` and the thinks of what
+it spawns.
 
 - `spawn_map_ents(skill)`: walks `map_ents`, drops entities by skill flags and deathmatch, applies the registered-only gates (`trigger_onlyregistered`, `func_episodegate`, `func_bossgate`), and spawns each class: `light_*` and `ambient_*` as point entities that only the audio reads, `func_*` movers with their sounds, speeds and positions (`calc_move`, START_OPEN, `lip`, `wait`), `trigger_*` as non-solid boxes with `touch`, items with their box model (`b_*.bsp`) and `drop_to_floor`, keys by `world_type`, weapons, `misc_*`, `trap_spikeshooter`, `path_corner`, `info_*`, and every `monster_*` through `spawn_monster` by the class suffix. Doors that touch are linked (`linked_id`) so a pair opens as one.
 - Pushers (`push_move`, `SV_PushMove`): what stands on or is caught by a moving brush model moves with it, or blocks it; on a sinking one a walker (the player) follows by gravity and everything else rides down; what it carries touches the triggers it is carried into. A `trigger_hurt` hurts monsters as well as the player, resting a second after each hit.

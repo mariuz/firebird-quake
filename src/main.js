@@ -12,6 +12,11 @@ import { FirebirdBrowser } from 'firebird-wasm/browser';
 import schemaSql from '../sql/schema.sql';
 import physicsSql from '../sql/physics.sql';
 import gameSql from '../sql/game.sql';
+import moversSql from '../sql/movers.sql';
+import triggersSql from '../sql/triggers.sql';
+import itemsSql from '../sql/items.sql';
+import combatSql from '../sql/combat.sql';
+import spawnSql from '../sql/spawn.sql';
 import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
@@ -648,7 +653,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, save: saveSql, demo: demoSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, save: saveSql, demo: demoSql });
   return instance;
 }
 

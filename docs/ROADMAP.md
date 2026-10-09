@@ -50,7 +50,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 ## Code and repository hygiene
 
-- `sql/game.sql` is 1600 lines; splitting movers, triggers, items and combat into their own files (keeping the stub order in `SQL_FILES`) would help navigation.
+- ~~`sql/game.sql` is 1600 lines~~ done: it is six files, run in the order they were cut from it (`SQL_FILES`), so the statements are the same: `game.sql` (the stubs, utilities and entity helpers, 270 lines), `movers.sql`, `triggers.sql`, `items.sql`, `combat.sql` and `spawn.sql` (170 to 400 lines each).
 - Line endings: the working copy is CRLF under `core.autocrlf=true`, the repository LF; an earlier cp1252 round trip doubled lines and broke UTF-8 in three files, since repaired. Keep sources UTF-8 and let git normalise.
 - `monster_types` lives in `src/gamedata.js` and is loaded as rows; the monster `CASE` branches in `monsters.sql` could move into more columns there.
 - The page's SQL console has no history or completion.
