@@ -329,7 +329,8 @@ Texels come from a **surface cache**: the miptex tiled under the face's lightmap
 styles summed) and pushed through the colormap once per face and light level, up to
 `SURF_CACHE_MAX` entries, at the face's **mip level** (`D_MipLevelForScale` from its nearest point and the
 texinfo's `mipadjust`: a surface 1/2^mip the size from the texture's mip, the lightmap's luxels 16 >> mip
-texels apart; liquids always at mip 0). Liquids are drawn with the sine warp, the sky with Quake's two scrolling
+texels apart; liquids always at mip 0), built a row at a time with the light stepped linearly across each
+16-texel block (`R_DrawSurfaceBlock`). Liquids are drawn with the sine warp, the sky with Quake's two scrolling
 layers mapped by the pixel's direction (`skyPixel`), both as special fill modes of the same span
 routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`. With the eye
 under a liquid surface the page calls `warpView` after the 3D (gun and particles included) and before
@@ -388,6 +389,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |
 | `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
+| `paint-bench.mjs` | the painter alone: four scenes queried once, painted again and again at 320×200 and 640×400, with the surface cache warm and cold |
 | `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |
 | `screenshot.mjs` | renders frames headlessly: `--at=x,y,z,yaw`, `--sql="…"` and `--tics=N` (repeatable, in order), `--single`, `--fast`, `--compare` (SQL-projected vs JS-projected frame, must match), `--gallery` (a view from every item spot) |
 | `gen-frame-layouts.mjs` | regenerates `src/framelayouts.js` |

@@ -69,9 +69,13 @@ let scores = [];           // deathmatch: every client's frags (qc_scores), refr
 let scoresAt = 0;
 try { Object.assign(settings, JSON.parse(localStorage.getItem('firebird-quake:settings') || '{}')); } catch { /* defaults */ }
 const saveSettings = () => { try { localStorage.setItem('firebird-quake:settings', JSON.stringify(settings)); } catch { /* ignore */ } };
-const viewWidth = () => (settings.detail === 'high' ? 320 : 160);
-const viewHeight = () => (settings.detail === 'high' ? 200 : 100);
-const sbarLines = () => (settings.detail === 'high' ? 24 : 12);   // the 3D view is the part above the status bar
+// the screen: 640×400 ('max'), 320×200 ('high', Quake's own) or 160×100 ('low'), scaled by CSS; above 320 the
+// status bar stays 320×24 and centred, as Quake draws it in higher video modes
+const DETAIL = { max: [640, 400, 24], high: [320, 200, 24], low: [160, 100, 12] };
+const detailOf = () => DETAIL[settings.detail] ?? DETAIL.high;
+const viewWidth = () => detailOf()[0];
+const viewHeight = () => detailOf()[1];
+const sbarLines = () => detailOf()[2];   // the 3D view is the part above the status bar
 const audio = new QuakeAudio();
 audio.setVolume(settings.sfx / 100);
 audio.setMusicVolume(settings.music / 100);
@@ -755,7 +759,7 @@ function menuActions() {
     load: (slot) => loadGame(slot),
     options: [
       { label: 'Reset to defaults', kind: 'action', change: () => { Object.assign(settings, { sensitivity: 3, alwaysRun: true, invertMouse: false }); setSfx(70); setMusicVolume(50); } },
-      { label: 'Screen size', kind: 'value', get: () => (settings.detail === 'high' ? '320x200' : '160x100'), change: () => setDetail(settings.detail === 'high' ? 'low' : 'high') },
+      { label: 'Screen size', kind: 'value', get: () => `${viewWidth()}x${viewHeight()}`, change: (d) => { const k = ['low', 'high', 'max']; setDetail(k[(k.indexOf(settings.detail) + (d < 0 ? 2 : 1)) % 3]); } },
       { label: 'Mouse Speed', kind: 'slider', get: () => (settings.sensitivity - 1) / 10, change: (d) => { settings.sensitivity = clamp(settings.sensitivity + d * 0.5, 1, 11); saveSettings(); } },
       { label: 'CD Music Volume', kind: 'slider', get: () => settings.music / 100, change: (d) => setMusicVolume(clamp(settings.music + d * 10, 0, 100)) },
       { label: 'Sound Volume', kind: 'slider', get: () => settings.sfx / 100, change: (d) => setSfx(clamp(settings.sfx + d * 10, 0, 100)) },

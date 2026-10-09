@@ -95,7 +95,7 @@ Click the view to capture the mouse.
 On touch screens the left half of the view moves, the right half looks, and a tap fires.
 
 The page's settings: the **map** (every `.bsp` in the pak), the **skill**, the **detail**
-(320×200 or 160×100), the **renderer** mode (below), the sound volume and the **music**. Quake's
+(640×400, 320×200 or 160×100), the **renderer** mode (below), the sound volume and the **music**. Quake's
 music was CD audio and is not in the pak: put `track02.ogg`…`track11.ogg` (or `.mp3`) in
 `public/music/`, or pick that folder in the page, and each map plays its `worldspawn` track; without
 them a synthesised drone fills in, or turn it off.

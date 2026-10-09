@@ -34,6 +34,7 @@
     "test:qcjit": "node scripts/qcjit-test.mjs",
     "test:qclq": "node scripts/qcvm-lq-test.mjs",
     "bench": "node scripts/bench.mjs",
+    "bench:paint": "node scripts/paint-bench.mjs",
     "bench:qc": "node scripts/qcvm-bench.mjs",
     "screenshots": "node scripts/screenshot.mjs e1m1",
     "check": "node scripts/sql-check.mjs"

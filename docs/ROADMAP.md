@@ -27,7 +27,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 ## The renderer
 
-- **Resolution and scaling**: the view is 320×200 or 160×100 scaled by CSS. A 640×400 mode would need the painter's per-pixel loops to get faster first (the span loop is the hot path; typed-array tricks and avoiding per-pixel divides beyond the 8-pixel step would help), or a second Worker for the painter.
+- ~~**Resolution and scaling**~~ done: the **Detail** setting (and the menu's Screen size) has 640×400 beside 320×200 and 160×100; above 320 the status bar stays 320×24 and centred, as in Quake's higher video modes. The painter was already fast enough (`npm run bench:paint`: 4 to 7 ms a frame with the surface cache warm at 640×400); building surfaces was the cost, and `buildSurface` now steps the light across each 16-texel block as `R_DrawSurfaceBlock` does instead of blending four luxels per texel, three times faster (E1M4's lake, every surface built: 44 → 15 ms at 640×400, 29 → 10 at 320×200) and pixel for pixel the same. In Chromium E1M1's start runs at 41 frames a second at 640×400 (49 at 320×200).
 - ~~**Underwater warp**~~ done (`Renderer.warpView`, `D_WarpScreen`): with the eye in water, slime or lava the finished 3D view is resampled through Quake's sine table. ~~**View roll** when strafing~~ done (`V_CalcRoll`: 2° at 200 units a second sideways, from the player's motion between frames). **Fullbright texture pixels** need nothing: Quake's colormap keeps colours 224–255 unchanged at every light level (all 2048 entries), and the surface cache goes through it. **Coloured lighting** (not Quake, not needed).
 - ~~**Mip levels**~~ done: each face picks its mip by `D_MipLevelForScale` (its nearest point, the view's pixels per unit, the texinfo's `mipadjust`; thresholds 1, 0.4, 0.2), and the surface cache builds it at 1/2^mip the size from the texture's mip with the lightmap sampled 16 >> mip texels apart. Distant faces no longer shimmer, and the raster got faster (E1M1's start view: 50 ms against 77). The nearest distance is rounded to a thousandth before the thresholds: the grid puts many faces exactly 160, 400 or 800 units away, where the SQL projection's last digits would otherwise pick another level than the JS one (`--compare`).
 - **BSP2 / 2PSB and large maps**: the parser accepts BSP 29 only, so many modern maps will not load. The loader's `TABLES` are not the limit; `Bsp` is.
@@ -35,7 +35,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 ## Performance
 
-- A tic is 6 to 12 ms and a frame's queries 8 to 15 ms, so the SQL side runs at 30+ Hz; the painter is the bottleneck in open scenes (up to 150 ms at 320×200). Profile `fillPolygon`'s span loop first.
+- A tic is 5 to 12 ms and a frame's queries 7 to 15 ms, and the painter 2 to 7 ms with the surface cache warm (`npm run bench:paint`), up to 15 ms when a scene's surfaces are all built afresh; the SQL side is now the larger share of a frame.
 - `mark_faces` on a leaf change is 15 ms: a spike when crossing doors. Marking by PVS could be cached per leaf in a table keyed by leaf id (space: faces × leaves, too much for a full table, fine for the leaves visited).
 - `frame_faces` (the slow mode) remains four times the fast mode; it exists to prove the projection in SQL and for `--compare`.
 - The loaders: E1M1 loads in two seconds, the registered episodes' big maps in four to five; the per-row parsing in PSQL could be replaced by `EXECUTE BLOCK`s with many parameters if the engine ever binds binary.
@@ -44,7 +44,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 
 - **CI takes about three minutes** because the nine scene tests run one after another; a matrix job per test would halve it.
 - **Flakiness** has three sources, all seen: random first thinks (wait 0.75 s before asserting on monsters), random AI choices near the scene (kill the bystanders), and event expiry (look each tic). The seeded `rnd()` makes each fixed: a test that passes `seed` to `loadMap` gets the same first thinks and the same AI choices every run.
-- `bench.mjs` should also time the painter (it has a stub canvas in `screenshot.mjs` to borrow).
+- ~~`bench.mjs` should also time the painter~~ done: `scripts/paint-bench.mjs` (`npm run bench:paint`) paints four scenes at both resolutions, warm and cold.
 - The screenshots page has every level of episodes 1 and 2 and the first three of episode 3; E3M4 to E3M7, episode 4, and LibreQuake's levels are not pictured.
 - A **LibreQuake scene test**: its start map passes the smoke test; nothing checks its own levels' set pieces.
 

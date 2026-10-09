@@ -25,6 +25,7 @@ npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the en
 npm run test:qctic             # the page's QuakeC mode: qc_tic's row, the intermission, a level change
 npm run test:qcai              # QuakeC monsters: a grunt sees, shoots and dies; a dog runs at the player
 npm run bench                  # timings of a tic, the traces, a monster think, the frame queries
+npm run bench:paint            # the painter alone, warm and cold, at 320×200 and 640×400
 npm run test:qcjit             # QuakeC compiled to PSQL: every function compiles, compiled = interpreted, E1M1 with the JIT
 npm run test:qclq              # LibreQuake's progs.dat in QuakeC mode (FTEQCC's overlapping locals)
 npm run bench:qc               # the QuakeC VM: µs per statement, per call, ms per server frame asleep and awake

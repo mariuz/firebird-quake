@@ -146,23 +146,34 @@ export class Renderer {
     const texw = tex.w >> mip, texh = tex.h >> mip, pix = tex.mips[mip];
     const smin = f.texturemins[0], tmin = f.texturemins[1];
     const smip = smin >> mip, tmip = tmin >> mip;
+    // R_DrawSurfaceBlock: a row at a time, the light worked out at each luxel column's edges and stepped
+    // linearly across the 16 >> mip texels between them, the texture column wrapped as it goes
+    const step = 16 >> mip;
     for (let v = 0; v < sh; v++) {
       const ty = (((v + tmip) % texh) + texh) % texh;
       const vf = v << mip;                      // the full-size texel row, for the lightmap
       const lv = Math.min(vf >> 4, lh - 1), lf = (vf & 15) / 16;
       const lv1 = Math.min(lv + 1, lh - 1);
-      const row = v * sw;
-      for (let u = 0; u < sw; u++) {
-        const tx = (((u + smip) % texw) + texw) % texw;
-        const uf = u << mip;
-        const lu = Math.min(uf >> 4, lw - 1), luf = (uf & 15) / 16;
-        const lu1 = Math.min(lu + 1, lw - 1);
-        const l0 = block[lv * lw + lu] * (1 - luf) + block[lv * lw + lu1] * luf;
-        const l1 = block[lv1 * lw + lu] * (1 - luf) + block[lv1 * lw + lu1] * luf;
-        const l = l0 * (1 - lf) + l1 * lf;
-        let shade = (255 - l) >> 2;
-        if (shade < 0) shade = 0; else if (shade > 63) shade = 63;
-        data[row + u] = cm[(shade << 8) | pix[ty * texw + tx]];
+      const r0 = lv * lw, r1 = lv1 * lw;
+      const trow = ty * texw;
+      let tx = (((smip % texw) + texw) % texw);
+      let d = v * sw;
+      let lu = 0;
+      let left = block[r0] * (1 - lf) + block[r1] * lf;
+      for (let u = 0; u < sw; lu++) {
+        const lu1 = lu + 1 < lw ? lu + 1 : lw - 1;
+        const right = block[r0 + lu1] * (1 - lf) + block[r1 + lu1] * lf;
+        const dl = (right - left) / step;
+        let l = left;
+        const end = Math.min(sw, u + step);
+        for (; u < end; u++) {
+          let shade = (255 - l) >> 2;
+          if (shade < 0) shade = 0; else if (shade > 63) shade = 63;
+          data[d++] = cm[(shade << 8) | pix[trow + tx]];
+          if (++tx === texw) tx = 0;
+          l += dl;
+        }
+        left = right;
       }
     }
     return { data, w: sw, h: sh, smin, tmin, mip };
