@@ -38,7 +38,7 @@ does not do yet, roughly by how much it would change the experience. Items marke
 - A tic is 5 to 12 ms and a frame's queries 7 to 15 ms, and the painter 2 to 7 ms with the surface cache warm (`npm run bench:paint`), up to 15 ms when a scene's surfaces are all built afresh; the SQL side is now the larger share of a frame.
 - ~~`mark_faces` on a leaf change is 15 ms~~ done: a view leaf's world faces are marked once into `leaf_faces` (keyed by leaf) and read from there by the frame queries, so returning to a leaf costs nothing (`npm run bench`: a frame in a leaf seen before 5 ms, against about 21 when it was marked again; the first visit 16 ms; the same leaf 5 ms, from 6). The cache grows with the leaves visited (a few hundred rows each) and is emptied with the map.
 - `frame_faces` (the slow mode) remains four times the fast mode; it exists to prove the projection in SQL and for `--compare`.
-- The loaders: E1M1 loads in two seconds, the registered episodes' big maps in four to five; the per-row parsing in PSQL could be replaced by `EXECUTE BLOCK`s with many parameters if the engine ever binds binary.
+- ~~The loaders~~ done: the `LOAD_<table>` procedures read fixed-width fields (each chunk starts with its columns' widths, a string carries its length) instead of searching for `|` with `POSITION`, which was most of their cost: E1M1 loads in 1.2 s instead of 2, E1M3 1.3 s instead of 2.2, LibreQuake's lq_e0m2 1.8 s instead of 3.5, progs.dat 0.65 s instead of 1.2, the rows identical (`npm run bench` prints the load). What is left is the `CAST` of each number (about 1.3 µs, the same for an integer as a double) and the `INSERT`; binary parameters, if the engine ever binds them, would remove the first.
 
 ## Tooling and tests
 

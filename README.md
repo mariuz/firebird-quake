@@ -140,8 +140,8 @@ denormalised so the hot loops never need a second lookup:
 model, frame, health, flags, think time, movement state and targets — the fields of `entvars_t`.
 
 The WASM build binds parameters as text, so each table has a generated `LOAD_<table>` procedure that
-parses 30 KB chunks of `|`-separated lines in PSQL — about 2.5× faster than a block of `INSERT`s.
-E1M1 (70 k rows) loads in about two seconds.
+parses 30 KB chunks of fixed-width fields in PSQL (no separators to search for). E1M1 (70 k rows)
+loads in about 1.2 seconds.
 
 ### Collision is a recursive procedure (`sql/physics.sql`)
 

@@ -64,9 +64,15 @@ consecutive frames whose names share a prefix (`run1`…`run6`) become one named
 models name frames `1`, `2`… so the loader substitutes the id layout (section 3.1).
 
 `loader.js` holds `TABLES`, a one-line spec per table (`name:type` columns). From it the loader
-*generates* a `LOAD_<table>` PSQL procedure that parses `|`-separated lines, and `bulkLoad` feeds
-text chunks of 30 KB to it. The WASM build binds parameters only as text; this beats `EXECUTE BLOCK`s
-of `INSERT`s by about 2.5×, and E1M1 (70 k rows) loads in two seconds.
+*generates* a `LOAD_<table>` PSQL procedure, and `bulkLoad` feeds text chunks of 30 KB to it. The
+WASM build binds parameters only as text. A chunk starts with each column's width (two digits); then
+every number is right-aligned in its column's width and every string is its length (in that width)
+followed by its text, so the parser takes `SUBSTRING`s at offsets it already knows and never searches.
+The `|`-separated lines it replaced spent most of their time in `POSITION`, finding the separators:
+the fixed widths load E1M1 (70 k rows) in 1.2 s instead of 2, and progs.dat in 0.65 s instead of 1.2,
+with the same rows. A number column marked `?` may be NULL (a blank field), at the price of a `TRIM`
+and a `NULLIF` per row, which is as slow as the old parse, so only `map_ents` and `models` have
+them; `bulkLoad` refuses a NULL anywhere else.
 
 `loadResources(db, pak, view)` loads what does not change between maps: every `.mdl` and `.spr`,
 the `b_*.bsp` item boxes, `monster_types` from `src/gamedata.js`, the light styles, `viewcfg`, and
@@ -425,7 +431,7 @@ The pak files are never committed (`.gitignore`); the registered `pak1.pak` is o
 - **Variables in DML need the colon** (`:x`), and a reserved word such as `at` cannot be a name.
 - **Forward references**: declare a stub with the identical signature first.
 - **`VARCHAR` beyond 8191** needs `CHARACTER SET ASCII` (the PVS strings, the loader chunks).
-- **No binary parameters** in the WASM build: bind text, parse in PSQL.
+- **No binary parameters** in the WASM build: bind text, parse in PSQL, and parse at fixed offsets: `POSITION` costs more than the `CAST`s and the `INSERT` together.
 - **`INSERT ... VALUES` takes one row**; bulk goes through the generated loaders.
 - **A procedure's plans are made when it is created**, with the tables empty: a join of a small keyed
   table to a big one can come out as a scan of the big one probing the small one's whole key. Writing

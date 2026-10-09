@@ -4,8 +4,11 @@
 // (scripts/sql-smoke.mjs), so CI exercises exactly the SQL the page runs.
 //
 // Bulk loading: the WASM build binds parameters as text, so each table has a
-// generated LOAD_<table> procedure that takes a 30 KB chunk of '|'-separated
-// lines and parses it in PSQL. That is 2–3× faster than a block of INSERTs.
+// generated LOAD_<table> procedure that takes a 30 KB chunk of rows and parses
+// it in PSQL. The fields are fixed-width (each chunk starts with its columns'
+// widths) and strings carry their length in front, so the parser only takes
+// SUBSTRINGs at known offsets: POSITION, the search for a separator, was most
+// of the cost of the '|'-separated lines this replaced (3× slower).
 
 import { Bsp, parseVec } from './bsp.js';
 import { Mdl, Spr } from './mdl.js';
@@ -17,7 +20,8 @@ const CHUNK = 30000;
 export const WORLD_ID_BASE = 0;           // ids below ITEM_ID_BASE are the current map
 export const ITEM_ID_BASE = 1000000;      // b_*.bsp boxes: loaded once, kept across maps
 
-// column specs: name:type where type ∈ i (integer) d (double) s (string)
+// column specs: name:type where type ∈ i (integer) d (double) s (string); a ? after the type marks a
+// number that may be NULL (it costs a TRIM and a NULLIF per row, so only where needed). An empty string is NULL.
 const TABLES = {
   hulls: 'hull:i node:i nx:d ny:d nz:d dist:d c0:i c1:i',
   leaves: 'id:i contents:i minx:d miny:d minz:d maxx:d maxy:d maxz:d first_ms:i num_ms:i ambient:i ambient_sky:i pvs:s',
@@ -25,7 +29,7 @@ const TABLES = {
   faces: 'id:i model_id:i nx:d ny:d nz:d dist:d nverts:i miptex:i sx:d sy:d sz:d soff:d tx:d ty:d tz:d toff:d sky:i liquid:i style0:i cx:d cy:d cz:d radius:d',
   face_verts: 'face:i seq:i x:d y:d z:d',
   miptex: 'id:i name:s w:i h:i',
-  models: 'id:i name:s kind:s minx:d miny:d minz:d maxx:d maxy:d maxz:d hull0:i hull1:i hull2:i first_face:i num_faces:i nframes:i flags:i radius:d',
+  models: 'id:i name:s kind:s minx:d? miny:d? minz:d? maxx:d? maxy:d? maxz:d? hull0:i? hull1:i? hull2:i? first_face:i? num_faces:i? nframes:i? flags:i? radius:d?',
   anims: 'model_id:i anim:s first_frame:i frame_count:i',
   qc_statements: 'id:i op:i a:i b:i c:i',
   qc_functions: 'id:i first_statement:i parm_start:i locals:i name:s file:s numparms:i p0:i p1:i p2:i p3:i p4:i p5:i p6:i p7:i shared:i',
@@ -34,32 +38,33 @@ const TABLES = {
   qc_globals0: 'ofs:i v:d',
   qc_parmmap: 'fnum:i dst:i src:i',
   map_keys: 'ent:i k:s v:s',
-  map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d mpitch:d myaw:d mroll:d spawnflags:i message:s wait_:d delay:d speed:d lip:d health:i light:i style:i sounds:i dmg:d height:d count_:i map:s noise:s worldtype:i',
+  map_ents: 'id:i classname:s targetname:s target:s killtarget:s model:s ox:d oy:d oz:d angle:d? mpitch:d? myaw:d? mroll:d? spawnflags:i message:s wait_:d? delay:d? speed:d? lip:d? health:i? light:i? style:i? sounds:i? dmg:d? height:d? count_:i? map:s noise:s worldtype:i?',
 };
 
 const SQL_TYPE = { i: 'INTEGER', d: 'DOUBLE PRECISION', s: 'VARCHAR(8192) CHARACTER SET ASCII' };   // the longest is a leaf's PVS (d_pvs)
 
-/** The LOAD_<table> procedures, generated from the column specs. */
+const columns = (spec) => spec.split(' ').map((c) => { const [name, t] = c.split(':'); return { name, type: t[0], nullable: t.endsWith('?') }; });
+
+/** The LOAD_<table> procedures, generated from the column specs. A chunk is the columns' widths, two
+ *  digits each (a string's is the width of its length), then the rows: each number right-aligned in
+ *  its width, each string its length then its text. */
 export function loaderSql() {
   let out = 'SET TERM ^ ;\n';
   for (const [table, spec] of Object.entries(TABLES)) {
-    const cols = spec.split(' ').map((c) => c.split(':'));
+    const cols = columns(spec);
     out += `CREATE OR ALTER PROCEDURE load_${table} (s VARCHAR(32000) CHARACTER SET ASCII) AS\n`;
-    out += 'DECLARE p INTEGER = 1; DECLARE q INTEGER; DECLARE e INTEGER; DECLARE len INTEGER; DECLARE f VARCHAR(8192) CHARACTER SET ASCII;\n';
-    for (const [name, type] of cols) out += `DECLARE v_${name} ${SQL_TYPE[type]};\n`;
-    out += 'BEGIN\n  len = CHAR_LENGTH(s);\n  WHILE (p <= len) DO BEGIN\n';
-    out += "    e = POSITION(ASCII_CHAR(10), s, p); IF (e = 0) THEN e = len + 1;\n";
-    cols.forEach(([name, type], i) => {
-      const last = i === cols.length - 1;
-      out += last
-        ? `    f = SUBSTRING(s FROM p FOR e - p);\n`
-        : `    q = POSITION('|', s, p); f = SUBSTRING(s FROM p FOR q - p); p = q + 1;\n`;
-      out += type === 's'
-        ? `    v_${name} = NULLIF(f, '');\n`
-        : `    v_${name} = CAST(NULLIF(f, '') AS ${SQL_TYPE[type]});\n`;
+    out += 'DECLARE p INTEGER; DECLARE len INTEGER; DECLARE n INTEGER;\n';
+    cols.forEach((c, i) => { out += `DECLARE w${i} INTEGER; DECLARE v_${c.name} ${SQL_TYPE[c.type]};\n`; });
+    out += 'BEGIN\n  len = CHAR_LENGTH(s);\n';
+    cols.forEach((c, i) => { out += `  w${i} = CAST(SUBSTRING(s FROM ${i * 2 + 1} FOR 2) AS INTEGER);\n`; });
+    out += `  p = ${cols.length * 2 + 1};\n  WHILE (p <= len) DO BEGIN\n`;
+    cols.forEach((c, i) => {
+      const f = `SUBSTRING(s FROM p FOR w${i})`;
+      if (c.type === 's') out += `    n = CAST(${f} AS INTEGER); v_${c.name} = NULLIF(SUBSTRING(s FROM p + w${i} FOR n), ''); p = p + w${i} + n;\n`;
+      else out += `    v_${c.name} = CAST(${c.nullable ? `NULLIF(TRIM(${f}), '')` : f} AS ${SQL_TYPE[c.type]}); p = p + w${i};\n`;
     });
-    out += `    INSERT INTO ${table} (${cols.map((c) => c[0]).join(', ')}) VALUES (${cols.map((c) => ':v_' + c[0]).join(', ')});\n`;
-    out += '    p = e + 1;\n  END\nEND^\n';
+    out += `    INSERT INTO ${table} (${cols.map((c) => c.name).join(', ')}) VALUES (${cols.map((c) => ':v_' + c.name).join(', ')});\n`;
+    out += '  END\nEND^\n';
   }
   return out + 'SET TERM ; ^\n';
 }
@@ -69,15 +74,29 @@ const str = (v) => (v === null || v === undefined ? '' : String(v).replace(/[|\n
 
 /** rows: arrays of values in column order. */
 export async function bulkLoad(db, table, rows) {
-  const lines = rows.map((r) => r.map((v) => (typeof v === 'string' ? str(v) : num(v))).join('|'));
-  let chunk = '';
+  const cols = columns(TABLES[table]);
+  const width = (f, c) => (c.type === 's' ? String(f.length).length : f.length);
+  let cur = [], w = cols.map(() => 1), strLen = 0;
   const flush = async () => {
-    if (chunk) await db.query(`EXECUTE PROCEDURE load_${table}(?)`, [chunk]);
-    chunk = '';
+    if (!cur.length) return;
+    let s = w.map((x) => String(x).padStart(2)).join('');
+    for (const r of cur) s += r.map((f, i) => (cols[i].type === 's' ? String(f.length).padStart(w[i]) + f : f.padStart(w[i]))).join('');
+    await db.query(`EXECUTE PROCEDURE load_${table}(?)`, [s]);
+    cur = []; w = cols.map(() => 1); strLen = 0;
   };
-  for (const line of lines) {
-    if (chunk.length + line.length + 1 > CHUNK) await flush();
-    chunk += line + '\n';
+  for (const row of rows) {
+    const f = row.map((v, i) => {
+      const c = cols[i];
+      if (c.type === 's') return str(v);
+      const t = num(v);
+      if (t === '' && !c.nullable) throw new Error(`bulkLoad: ${table}.${c.name} is NULL in a row (mark the column ${c.type}?)`);
+      return t;
+    });
+    const sl = f.reduce((a, x, i) => a + (cols[i].type === 's' ? x.length : 0), 0);
+    const grown = w.map((x, i) => Math.max(x, width(f[i], cols[i])));
+    if (cur.length && cols.length * 2 + (cur.length + 1) * grown.reduce((a, b) => a + b, 0) + strLen + sl > CHUNK) await flush();
+    w = w.map((x, i) => Math.max(x, width(f[i], cols[i])));
+    cur.push(f); strLen += sl;
   }
   await flush();
 }
