@@ -11,6 +11,7 @@ overview; [docs/screenshots.md](docs/screenshots.md) shows every level with the 
 npm run fetch-pak              # shareware pak0.pak into public/pak/ (needs 7-Zip, lha or lhasa)
 NODE_USE_ENV_PROXY=1 npm run fetch-pak   # behind a proxy (Claude's cloud sessions): Node's fetch ignores HTTPS_PROXY without it
 npm run fetch-librequake       # LibreQuake lite into public/pak/lq1/ (free pak0 + pak1)
+npm run fetch-mods             # three QuakeC mods: FrikBot X into public/pak/mods/ (served), two more into mods/ (tests only)
 npm run check                  # compile every sql/*.sql against the engine (first error with its line)
 npm test                       # SQL smoke test on E1M1
 npm run test:boss | test:registered | test:infight | test:skill | test:e1m2 … test:e1m8   # the scene tests
@@ -22,6 +23,7 @@ npm run test:fire              # the shambler's lightning frames, the fireballs'
 npm run test:bsp2              # BSP2 and 2PSB maps: E1M1 rewritten in both, the same rows and the same game
 npm run test:water             # see-through liquids where the map was vised for them (LibreQuake), not elsewhere
 npm run test:lq                # LibreQuake's levels and lq_e0m7's boss trap (needs npm run fetch-librequake)
+npm run test:mod               # mods: a mod's zip over id1, its progs.dat in QuakeC mode, FrikBot X's bots (needs npm run fetch-mods)
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics
 npm run test:qctic             # the page's QuakeC mode: qc_tic's row, the intermission, a level change

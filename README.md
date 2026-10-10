@@ -69,6 +69,20 @@ locals of its functions, which the VM saves and restores around their calls as Q
 
 ![LibreQuake's first level](docs/librequake-lq_e0m1-0.png) ![a LibreQuake enforcer in E1M1](docs/lq-enforcer-e1m1-0.png) ![LibreQuake's Shub-Niggurath in E1M1](docs/lq-oldone-e1m1-0.png)
 
+### Mods
+
+The QuakeC VM runs a mod's own `progs.dat`. The page's **Mod** control lays one over the game data as
+Quake lays a game directory over id1: a mod's zip as released (with its loose files, its pak files, or
+both) or its pak files, picked from your disk, or FrikBot X, which the site serves. A mod with its own
+`progs.dat` runs in QuakeC mode, and the **Impulse** box beside the control sends any impulse, as a key
+bound to it would. With FrikBot X, start a deathmatch or coop game and send impulse 100 to add one of
+its bots beside ours (101 adds one on the other team, 102 removes one).
+
+```bash
+npm run fetch-mods   # FrikBot X into public/pak/mods/ (the site serves it); two more mods into mods/ for the test
+npm run test:mod     # the three mods' progs.dat files in QuakeC mode, FrikBot X's bots in a deathmatch
+```
+
 Firebird WASM uses pthreads, so the page must be cross-origin isolated. The dev server sends the
 COOP/COEP headers with `--coi`; a static host like GitHub Pages cannot, so `coi-serviceworker.js`
 re-issues responses with the headers after a one-time reload. Node 20 or later is required for the
@@ -265,6 +279,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:bsp2` | the BSP2 and 2PSB formats of larger modern maps: E1M1 rewritten in both loads to the same rows, plays the same 150 tics and draws the same faces as the original |
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
 | `npm run test:hazard` | slime and lava as Quake's `WaterMove` hurts: slime 4 × waterlevel a second and nothing in the biosuit, lava 10 × waterlevel every 0.2 s and once a second in the suit, the PSQL game and QuakeC mode alike |
+| `npm run test:mod` | mods (needs `npm run fetch-mods`): a mod's zip laid over the shareware pak (its loose files, or a `pak2.pak` inside it, over id1's); id's progs 1.06 recompiled, Reinforcer 1.1 and FrikBot X each spawn and play E1M1 through their own `progs.dat`; FrikBot X's bots connect into spare client slots on impulse 100 and roam the level on its own QuakeC physics |
 | `npm run test:lq` | LibreQuake's levels: each loads with the player standing (or swimming) at full health, its monsters, and exits that lead to maps the pak has; lq_e0m7's boss trap (two buttons sink the vore's pillar into lava, where a `trigger_hurt` kills it through its armour) in both modes; the `light_globe` and QuakeC's static torches drawn |
 | `npm run test:dm` | deathmatch in QuakeC mode with bots played by PSQL: three clients on their own `info_player_deathmatch`, no monsters, the bots roaming; a bot fights and frags the player (progs.dat's obituary), the player respawns and frags a bot, fraglimit ends the level; coop keeps the monsters and a bot shoots a grunt; a deathmatch demo replays the bots exactly |
 | `npm run test:demo` | demos: E1M1 recorded through 700 calls of `quake_tic` (and 250 of `qc_tic`) with the player fighting and dying, then played back in a fresh database and after another level: every tic and every entity match the recording bit for bit |

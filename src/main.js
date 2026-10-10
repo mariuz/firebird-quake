@@ -32,6 +32,7 @@ import { exportDemo, importDemo, DemoPlayer } from './demos.js';
 import { frameDlights, dlightAt } from './dlights.js';
 import { Menu } from './menu.js';
 import { Renderer, lightPoint } from './renderer.js';
+import { modFromZip } from './zip.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
 
@@ -66,6 +67,8 @@ let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (Qua
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
 let pakKey = '';           // the paks in use: saves are kept per data set (model ids depend on the paks)
+let base = null;           // the data set's paks as loaded ({ buffers, label }), for laying a mod over them
+let mod = null;            // the mod laid over them ({ name, paks, progs }, src/zip.js), or null
 let saveSlots = new Array(12).fill(null);   // the menu's slot names (SaveGame_Comment), from the browser's store
 const QUICK_SLOT = 12;     // F6 / F9: Quake's quick.sav, not in the menu's list
 let recording = false;     // a demo is being recorded (sql/demo.sql)
@@ -199,7 +202,16 @@ function readInput(tics) {
 // ── maps ─────────────────────────────────────────────────────────────────
 // save: an exported save game (src/saves.js) to put back on the freshly loaded map instead of a new spawn;
 // seed: the level's random seed (a demo's), else init_map picks one
-async function startMap(name, newGame, { save = null, seed = null } = {}) {
+// Level loads one at a time: a control that loads a level (the mode, the map, a mod, the data set) may be
+// changed while another load is running, and two loads at once clear each other's tables
+let loading = Promise.resolve();
+function serial(fn) {
+  const p = loading.then(fn, fn);
+  loading = p.catch(() => {});
+  return p;
+}
+function startMap(...args) { return serial(() => loadLevel(...args)); }
+async function loadLevel(name, newGame, { save = null, seed = null } = {}) {
   running = false;
   await drain();                          // a tic in flight was the old level's
   if (recording) await stopRecording();   // a demo is one level
@@ -224,6 +236,8 @@ async function startMap(name, newGame, { save = null, seed = null } = {}) {
       // the server's rules (sql/bots.sql): deathmatch or coop, the bots as clients 2..
       const dm = settings.mode === 'deathmatch' ? 1 : 0, coop = settings.mode === 'coop' ? 1 : 0;
       await db.exec(`EXECUTE PROCEDURE qc_setup_server(${dm}, ${coop}, ${dm || coop ? settings.bots : 0}, ${dm ? settings.fraglimit : 0}, 0)`);
+      // a mod's own bots (FrikBot's impulse 100) take client slots the player and our bots leave free
+      if (mod?.progs && (dm || coop)) await db.exec('EXECUTE PROCEDURE qc_set_maxclients(8)');
       setStatus(`Spawning ${name} through QuakeC…`);
       await db.exec(`EXECUTE PROCEDURE qc_begin_map(${settings.skill}, ${newGame ? 0 : 1})`);
     }
@@ -401,8 +415,9 @@ async function compute(tics, calls, demoDone, soundFrom, fxFrom) {
     scoresAt = performance.now();
     scores = (await db.query('SELECT c, name, frags, alive FROM qc_scores', [], arr)).rows;
   }
-  // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
-  if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
+  // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled (more under a
+  // mod, whose code nothing has compiled before: FrikBot X's bots run its whole client physics in QuakeC)
+  if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: mod?.progs ? 10 : 3 }); }
   const ticMs = performance.now() - t0;
   const t1 = performance.now();
   const q = (sql) => db.query(sql, [], arr).then((r) => r.rows);
@@ -773,11 +788,15 @@ async function openDatabase() {
   return instance;
 }
 
-async function usePak(buffers, label) {
+function usePak(buffers, label) { return serial(() => loadData(buffers, label)); }
+async function loadData(buffers, label) {
   running = false;
   await drain();
   progsLoaded = false;
-  pak = new PakSet(buffers.map((b) => new Pak(b)));     // pak0.pak, and pak1.pak if you own Quake
+  base = { buffers, label };
+  // pak0.pak, and pak1.pak if you own Quake; a mod's files over them, as a game directory over id1
+  pak = new PakSet([...buffers.map((b) => new Pak(b)), ...(mod?.paks ?? [])]);
+  if (mod) label = `${label} + ${mod.name}`;
   const maps = pak.mapNames();
   if (!maps.length) throw new Error(`${label} has no maps`);
   setStatus(`Copying ${label} models into Firebird…`);
@@ -799,7 +818,7 @@ async function usePak(buffers, label) {
   try { demo = SaveStore.available() ? (await SaveStore.get(pakKey, 'demo')) ?? null : null; } catch { demo = null; }
   updateDemoButtons();
   const first = maps.includes(settings.map) ? settings.map : maps.includes('start') ? 'start' : maps[0];
-  await startMap(first, true);
+  await loadLevel(first, true);   // (inside this load's turn: startMap would wait for it)
 }
 
 async function boot() {
@@ -831,6 +850,12 @@ async function boot() {
       await usePak(buffers, d.paks.map((p) => p.slice(4)).join(' + '));
     };
     $('data').addEventListener('change', (e) => { settings.data = e.target.value; saveSettings(); loadDataset(e.target.value).catch((err) => setStatus(err.message, true)); });   // the frame loop keeps running; usePak pauses it while loading
+    // the mods the site serves (public/pak/mods/, npm run fetch-mods)
+    try {
+      const r = await fetch(new URL('./pak/mods/index.json', location.href));
+      const list = r.ok && (r.headers.get('content-type') ?? '').indexOf('text/html') < 0 ? await r.json() : [];
+      $('mod').innerHTML = '<option value="">none</option>' + list.map((m) => `<option value="${m.file}" title="${m.note}">${m.name}</option>`).join('');
+    } catch { /* no mods served: the file picker still takes one */ }
     if (!sets.length) throw new Error('could not fetch pak0.pak; pick a PAK file instead');
     const key = sets.some(([k]) => k === settings.data) ? settings.data : sets[0][0];
     $('data').value = key;
@@ -846,6 +871,40 @@ $('pakfile').addEventListener('change', async (e) => {
   const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name));   // pak0.pak before pak1.pak
   if (!files.length || !db) return;
   try { await usePak(await Promise.all(files.map((f) => f.arrayBuffer())), files.map((f) => f.name).join(' + ')); } catch (err) { setStatus(err.message, true); }
+});
+// a mod: a zip as released (or pak files) laid over the data set's paks; with its own progs.dat its game
+// runs in the QuakeC VM, so the logic switches to QuakeC
+async function useMod(next) {
+  mod = next;
+  if (mod?.progs && settings.logic !== 'qc') {   // (not setLogic: the level is loaded below, once)
+    settings.logic = 'qc'; $('logic').value = 'qc'; saveSettings();
+    flash(`${mod.name} brings its own progs.dat: the game runs in QuakeC mode`);
+  }
+  $('impulse-box').hidden = !mod?.progs;
+  if (base) await usePak(base.buffers, base.label);
+}
+// a mod's impulses (FrikBot X's 100 adds a bot): the next tic carries it, as a key bound to it would
+$('impulse-send').addEventListener('click', () => { impulse = Math.max(1, Math.min(255, Number($('impulse-n').value) || 0)); canvas.focus(); });
+async function modFromFiles(files) {
+  const zips = files.filter((f) => /\.zip$/i.test(f.name));
+  if (zips.length) return modFromZip(await zips[0].arrayBuffer(), zips[0].name);
+  const paks = await Promise.all(files.sort((a, b) => a.name.localeCompare(b.name)).map(async (f) => new Pak(await f.arrayBuffer())));
+  return { name: files.map((f) => f.name).join(' + '), paks, progs: paks.some((p) => p.has('progs.dat')) };
+}
+$('modfile').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  if (!files.length || !db) return;
+  try { $('mod').value = ''; await useMod(await modFromFiles(files)); } catch (err) { setStatus(err.message, true); }
+});
+$('mod').addEventListener('change', async (e) => {
+  const file = e.target.value;
+  try {
+    if (!file) { await useMod(null); return; }
+    setStatus(`Downloading ${file}…`);
+    const r = await fetch(new URL(`./pak/mods/${file}`, location.href));
+    if (!r.ok) throw new Error(`could not fetch ${file} (${r.status})`);
+    await useMod(await modFromZip(await r.arrayBuffer(), file));
+  } catch (err) { setStatus(err.message, true); }
 });
 $('map').addEventListener('change', (e) => { settings.map = e.target.value; saveSettings(); startMap(e.target.value, true).catch((err) => setStatus(err.message, true)); });
 // the settings, changed from the page's controls or from the menu's options

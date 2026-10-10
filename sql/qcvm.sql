@@ -310,6 +310,22 @@ BEGIN
   RETURN COALESCE((SELECT g.maxclients FROM game g WHERE g.id = 1), 1);
 END^
 
+-- svs.clients[c - 1].active: the clients the server reads moves from and runs, the page's player and the
+-- bots of sql/bots.sql. A mod's own bots in other client edicts (FrikBot's) are not: as in NetQuake, the
+-- engine leaves them alone and the mod's QuakeC moves them
+CREATE OR ALTER FUNCTION qc_client_active (c INTEGER) RETURNS SMALLINT
+AS
+BEGIN
+  RETURN IIF(c = 1 OR EXISTS (SELECT 1 FROM bots b WHERE b.c = :c), 1, 0);
+END^
+
+-- more client slots than the player and the bots take (a mod that adds its own bots needs them), up to 16
+CREATE OR ALTER PROCEDURE qc_set_maxclients (n INTEGER)
+AS
+BEGIN
+  UPDATE game g SET g.maxclients = MAXVALUE(1 + (SELECT COUNT(*) FROM bots), MINVALUE(:n, 16)) WHERE g.id = 1;
+END^
+
 CREATE OR ALTER FUNCTION qc_spawn () RETURNS INTEGER
 AS
 DECLARE e INTEGER; DECLARE mc INTEGER;
@@ -358,14 +374,16 @@ BEGIN
   DELETE FROM qc_log;
   UPDATE qc_functions f SET f.active = 0 WHERE f.active <> 0;   -- the calls and compiled flags stay: the procedures do
   INSERT INTO qc_edicts (id, free) VALUES (0, 0);     -- world
-  INSERT INTO qc_edicts (id, free) VALUES (1, 0);     -- the player
-  -- the bots' client edicts, free until they join (qc_client_join_n)
-  i = 2;
-  WHILE (i <= qc_maxclients()) DO BEGIN INSERT INTO qc_edicts (id, free) VALUES (:i, 1); i = i + 1; END
+  -- the clients' edicts, 1..maxclients, exist from the start, as SV_SpawnServer makes them: in use, with
+  -- no classname until a client connects into one (a mod that counts or claims client slots with
+  -- nextent, as FrikBot does, finds them); the engine runs only the connected ones (qc_client_active)
+  i = 1;
+  WHILE (i <= qc_maxclients()) DO BEGIN INSERT INTO qc_edicts (id, free) VALUES (:i, 0); i = i + 1; END
   IF (qc_on() = 1) THEN
   BEGIN
     DELETE FROM ents;
     INSERT INTO ents (id, classname) VALUES (1, 'player');
+    INSERT INTO ents (id, classname) SELECT d.id, '' FROM qc_edicts d WHERE d.id >= 2;
   END
   DELETE FROM qc_vm;
   INSERT INTO qc_vm (id, g_self, g_other, g_world, g_time, g_frametime, g_vfwd, g_vup, g_vright,
@@ -613,8 +631,11 @@ BEGIN
   END
   ELSE IF (n = 22) THEN                             -- findradius(org, rad): a chain through .chain
   BEGIN
-    a = qc_g(7); c = 0; hit = 0;
-    FOR SELECT d.id FROM qc_edicts d WHERE d.free = 0 ORDER BY d.id DESC INTO e DO
+    -- PF_findradius: every edict after the world that is not SOLID_NOT (the world, last in the walk, would
+    -- otherwise end the chain as soon as a radius reached the map's centre: FrikBot's 13000 does)
+    a = qc_g(7); c = 0; hit = 0; i = qc_fdef('solid');
+    FOR SELECT d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > 0 ORDER BY d.id DESC INTO e DO
+    IF (qc_f(e, i) <> 0) THEN
     BEGIN
       x = qc_f(e, vm_fo) + (qc_f(e, vm_mi) + qc_f(e, vm_ma)) * 0.5e0 - qc_g(4);
       y = qc_f(e, vm_fo + 1) + (qc_f(e, vm_mi + 1) + qc_f(e, vm_ma + 1)) * 0.5e0 - qc_g(5);
@@ -1350,7 +1371,11 @@ BEGIN
     DELETE FROM ents x WHERE x.id = :c;
     INSERT INTO ents (id, classname) VALUES (:c, 'player');
   END
+  -- Host_Spawn_f: the edict's colormap is its client number, its team its colours' (0, so 1), its netname
+  -- the client's name (mods find a client's slot by colormap: FrikBot's rankings)
   EXECUTE PROCEDURE qc_set_str(c, qc_fdef('netname'), name);
+  EXECUTE PROCEDURE qc_sf(c, qc_fdef('colormap'), c);
+  EXECUTE PROCEDURE qc_sf(c, qc_fdef('team'), 1);
   EXECUTE PROCEDURE qc_sg(g_self, c);
   IF (carry = 0) THEN
   BEGIN
@@ -1595,7 +1620,7 @@ DECLARE speed DOUBLE PRECISION; DECLARE newspeed DOUBLE PRECISION; DECLARE contr
 DECLARE cur DOUBLE PRECISION; DECLARE addspeed DOUBLE PRECISION; DECLARE accelspeed DOUBLE PRECISION; DECLARE wishspd DOUBLE PRECISION;
 DECLARE tf DOUBLE PRECISION; DECLARE va INTEGER;
 BEGIN
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN EXIT;
+  IF (qc_client_active(c) = 0 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   -- SV_ReadClientMove: the buttons, the impulse, the view angles
   EXECUTE PROCEDURE qc_sf(c, qc_fdef('button0'), fire);
   EXECUTE PROCEDURE qc_sf(c, qc_fdef('button2'), jump);
@@ -1701,7 +1726,7 @@ AS
 DECLARE f INTEGER; DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE alive SMALLINT; DECLARE wl SMALLINT; DECLARE wt INTEGER;
 DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
 BEGIN
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c) OR NOT EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN EXIT;
+  IF (qc_client_active(c) = 0 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
   EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, c); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('PlayerPreThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
@@ -1804,7 +1829,7 @@ BEGIN
   c = 2;
   WHILE (c <= mc) DO
   BEGIN
-    IF (EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN
+    IF (EXISTS (SELECT 1 FROM bots b WHERE b.c = :c) AND EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :c AND d.free = 0)) THEN
     BEGIN
       bf = 0; bs = 0; bu = 0; bp = 0; byw = 0; bfi = 0; bj = 0; bi = 0;
       SELECT b.fmove, b.smove, b.upmove, b.pitch, b.yaw, b.fire, b.jump, b.impulse FROM qc_bot_think(:c, :t, :dt) b INTO bf, bs, bu, bp, byw, bfi, bj, bi;

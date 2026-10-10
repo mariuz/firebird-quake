@@ -302,9 +302,12 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   `deathmatch` and `coop` QuakeC **globals** are set by `qc_begin_map` before the spawn, as
   `SV_SpawnServer` does (progs.dat reads the globals; the cvars too, through `cvar()`). The spawn drops
   what `ED_LoadFromFile` drops: in deathmatch only `NOT_DEATHMATCH` (2048), the skill bits otherwise.
-- **The clients** are edicts 1..maxclients (`qc_maxclients()`): `qc_reset` reserves them, `qc_spawn`
-  allocates above them, `qc_client_join_n(c, t, carry, name)` connects one (`ClientConnect`,
-  `PutClientInServer`), `qc_client_think(c, …)` and `qc_physics_client(c, …)` run any of them, the
+- **The clients** are edicts 1..maxclients (`qc_maxclients()`): `qc_reset` makes them, in use and with
+  no classname, as `SV_SpawnServer` does (a mod can count or claim them with `nextent` at worldspawn),
+  `qc_spawn` allocates above them, `qc_client_join_n(c, t, carry, name)` connects one (`Host_Spawn_f`'s
+  colormap, team and netname, then `ClientConnect`, `PutClientInServer`), `qc_client_think(c, …)` and
+  `qc_physics_client(c, …)` run the connected ones (`qc_client_active`: the player and the `bots` table's,
+  as `SV_Physics_Client` runs only `svs.clients[c].active`; a mod's own bots in other slots are its own), the
   edict loop visits all of them every frame, and `checkclient` takes turns between the live ones every
   0.1 s as `PF_newcheckclient` does. `centerprint`, `sprint` and `stuffcmd` reach the page only for
   client 1; `bprint` reaches everyone (the obituaries show on the message line).
@@ -323,6 +326,28 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   game in QuakeC mode with `qc_setup_server` before `qc_begin_map`; `qc_scores` (client, name, frags,
   alive) feeds the frag list drawn in the corner. Demos store the rules (the `demo` row) and saves
   keep them in the `game` row, with the `bots` table among the saved ones.
+
+## 8c. Mods (`src/zip.js`, the page's **Mod** control)
+
+A mod is a game directory over id1: its own `progs.dat`, models, sounds and maps, often in pak files of
+its own, released as a zip. `modFromZip(buffer)` finds the directory holding `progs.dat` or a `pakN.pak`
+at any depth (`fbxc/frikbot/` in FrikBot X's zip), reads it with the platform's `DecompressionStream`
+and returns its layers lowest first, its loose files then its paks in order, as `COM_AddGameDirectory`
+searches a directory's paks before its loose files; `PakSet` lays them over id1's paks, so everything
+the loader, the painter and the sound take from the paks comes from the mod where it has its own. A mod
+with its own `progs.dat` runs in QuakeC mode (the page switches the **Logic**), and in deathmatch or coop
+the page gives it spare client slots (`qc_set_maxclients(8)`) for bots of its own. The site serves FrikBot
+X (`public/pak/mods/`, listed by its `index.json`); any other mod comes in through the file picker.
+
+The three mods of `npm run test:mod` found what id's and LibreQuake's progs never needed: FrikBot X
+counts the client slots with `nextent` at worldspawn, finds a client's slot by `colormap` and connects
+its bots into the free ones, moving them with its own QuakeC copy of the client physics through a
+`MOVETYPE_STEP` helper entity per bot, so client edicts now exist from the start, `Host_Spawn_f`'s fields
+are set, and the engine runs only connected clients; it looks for items with `findradius(origin, 13000)`,
+which returned the world (the world was first in the walk and so last in the chain) until it was made to
+skip the world and `SOLID_NOT` as `PF_findradius` does; and its messages use Quake's gold characters,
+which the ASCII string table refused: `progs.js` turns them into the plain ones from the bytes (a
+`TextDecoder`'s `latin1` is windows-1252 in browsers), as the page draws text in white anyway.
 
 ## 9. The renderer in SQL (`sql/render.sql`)
 
@@ -421,6 +446,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |
+| `mod-test.mjs` | mods: zips laid over id1 (loose files, a pak inside), three released `progs.dat` files spawning and playing E1M1, `findradius` from the map's centre, FrikBot X's bots connecting into spare slots and roaming |
 | `dm-test.mjs` | deathmatch and coop with bots: the spawns, a bot fragging the player and the player a bot, respawning, fraglimit, a coop bot shooting a grunt, a bot demo replaying |
 | `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |
 | `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |

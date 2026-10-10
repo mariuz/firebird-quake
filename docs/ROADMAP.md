@@ -19,11 +19,20 @@ in order of what they would change.
   on, so the time-driven effects move at the display's rate: E1M1 in both logics 60 fps and 20 tics/s
   where it was 51 fps and 55 tics/s (PSQL) or 29 fps and 27 tics/s (QuakeC); E1M2 in QuakeC mode 40 fps
   and 20 tics/s where it was 23 and 20. The stats line shows both rates.
-- **Mods, for real** (*JS*, *tests*): the QuakeC VM exists so mods can run, and none has been tried.
-  `PakSet` layers paks and `loadProgs` reads `progs.dat` from the set, so most of the plumbing is there:
-  load a mod's pak over id1 as `-game` does (its `progs.dat`, maps, models and sounds over id1's), with a
-  test on a free QuakeC mod and a line in the README on how to drop one in. It is also the first test of
-  `qcvm.sql` against a `progs.dat` that is neither id's nor LibreQuake's.
+- ~~**Mods, for real**~~ done (`src/zip.js`, the page's **Mod** control and **Impulse** box, `npm run
+  fetch-mods`, `npm run test:mod`; ARCHITECTURE section 8c): a mod's zip as released (loose files, pak
+  files, or both, the game directory at any depth) or its pak files are laid over id1 as a game directory
+  is; a mod with its own `progs.dat` runs in QuakeC mode. Three released mods play E1M1: id's progs 1.06
+  recompiled with the fish fix, Reinforcer 1.1 and FrikBot X, whose bots connect into spare client slots
+  and roam. They found four things in the VM: client edicts must exist from worldspawn on and only
+  connected clients run (FrikBot counts the slots with `nextent` and moves its bots itself), `colormap`
+  and `team` are set on connect, `findradius` returned the world when a radius reached the map's centre,
+  and Quake's coloured characters did not load (mapped to plain ones from the bytes). The site serves
+  FrikBot X (public domain); the other two are fetched for the test only. Left: FrikBot's bots are slow,
+  since each runs the whole client physics in QuakeC every frame: with two of them beside three of ours a
+  tic is about 120 ms once its hot functions are compiled (33 ms without them, 24 under id's progs), so
+  the game runs at a third of real time; a mod that needs a builtin the VM lacks (DarkPlaces' or FTE's
+  extensions) stops at the first call.
 - **A Quake console** (*JS*): the page has an SQL console, not Quake's (`~`): `map e1m2`, `skill 2`,
   `god`, `noclip`, `give`, `kill`, `impulse N`, the cvars, drawn in the frame over `gfx/conback.lmp` with
   the console font, each command becoming the SQL it already stands for. With it, the menu's missing

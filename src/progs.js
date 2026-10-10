@@ -8,6 +8,21 @@ import { cstr } from './pak.js';
 
 export const QC_TYPES = { 0: 'void', 1: 'string', 2: 'float', 3: 'vector', 4: 'entity', 5: 'field', 6: 'function', 7: 'pointer' };
 
+// Quake's text: a character with the high bit set is the same glyph in gold, and 0x10..0x1f are the
+// gold brackets, digits and bar; the string table is ASCII and the page draws text in white, so they become
+// the plain characters, as the dedicated server's console prints them (mods colour their messages so)
+const DEQUAKE = Array.from({ length: 32 }, (_, c) => (c === 10 || c === 9 ? String.fromCharCode(c) : c === 0x10 ? '[' : c === 0x11 ? ']'
+  : c >= 0x12 && c <= 0x1b ? String(c - 0x12) : c === 0x1d ? '<' : c === 0x1e ? '-' : c === 0x1f ? '>' : '.'));   // one character for one: a reference into a string keeps its offset
+const quakeChar = (b) => { const c = b & 127; return c < 32 ? DEQUAKE[c] : c === 127 ? ' ' : String.fromCharCode(c); };
+// from the bytes (a TextDecoder's 'latin1' is windows-1252 in browsers: 0x80..0x9f would not be one char each)
+const quakeText = (bytes, off, len) => {
+  let s = '';
+  for (let i = off; i < off + len; i++) s += quakeChar(bytes[i]);
+  return s;
+};
+/** A string of byte values (charCodeAt < 256) as the page shows Quake's text. */
+export const dequake = (s) => quakeText(Uint8Array.from(s, (ch) => ch.charCodeAt(0)), 0, s.length);
+
 export class Progs {
   constructor(buffer, name = 'progs.dat') {
     const dv = new DataView(buffer);
@@ -61,7 +76,7 @@ export class Progs {
     let start = 0;
     for (let i = 0; i < ss.num; i++) {
       if (bytes[ss.ofs + i] === 0) {
-        this.strings.push([start, cstr(bytes, ss.ofs + start, i - start)]);
+        this.strings.push([start, quakeText(bytes, ss.ofs + start, i - start)]);
         start = i + 1;
       }
     }

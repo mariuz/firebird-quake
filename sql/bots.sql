@@ -44,9 +44,11 @@ AS
 DECLARE fn INTEGER; DECLARE ff INTEGER; DECLARE fh INTEGER;
 BEGIN
   fn = qc_fdef('netname'); ff = qc_fdef('frags'); fh = qc_fdef('health');
+  -- (a client slot no one has connected into has no name; a mod's own bots name theirs)
   FOR SELECT d.id FROM qc_edicts d WHERE d.id >= 1 AND d.id <= qc_maxclients() AND d.free = 0 ORDER BY d.id INTO c DO
   BEGIN
     name = qc_str(CAST(qc_f(c, fn) AS INTEGER));
+    IF (qc_client_active(c) = 0 AND COALESCE(name, '') = '') THEN CONTINUE;
     frags = CAST(qc_f(c, ff) AS INTEGER);
     alive = IIF(qc_f(c, fh) > 0, 1, 0);
     SUSPEND;

@@ -26,6 +26,10 @@
         <label title="Which game data to load: the Quake shareware episode, Quake with the registered pak1.pak, LibreQuake (free game data), or the shareware episode with LibreQuake's pak1.pak giving the registered monsters free models" hidden>Data <select id="data"></select></label>
         <label>PAK <span id="pakname" class="pill">—</span>
           <input id="pakfile" type="file" accept=".pak,.PAK" multiple title="pak0.pak, or pak0.pak and pak1.pak together if you own Quake"></label>
+        <label title="A QuakeC mod over the game data: one the site serves, or a mod's .zip (or its pak files) from your disk. A mod with its own progs.dat runs in QuakeC mode; FrikBot X adds a bot on impulse 100 in deathmatch or coop">Mod <select id="mod"><option value="">none</option></select>
+          <input id="modfile" type="file" accept=".zip,.ZIP,.pak,.PAK" multiple title="a mod's .zip as released, or its pak files"></label>
+        <label id="impulse-box" title="Send an impulse, as a key bound to it would: a mod's commands (FrikBot X: 100 adds a bot, 101 a bot on the other team, 102 removes one)" hidden>Impulse
+          <input id="impulse-n" type="number" min="1" max="255" value="100" style="width: 4em"> <button id="impulse-send">Send</button></label>
         <label>Map <select id="map"></select></label>
         <label>Skill <select id="skill">
           <option value="0">Easy</option>

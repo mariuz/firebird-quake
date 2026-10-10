@@ -80,7 +80,7 @@ if (process.argv.includes('--serve')) {
   const coi = process.argv.includes('--coi');
   const TYPES = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-    '.wasm': 'application/wasm', '.map': 'application/json', '.pak': 'application/octet-stream', '.svg': 'image/svg+xml',
+    '.wasm': 'application/wasm', '.map': 'application/json', '.pak': 'application/octet-stream', '.zip': 'application/zip', '.svg': 'image/svg+xml',
   };
   const port = Number(process.env.PORT ?? 8080);
   http.createServer((req, res) => {

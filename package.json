@@ -7,6 +7,7 @@
   "scripts": {
     "fetch-pak": "node scripts/fetch-pak.mjs",
     "fetch-librequake": "node scripts/fetch-pak.mjs --librequake",
+    "fetch-mods": "node scripts/fetch-pak.mjs --mods",
     "gen-frame-layouts": "node scripts/gen-frame-layouts.mjs",
     "build": "node scripts/build.mjs",
     "serve": "node scripts/build.mjs --serve",
@@ -23,6 +24,7 @@
     "test:bsp2": "node scripts/bsp2-test.mjs",
     "test:water": "node scripts/water-test.mjs",
     "test:lq": "node scripts/lq-test.mjs",
+    "test:mod": "node scripts/mod-test.mjs",
     "test:e1m8": "node scripts/e1m8-test.mjs",
     "test:e1m5": "node scripts/e1m5-test.mjs",
     "test:e1m2": "node scripts/e1m2-test.mjs",

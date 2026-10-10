@@ -5,5 +5,7 @@ public/wads/*.wad
 .claude/
 public/pak/*.pak
 public/pak/**/*.pak
+public/pak/mods/
+/mods/
 public/music/*
 !public/music/README.txt

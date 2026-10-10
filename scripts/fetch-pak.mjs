@@ -14,6 +14,14 @@
 // models and sounds, so with it beside the shareware pak0.pak the enforcer, hell knight, vore, spawn,
 // rotfish and Shub-Niggurath can be drawn without owning Quake; its pak0.pak is a whole free game.
 //   LQ=/path/to/id1 node scripts/fetch-pak.mjs --librequake   copies a LibreQuake id1 folder you have
+//
+//   node scripts/fetch-pak.mjs --mods
+// downloads three QuakeC mods from Quaddicted as their authors released them (zips, read by src/zip.js):
+// FrikBot X (Ryan Smith, public domain: bots for deathmatch and coop, impulse 100) into public/pak/mods/
+// with an index.json for the page's Mod selector, so the site serves it; id's progs 1.06 recompiled with
+// the rotfish count fixed (a progs.dat in a pak2.pak) and Reinforcer 1.1 (a squad of enforcers at the
+// player's command) into mods/, for the tests only, since their terms are not known. They are the test
+// of the QuakeC VM against progs.dat files that are neither id's nor LibreQuake's (npm run test:mod).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +36,10 @@ fs.mkdirSync(outDir, { recursive: true });
 
 if (process.argv.includes('--librequake')) {
   await fetchLibreQuake();
+  process.exit(0);
+}
+if (process.argv.includes('--mods')) {
+  await fetchMods();
   process.exit(0);
 }
 if (process.env.PAK) {
@@ -151,4 +163,26 @@ async function fetchLibreQuake() {
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+async function fetchMods() {
+  const MODS = [
+    { file: 'fbxc.zip', name: 'FrikBot X', note: 'bots: impulse 100 adds one, in deathmatch or coop', serve: true },
+    { file: 'progs106fishfix.zip', name: 'progs 1.06, fish fix', note: "id's QuakeC recompiled, the rotfish counted once" },
+    { file: 'reinforcer_11.zip', name: 'Reinforcer 1.1', note: 'a squad of enforcers under your command' },
+  ];
+  const dir = path.join(outDir, 'mods'), testDir = path.join(root, 'mods');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(testDir, { recursive: true });
+  for (const m of MODS) {
+    const out = path.join(m.serve ? dir : testDir, m.file);
+    if (fs.existsSync(out)) { console.log(`${path.relative(root, out)} already present`); continue; }
+    const url = `https://www.quaddicted.com/files/mods/${m.file}`;
+    console.log(`downloading ${url}…`);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`${url}: HTTP ${resp.status}`);
+    fs.writeFileSync(out, Buffer.from(await resp.arrayBuffer()));
+    console.log(`wrote ${path.relative(root, out)} (${(fs.statSync(out).size / 1024).toFixed(0)} KB)`);
+  }
+  fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(MODS.filter((m) => m.serve).map(({ file, name, note }) => ({ file, name, note })), null, 2) + '\n');
 }

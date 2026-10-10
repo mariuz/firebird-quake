@@ -26,11 +26,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Cache the paks (shareware, LibreQuake)
+      - name: Cache the paks (shareware, LibreQuake, the mods)
         id: pak
         uses: actions/cache@v4
         with:
-          path: public/pak/
+          path: |
+            public/pak/
+            mods/
           key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
       - name: Fetch the paks
         if: steps.pak.outputs.cache-hit != 'true'
@@ -38,6 +40,7 @@ jobs:
           sudo apt-get install -y lhasa
           npm run fetch-pak
           npm run fetch-pak -- --librequake
+          npm run fetch-pak -- --mods
 
   # The tests, in groups that run side by side (each about as long as the others); every test runs the
   # game's SQL inside the real Firebird WASM engine under Node
@@ -61,14 +64,15 @@ jobs:
               npm run test:qcvm
               npm run test:qcplay
               npm run test:qctic
-          # LibreQuake: its smoke test, levels, boss trap and progs.dat; deathmatch bots; BSP2 maps
-          - group: LibreQuake and deathmatch
+          # LibreQuake: its smoke test, levels, boss trap and progs.dat; deathmatch bots; BSP2 maps; mods
+          - group: LibreQuake, mods and deathmatch
             run: |
               PAK=public/pak/lq1/pak0.pak PAK1=public/pak/lq1/pak1.pak node scripts/sql-smoke.mjs start
               npm run test:lq
               npm run test:qclq
               npm run test:dm
               npm run test:bsp2
+              npm run test:mod
           # the smoke test on E1M1; saves; slime and lava; the registered monsters; the shambler and the
           # fireballs; see-through water; Chthon; Ziggurat Vertigo's low gravity
           - group: game rules
@@ -102,7 +106,9 @@ jobs:
       - name: The paks, from the cache
         uses: actions/cache/restore@v4
         with:
-          path: public/pak/
+          path: |
+            public/pak/
+            mods/
           key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
           fail-on-cache-miss: true
       - name: ${{ matrix.group }}
@@ -121,7 +127,9 @@ jobs:
       - name: The paks, from the cache
         uses: actions/cache/restore@v4
         with:
-          path: public/pak/
+          path: |
+            public/pak/
+            mods/
           key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
           fail-on-cache-miss: true
       - name: Headless screenshots
