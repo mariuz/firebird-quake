@@ -140,6 +140,19 @@ BEGIN
 END^
 
 -- visible(): a clear line between the eyes, not crossing a water surface
+-- an entity's eye above its origin (view_ofs): the player 22 (PutClientInServer), a walking or flying
+-- monster 25 and a swimming one 10 (walkmonster_start_go, flymonster_start_go, swimmonster_start_go),
+-- anything else its origin
+CREATE OR ALTER FUNCTION eye_height (e INTEGER) RETURNS DOUBLE PRECISION
+AS
+DECLARE cn VARCHAR(64); DECLARE fl INTEGER;
+BEGIN
+  SELECT x.classname, x.flags FROM ents x WHERE x.id = :e INTO cn, fl;
+  IF (cn = 'player') THEN RETURN 22;
+  IF (BIN_AND(fl, 32) <> 0) THEN RETURN IIF(BIN_AND(fl, 2) <> 0, 10, 25);
+  RETURN 0;
+END^
+
 CREATE OR ALTER FUNCTION visible (a INTEGER, b INTEGER) RETURNS SMALLINT
 AS
 DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION;
@@ -148,8 +161,9 @@ DECLARE f DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECI
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 BEGIN
-  SELECT e.x, e.y, e.z + IIF(e.classname = 'player', 22, e.maxz - 8) FROM ents e WHERE e.id = :a INTO x1, y1, z1;
-  SELECT e.x, e.y, e.z + IIF(e.classname = 'player', 22, e.maxz - 8) FROM ents e WHERE e.id = :b INTO x2, y2, z2;
+  -- visible(): from self.origin + self.view_ofs to targ.origin + targ.view_ofs
+  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :a INTO x1, y1, z1;
+  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :b INTO x2, y2, z2;
   IF (x1 IS NULL OR x2 IS NULL) THEN RETURN 0;
   EXECUTE PROCEDURE trace_move(NULL, 0, 0, 0, 0, 0, 0, x1, y1, z1, x2, y2, z2, 1)
     RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;

@@ -162,8 +162,10 @@ BEGIN
     FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO enemy, has_melee, has_missile, af, mk, ac, mrange, leap_min;
   IF (enemy IS NULL) THEN RETURN 0;
   -- see if any entities are in the way of the shot
-  SELECT e.x, e.y, e.z + e.maxz - 8 FROM ents e WHERE e.id = :eid INTO x1, y1, z1;
-  SELECT e.x, e.y, e.z + 22 FROM ents e WHERE e.id = :enemy INTO x2, y2, z2;
+  -- from self.origin + self.view_ofs to targ.origin + targ.view_ofs: a monster as its enemy is aimed at its
+  -- own eye, not the player's
+  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :eid INTO x1, y1, z1;
+  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :enemy INTO x2, y2, z2;
   EXECUTE PROCEDURE trace_move(eid, 0, 0, 0, 0, 0, 0, x1, y1, z1, x2, y2, z2, 0)
     RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
   IF (f < 1 AND hit <> enemy) THEN RETURN 0;                   -- don't have a clear shot

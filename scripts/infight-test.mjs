@@ -54,6 +54,12 @@ const sightBefore = await sounds('knight/ksight.wav');
 await hurt(knight, ogre, 5);
 let k = await mon(knight);
 assert(k.ENEMY_ID === ogre && k.OLDENEMY_ID === pe && k.ST !== 'stand', `hurt by the ogre, the knight turns on it (FoundTarget) and remembers the player (oldenemy)`);
+// sight and CheckAttack go eye to eye (origin + view_ofs): the player's 22, a monster's 25, a fish's 10, so a
+// monster aims at another monster's eye and not at the height of the player's
+{
+  const eyes = await q1(`SELECT eye_height(${pe}) p, eye_height(${knight}) k, (SELECT eye_height(id) FROM ents WHERE classname = 'trigger_changelevel' ROWS 1) s FROM rdb$database`);
+  assert(eyes.P === 22 && eyes.K === 25 && eyes.S === 0, `eye heights: the player ${eyes.P}, a knight ${eyes.K}, a trigger its origin (${eyes.S})`);
+}
 assert((await sounds('knight/ksight.wav')) > sightBefore, 'with its sight sound');
 
 // the ogre's own kind is spared: another knight's blow does not change a knight's mind
@@ -92,6 +98,10 @@ for (let i = 0; i < 10; i++) { await tic(); w = await mon(winner); if (w.ENEMY_I
 assert(w.ENEMY_ID === pe && w.OLDENEMY_ID === null && w.ST !== 'stand', 'its enemy dead, the survivor goes back to the player (ai_run: HuntTarget on oldenemy)');
 const s = await tic();
 assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Killed does (${s.KILLED} of ${s.TOTAL_MONSTERS})`);
+
+// a swimming monster's eye is lower (swimmonster_start_go: 10)
+const fish = await spawn('fish', 200);
+assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");
 
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');
