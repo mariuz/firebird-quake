@@ -626,6 +626,9 @@ BEGIN
         s = TRIM(SUBSTRING(s2 FROM 1 FOR i - 1));
         UPDATE qc_vm v SET v.cmdbuf = SUBSTRING(:s2 FROM :i + 2) WHERE v.id = 1;
         IF (s SIMILAR TO 'skill [0-3]') THEN UPDATE game g SET g.skill = CAST(SUBSTRING(:s FROM 7) AS SMALLINT) WHERE g.id = 1;
+        -- "restart", which respawn sends in single player (dead, or the console's kill): the level again,
+        -- as the PSQL game's death restarts it (exit_kind 3, which the page answers with the map anew)
+        ELSE IF (s = 'restart') THEN UPDATE game g SET g.exit_kind = 3 WHERE g.id = 1;
       END
     END
   END

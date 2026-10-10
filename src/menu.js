@@ -15,7 +15,8 @@ export class Menu {
   /**
    * lmp(name): a picture of the pak (or null); conchars: the console font; play(sound): a menu sound;
    * actions: { newGame(), quit(), multiplayer(), saves() → [12 slot names or null], load(slot), save(slot),
-   *            options: [{ label, get(), change(dir), kind: 'slider' | 'check' | 'value' | 'action' }] }
+   *            options: [{ label, get(), change(dir), kind: 'slider' | 'check' | 'value' | 'action' | 'keys' }],
+   *            keys: { list: [[command, label]], keysFor(command), bind(key, command), clear(command), keyName(code) } }
    */
   constructor({ lmp, conchars, play = () => {}, actions }) {
     this.lmp = lmp;
@@ -24,7 +25,8 @@ export class Menu {
     this.play = play;
     this.actions = actions;
     this.state = null;
-    this.cursor = { main: 0, single: 0, options: 0, load: 0, save: 0 };
+    this.cursor = { main: 0, single: 0, options: 0, load: 0, save: 0, keys: 0 };
+    this.binding = false;        // Customize controls: waiting for the key to bind
     this.helpPage = 0;
     this.slots = [];
     this.message = null;         // a line under the menu for a moment (a slot saved, a feature missing)
@@ -94,11 +96,32 @@ export class Menu {
       if (up || down) { move('options', items.length); return true; }
       const it = items[this.cursor.options];
       const left = code === 'ArrowLeft', right = code === 'ArrowRight';
+      if (it.kind === 'keys') { if (enter) { this.state = 'keys'; this.play('misc/menu2.wav'); } return true; }
       if (left || right || enter) {
         if (it.kind === 'action' && !enter) return true;
         it.change(left ? -1 : 1);
         this.play('misc/menu3.wav');
       }
+      return true;
+    }
+    if (s === 'keys') {
+      // M_Keys_Key: Enter waits for a key and binds it (a third key replaces the two), Backspace clears
+      const k = this.actions.keys;
+      const [cmd] = k.list[this.cursor.keys];
+      if (this.binding) {
+        this.binding = false;
+        if (code === 'Escape') { this.play('misc/menu1.wav'); return true; }
+        const name = k.keyName(code);
+        if (!name || name === '`') return true;
+        if (k.keysFor(cmd).length >= 2) k.clear(cmd);
+        k.bind(name, cmd);
+        this.play('misc/menu1.wav');
+        return true;
+      }
+      if (code === 'Escape') { this.state = 'options'; this.play('misc/menu1.wav'); return true; }
+      if (up || down) { move('keys', k.list.length); return true; }
+      if (code === 'Enter' || code === 'NumpadEnter') { this.binding = true; this.play('misc/menu2.wav'); return true; }
+      if (code === 'Backspace' || code === 'Delete') { k.clear(cmd); this.play('misc/menu2.wav'); }
       return true;
     }
     if (s === 'help') {
@@ -153,6 +176,20 @@ export class Menu {
           else if (it.kind === 'value') print(220, y, String(it.get()), false);
         });
         ch(200, 32 + this.cursor.options * 8, 12 + (Math.floor(seconds * 4) & 1));
+        break;
+      }
+      case 'keys': {
+        // M_Keys_Draw: each button and its two keys, the cursor (=, blinking, while waiting for a key)
+        centred('gfx/ttl_cstm.lmp', 4);
+        const k = this.actions.keys;
+        print(12, 32, this.binding ? 'Press a key or button for this action' : 'Enter to change, backspace to clear', false);
+        k.list.forEach(([cmd, label], i) => {
+          const y = 48 + 8 * i;
+          print(16, y, label, false);
+          const keys = k.keysFor(cmd);
+          print(140, y, keys.length ? keys.slice(0, 2).join(' or ') : '???');
+        });
+        ch(130, 48 + this.cursor.keys * 8, this.binding ? 61 : 12 + (Math.floor(seconds * 4) & 1));
         break;
       }
       case 'help': P(`gfx/help${this.helpPage}.lmp`, 0, 0); break;

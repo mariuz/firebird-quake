@@ -658,6 +658,17 @@ export class Renderer {
     }
   }
 
+  // Draw_ConsoleBackground: gfx/conback.lmp scaled to the screen's width and height, the console's `lines`
+  // rows showing its lower part (the console slides down over the view)
+  drawConback(pic, lines) {
+    if (!pic) return;
+    const { fb, w, h } = this;
+    for (let y = 0; y < Math.min(lines, h); y++) {
+      const v = Math.min(pic.h - 1, Math.floor(((h - lines + y) * pic.h) / h)) * pic.w;
+      for (let x = 0; x < w; x++) fb[y * w + x] = pic.data[v + Math.floor((x * pic.w) / w)];
+    }
+  }
+
   drawChar(conchars, c, x, y) {
     if (c === 32 || !conchars) return;
     const { fb, w, h } = this;

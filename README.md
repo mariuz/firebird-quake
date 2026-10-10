@@ -102,9 +102,12 @@ Click the view to capture the mouse.
 | `9` | all weapons and ammo (impulse 9) |
 | `P` | pause |
 | `F6`, `F9` | quick save, quick load |
+| `` ` `` | Quake's console: `map e1m3`, `god`, `noclip`, `give s 100`, `kill`, `bind k +jump`, `sql SELECT …`, `help` for the rest |
 | **Game** setting | single player, or deathmatch or coop (QuakeC mode, progs.dat's rules) against 1 to 7 bots played by PSQL; the menu's Multiplayer starts a deathmatch |
 | **Demo** buttons | record the level from its start, play it back, save or open a `.dem.json` file |
-| `Esc` | Quake's menu: new game, load and save (twelve slots), options (mouse speed, always run, volumes, screen size…), help |
+| `Esc` | Quake's menu: new game, load and save (twelve slots), options (customize controls, mouse speed, always run, volumes, screen size…), help |
+
+Every key is a binding, as in Quake: the menu's **Customize controls** or the console's `bind` changes them, and the page keeps them.
 
 On touch screens the left half of the view moves, the right half looks, and a tap fires.
 
@@ -279,6 +282,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:bsp2` | the BSP2 and 2PSB formats of larger modern maps: E1M1 rewritten in both loads to the same rows, plays the same 150 tics and draws the same faces as the original |
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
 | `npm run test:hazard` | slime and lava as Quake's `WaterMove` hurts: slime 4 × waterlevel a second and nothing in the biosuit, lava 10 × waterlevel every 0.2 s and once a second in the suit, the PSQL game and QuakeC mode alike |
+| `npm run test:console` | the Quake console (commands split at `;`, quoted arguments, history, Tab) and the key bindings (a button held by any of its keys, a command once a press); `god`, `notarget`, `noclip`, `give` and `kill` in the PSQL game and in QuakeC mode: god takes a rocket at the feet without a scratch, noclip walks through the wall ahead |
 | `npm run test:mod` | mods (needs `npm run fetch-mods`): a mod's zip laid over the shareware pak (its loose files, or a `pak2.pak` inside it, over id1's); id's progs 1.06 recompiled, Reinforcer 1.1 and FrikBot X each spawn and play E1M1 through their own `progs.dat`; FrikBot X's bots connect into spare client slots on impulse 100 and roam the level on its own QuakeC physics |
 | `npm run test:lq` | LibreQuake's levels: each loads with the player standing (or swimming) at full health, its monsters, and exits that lead to maps the pak has; lq_e0m7's boss trap (two buttons sink the vore's pillar into lava, where a `trigger_hurt` kills it through its armour) in both modes; the `light_globe` and QuakeC's static torches drawn |
 | `npm run test:dm` | deathmatch in QuakeC mode with bots played by PSQL: three clients on their own `info_player_deathmatch`, no monsters, the bots roaming; a bot fights and frags the player (progs.dat's obituary), the player respawns and frags a bot, fraglimit ends the level; coop keeps the monsters and a bot shoots a grunt; a deathmatch demo replays the bots exactly |

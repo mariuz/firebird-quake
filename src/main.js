@@ -24,6 +24,7 @@ import qcvmSql from '../sql/qcvm.sql';
 import saveSql from '../sql/save.sql';
 import demoSql from '../sql/demo.sql';
 import botsSql from '../sql/bots.sql';
+import hostSql from '../sql/host.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
@@ -33,6 +34,8 @@ import { frameDlights, dlightAt } from './dlights.js';
 import { Menu } from './menu.js';
 import { Renderer, lightPoint } from './renderer.js';
 import { modFromZip } from './zip.js';
+import { Bindings, keyName, MOUSE_NAMES, BUTTONS } from './binds.js';
+import { Console } from './console.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
 
@@ -100,13 +103,18 @@ function setStatus(msg, isError = false) {
 }
 
 // ── input ────────────────────────────────────────────────────────────────
-const keys = new Set();
+// Every key, mouse button and wheel turn is a binding (src/binds.js): a + button is held while its key
+// is down and read into the tic's input; any other command runs on the console when the key goes down
+let binds = new Bindings();
+try { const saved = JSON.parse(localStorage.getItem('firebird-quake:binds') || 'null'); if (saved) binds = new Bindings(saved); } catch { /* the defaults */ }
+const saveBinds = () => { try { localStorage.setItem('firebird-quake:binds', JSON.stringify(binds)); } catch { /* ignore */ } };
 let mouseYaw = 0, mousePitch = 0;
-let fireClick = false;
+let fireClick = false;     // a touch tap fires once
+let tapJump = false;       // a touch tap on the left half jumps once
 let impulse = 0;
-const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyE',
-  'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'Tab', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7',
-  'Digit8', 'KeyF', 'Comma', 'Period', 'PageUp', 'PageDown', 'Slash']);
+const con = new Console({ commands: consoleCommands() });
+con.print('Firebird Quake. The console: help lists the commands, ` puts it away.');
+const press = (name, down) => { const cmd = binds.key(name, down); if (cmd) con.execute(cmd, false); };
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
   if (!running) return;
@@ -117,33 +125,35 @@ window.addEventListener('keydown', (e) => {
     if (!menu.active && running) canvas.requestPointerLock?.()?.catch?.(() => {});
     return;
   }
+  // the console takes every key while it is down (` and Escape put it away)
+  if (con.active) { if (con.key(e.code, e.key)) e.preventDefault(); return; }
   if (e.code === 'Escape') { e.preventDefault(); openMenu(); document.exitPointerLock?.(); return; }
-  if (GAME_KEYS.has(e.code)) e.preventDefault();
-  keys.add(e.code);
-  if (e.code.startsWith('Digit')) impulse = Number(e.code.slice(5));
-  if (e.code === 'Slash') impulse = 10;
-  if (e.code === 'KeyP' || e.code === 'Pause') paused = !paused;
-  if (e.code === 'F6') { e.preventDefault(); saveGame(QUICK_SLOT); }
-  if (e.code === 'F9') { e.preventDefault(); loadGame(QUICK_SLOT); }
+  const name = keyName(e.code);
+  if (name && binds.get(name)) e.preventDefault();
+  if (!e.repeat) press(name, true);
 });
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('keyup', (e) => binds.key(keyName(e.code), false));
 let menuOpened = 0;
-function openMenu() { if (!menu || menu.active) return; menu.open(); menuOpened = performance.now(); keys.clear(); }
+function openMenu() { if (!menu || menu.active) return; con.toggle(false); menu.open(); menuOpened = performance.now(); binds.release(); }
 // the browser's Escape releases the mouse before the page hears the key: bring the menu up then, as Quake's Escape does
-document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas && running && !paused && !interWait) openMenu(); });
-window.addEventListener('blur', () => keys.clear());
+document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas && running && !paused && !interWait && !con.active) openMenu(); });
+window.addEventListener('blur', () => binds.release());
 canvas.addEventListener('click', () => {
   if (running && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
 });
-canvas.addEventListener('mousedown', (e) => { if (document.pointerLockElement === canvas && e.button === 0) fireClick = true; });
-window.addEventListener('mouseup', () => { fireClick = false; });
+canvas.addEventListener('mousedown', (e) => { if (document.pointerLockElement === canvas && MOUSE_NAMES[e.button]) press(MOUSE_NAMES[e.button], true); });
+window.addEventListener('mouseup', (e) => { if (MOUSE_NAMES[e.button]) binds.key(MOUSE_NAMES[e.button], false); });
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement === canvas) {
     mouseYaw -= e.movementX * 0.05 * settings.sensitivity;
     mousePitch += e.movementY * 0.05 * settings.sensitivity * (settings.invertMouse ? -1 : 1);
   }
 });
-window.addEventListener('wheel', (e) => { if (document.pointerLockElement === canvas) impulse = 10; });
+window.addEventListener('wheel', (e) => {
+  if (document.pointerLockElement !== canvas || !e.deltaY) return;
+  const name = e.deltaY < 0 ? 'mwheelup' : 'mwheeldown';
+  press(name, true); binds.key(name, false);
+});
 // touch: left half moves, right half looks, tap fires
 const touch = { move: null, look: null };
 canvas.addEventListener('touchstart', (e) => {
@@ -169,20 +179,19 @@ canvas.addEventListener('touchend', (e) => {
     const rec = touch[k];
     if (rec && rec.id === t.identifier) {
       if (k === 'look' && Math.abs(rec.dx) < 10 && Math.abs(rec.dy) < 10 && performance.now() - rec.t < 250) fireClick = 'tap';
-      if (k === 'move' && Math.abs(rec.dx) < 10 && Math.abs(rec.dy) < 10 && performance.now() - rec.t < 250) keys.add('TapJump');
+      if (k === 'move' && Math.abs(rec.dx) < 10 && Math.abs(rec.dy) < 10 && performance.now() - rec.t < 250) tapJump = true;
       touch[k] = null;
     }
   }
 }, { passive: false });
 
 function readInput(tics) {
-  const k = (c) => keys.has(c);
-  let fwd = (k('KeyW') || k('ArrowUp') ? 1 : 0) - (k('KeyS') || k('ArrowDown') ? 1 : 0);
-  let side = (k('KeyD') || k('Period') ? 1 : 0) - (k('KeyA') || k('Comma') ? 1 : 0);
-  const turnKeys = (k('ArrowLeft') ? 1 : 0) - (k('ArrowRight') ? 1 : 0);
-  const lookKeys = (k('PageDown') ? 1 : 0) - (k('PageUp') ? 1 : 0);
-  const shift = k('ShiftLeft') || k('ShiftRight');
-  const run = (settings.alwaysRun ? !shift : shift) ? 1 : 0;     // always run (shift walks), or shift runs
+  const b = (button) => (binds.down(button) ? 1 : 0);
+  let fwd = b('+forward') - b('+back');
+  let side = b('+moveright') - b('+moveleft');
+  const turnKeys = b('+left') - b('+right');
+  const lookKeys = b('+lookdown') - b('+lookup');
+  const run = (settings.alwaysRun ? !b('+speed') : b('+speed')) ? 1 : 0;     // always run (+speed walks), or +speed runs
   if (touch.move) {
     fwd = Math.max(-1, Math.min(1, -touch.move.dy / 40));
     side = Math.max(-1, Math.min(1, touch.move.dx / 40));
@@ -190,10 +199,10 @@ function readInput(tics) {
   const yaw = turnKeys * 7 * tics + mouseYaw;
   const pitch = lookKeys * 5 * tics + mousePitch;
   mouseYaw = 0; mousePitch = 0;
-  const fire = k('ControlLeft') || k('ControlRight') || k('KeyF') || fireClick ? 1 : 0;
-  if (fireClick === 'tap') fireClick = false;
-  const jump = k('Space') || k('KeyE') || k('TapJump') ? 1 : 0;
-  keys.delete('TapJump');
+  const fire = b('+attack') || fireClick ? 1 : 0;
+  fireClick = false;
+  const jump = b('+jump') || b('+moveup') || tapJump ? 1 : 0;
+  tapJump = false;
   const imp = impulse;
   impulse = 0;
   return [tics, fwd, side, yaw, pitch, fire, jump, run, imp];
@@ -376,6 +385,7 @@ function updateDemoButtons() {
 // drains the tic in flight first (drain), and a result from before a level change is dropped.
 let pending = null;
 let mapGen = 0;
+let lastMsg = null;
 let ticAt = 0;             // when the frame's tic result arrived (the time-driven effects run on from it)
 let drawAt = 0;            // when the last frame was drawn (the particles' wall-clock step)
 let ticCount = 0;          // tics this second, for the stats line
@@ -464,6 +474,8 @@ async function frame() {
     }
     if (cur) {
       last = cur.last;
+      if (last.MSG && last.MSG !== lastMsg) con.print(last.MSG.trimEnd());   // the message line goes to the console too, as Con_Printf's
+      lastMsg = last.MSG;
       ticAt = performance.now(); ticCount += cur.tics;
       perf.tic = cur.ticMs; perf.faces = cur.facesMs;
       if (cur.sounds.length) lastSoundId = cur.sounds[cur.sounds.length - 1][0];
@@ -662,6 +674,7 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   else if (last.SUIT) tint = [0, 255, 0, 0.2];
   else if (last.WATERLEVEL >= 3) tint = last.WATERTYPE === -5 ? [255, 80, 0, 0.6] : last.WATERTYPE === -4 ? [0, 25, 5, 0.6] : [130, 80, 50, 0.5];
   if (overlay) overlay(r);
+  con.draw(r, performance.now() / 1000);
   r.present(tint);
 }
 let prevPos = null;
@@ -784,7 +797,7 @@ async function openDatabase() {
   const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, save: saveSql, demo: demoSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, host: hostSql, save: saveSql, demo: demoSql });
   return instance;
 }
 
@@ -809,6 +822,8 @@ async function loadData(buffers, label) {
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
   hud = new Hud(wad, (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
+  con.conchars = hud.conchars;
+  con.conback = pak.has('gfx/conback.lmp') ? qpic(pak.get('gfx/conback.lmp')) : null;
   menu = new Menu({ lmp: (n) => (pak.has(n) ? qpic(pak.get(n)) : null), conchars: hud.conchars, play: (snd) => audio.playLocal(snd), actions: menuActions() });
   audio.setPak(pak);
   $('map').innerHTML = maps.map((m) => `<option>${m}</option>`).join('');
@@ -826,7 +841,7 @@ async function boot() {
     db = await openDatabase();
     // for the devtools console: await quake.sql('SELECT * FROM player'); quake.renderer, quake.res, quake.settings, quake.last;
     // the QuakeC VM: await quake.loadProgs(); await quake.sql("EXECUTE PROCEDURE qc_run('worldspawn', 0)"); await quake.sql('SELECT * FROM qc_log')
-    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get jit() { return jit; }, get menu() { return menu; }, get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
+    window.quake = { db, audio, settings, sql: (q, p) => db.query(q, p).then((r) => r.rows), loadProgs: () => loadProgs(db, pak), get jit() { return jit; }, get menu() { return menu; }, con, get binds() { return binds; }, get renderer() { return renderer; }, get res() { return res; }, get last() { return last; }, get map() { return map; } };
     // which game data the site serves: the shareware pak, the registered pak1.pak beside it, LibreQuake
     // (public/pak/lq1/, `npm run fetch-pak -- --librequake`), or the shareware pak with LibreQuake's
     // pak1.pak, which gives the registered monsters free models
@@ -934,6 +949,71 @@ function setMusicVolume(v) { settings.music = v; saveSettings(); $('musicvol').v
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // M_Menu_Options and the rest of the menu's actions: New Game is Quake's "map start"
+// the console's commands (cmd.c, host_cmd.c, keys.c): the game's become host_cmd's SQL (sql/host.sql)
+function consoleCommands() {
+  const need = () => { if (!running || !db) throw new Error('no game running'); };
+  const host = async (cmd, a1 = '', a2 = '') => { need(); return (await db.query('SELECT msg FROM host_cmd(?, ?, ?)', [cmd, a1, a2])).rows[0]?.MSG ?? null; };
+  const slotOf = (a) => (a === undefined || a === 'quick' ? QUICK_SLOT : Number(String(a).replace(/^s/i, '')));
+  const value = (key, apply) => (args) => {
+    if (!args.length) return `"${key}" is "${settings[key]}"`;
+    const v = Number(args[0]);
+    if (!Number.isFinite(v)) return `${key}: a number`;
+    return apply(v);
+  };
+  const C = {
+    help: { help: 'these commands', run: () => Object.entries(C).map(([n, c]) => `${n.padEnd(13)} ${c.help}`).join('\n') },
+    clear: { help: 'empty the console', run: (a, c) => { c.lines = []; } },
+    echo: { help: 'print the text', run: (a, c, raw) => raw },
+    map: { help: '<map>: a new game on that map', run: async ([m]) => { if (!m) return `map is ${map?.name}`; if (!pak.has(`maps/${m}.bsp`)) return `map ${m} not found`; await startMap(m, true); } },
+    changelevel: { help: '<map>: go on to that map, keeping what you carry', run: async ([m]) => { need(); if (!pak?.has(`maps/${m}.bsp`)) return `map ${m} not found`; await startMap(m, false); } },
+    restart: { help: 'this map again, from the start', run: async () => { need(); await startMap(map.name, true); } },
+    skill: { help: '<0..3>: the skill of the next map', run: value('skill', (v) => { settings.skill = Math.max(0, Math.min(3, Math.round(v))); $('skill').value = String(settings.skill); saveSettings(); }) },
+    god: { help: 'take no damage', run: () => host('god') },
+    notarget: { help: 'monsters do not see you', run: () => host('notarget') },
+    noclip: { help: 'fly through walls', run: () => host('noclip') },
+    give: { help: '<2..8 | s n r c h> <amount>: a weapon, ammo or health', run: ([a, n]) => host('give', a ?? '', n ?? '') },
+    kill: { help: 'suicide', run: () => host('kill') },
+    impulse: { help: '<n>: the impulse a key bound to it sends (9: everything, 100: a FrikBot)', run: ([n]) => { impulse = Math.max(0, Math.min(255, Number(n) || 0)); } },
+    bind: {
+      help: '<key> [command]: what a key does (+forward, impulse 7, god…)',
+      run: ([k, ...cmd]) => {
+        if (!k) return 'bind <key> [command]';
+        const key = k.toLowerCase();
+        if (!cmd.length) return binds.get(key) ? `"${key}" = "${binds.get(key)}"` : `"${key}" is not bound`;
+        binds.set(key, cmd.join(' ')); saveBinds();
+      },
+    },
+    unbind: { help: '<key>: unbound', run: ([k]) => { if (!k) return 'unbind <key>'; binds.set(k.toLowerCase(), null); saveBinds(); } },
+    unbindall: { help: 'every key unbound (` and Escape still work)', run: () => { binds.unbindAll(); saveBinds(); } },
+    bindlist: { help: 'the bindings', run: () => [...binds.map].sort(([a], [b]) => a.localeCompare(b)).map(([k, c]) => `${k.padEnd(10)} "${c}"`).join('\n') },
+    resetbinds: { help: "Quake's keys again", run: () => { binds.reset(); saveBinds(); } },
+    sql: {
+      help: '<statement>: run SQL on the live game',
+      run: async (a, c, raw) => {
+        if (!raw || !db) return 'sql <statement>';
+        const r = /^\s*(select|with|execute\s+block)/i.test(raw) ? await db.query(raw, [], { rowMode: 'object' }) : { rows: [], exec: await db.exec(raw) };
+        if (!r.rows.length) return 'OK';
+        const cols = Object.keys(r.rows[0]);
+        return [cols.join(' '), ...r.rows.slice(0, 20).map((row) => cols.map((k) => fmt(row[k])).join(' ')), ...(r.rows.length > 20 ? [`… ${r.rows.length} rows`] : [])].join('\n');
+      },
+    },
+    fov: { help: '<10..170>: the field of view', run: value('fov', async (v) => { settings.fov = Math.max(10, Math.min(170, v)); saveSettings(); await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov); }) },
+    sensitivity: { help: '<1..11>: the mouse speed', run: value('sensitivity', (v) => { settings.sensitivity = Math.max(1, Math.min(11, v)); saveSettings(); }) },
+    volume: { help: '<0..1>: the sound volume', run: (a) => (a.length ? setSfx(Math.round(Math.max(0, Math.min(1, Number(a[0]) || 0)) * 100)) : `"volume" is "${settings.sfx / 100}"`) },
+    bgmvolume: { help: '<0..1>: the music volume', run: (a) => (a.length ? setMusicVolume(Math.round(Math.max(0, Math.min(1, Number(a[0]) || 0)) * 100)) : `"bgmvolume" is "${settings.music / 100}"`) },
+    logic: { help: '[psql | qc]: the game logic, the PSQL game or the QuakeC VM', run: ([v]) => { if (!v) return `logic is ${settings.logic}`; if (v !== 'psql' && v !== 'qc') return 'logic psql | qc'; setLogic(v); } },
+    save: { help: '[0..11 | quick]: save the game in a slot', run: ([s]) => saveGame(slotOf(s)) },
+    load: { help: '[0..11 | quick]: load a saved game', run: ([s]) => loadGame(slotOf(s)) },
+    pause: { help: 'pause or go on', run: () => { paused = !paused; } },
+    toggleconsole: { help: 'bring the console down or put it away', run: () => { con.toggle(); binds.release(); } },
+    status: { help: 'the map, the time, the kills and secrets', run: () => (last ? `map ${last.MAP_NAME}, ${last.TIME_.toFixed(1)} s, kills ${last.KILLED}/${last.TOTAL_MONSTERS}, secrets ${last.FOUND_SECRETS}/${last.TOTAL_SECRETS}, ${settings.logic === 'qc' ? 'QuakeC' : 'PSQL'} game` : 'no game running') },
+    version: { help: 'what runs this', run: () => `Firebird Quake on ${$('engine').textContent}` },
+    quit: { help: 'a new game from the start map', run: () => startMap('start', true) },
+  };
+  C.cmdlist = C.help;
+  return C;
+}
+
 function menuActions() {
   const newGame = () => startMap('start', true).catch((err) => setStatus(err.message, true));
   return {
@@ -943,8 +1023,16 @@ function menuActions() {
     saves: () => saveSlots,
     save: (slot) => saveGame(slot),
     load: (slot) => loadGame(slot),
+    keys: {
+      list: BUTTONS,
+      keysFor: (cmd) => binds.keysFor(cmd),
+      bind: (key, cmd) => { binds.set(key, cmd); saveBinds(); },
+      clear: (cmd) => { for (const key of binds.keysFor(cmd)) binds.set(key, null); saveBinds(); },
+      keyName,
+    },
     options: [
-      { label: 'Reset to defaults', kind: 'action', change: () => { Object.assign(settings, { sensitivity: 3, alwaysRun: true, invertMouse: false }); setSfx(70); setMusicVolume(50); } },
+      { label: 'Customize controls', kind: 'keys' },
+      { label: 'Reset to defaults', kind: 'action', change: () => { Object.assign(settings, { sensitivity: 3, alwaysRun: true, invertMouse: false }); setSfx(70); setMusicVolume(50); binds.reset(); saveBinds(); } },
       { label: 'Screen size', kind: 'value', get: () => `${viewWidth()}x${viewHeight()}`, change: (d) => { const k = ['low', 'high', 'max']; setDetail(k[(k.indexOf(settings.detail) + (d < 0 ? 2 : 1)) % 3]); } },
       { label: 'Mouse Speed', kind: 'slider', get: () => (settings.sensitivity - 1) / 10, change: (d) => { settings.sensitivity = clamp(settings.sensitivity + d * 0.5, 1, 11); saveSettings(); } },
       { label: 'CD Music Volume', kind: 'slider', get: () => settings.music / 100, change: (d) => setMusicVolume(clamp(settings.music + d * 10, 0, 100)) },

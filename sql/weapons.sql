@@ -296,6 +296,25 @@ BEGIN
   UPDATE ents e SET e.yaw = :yaw WHERE e.id = :pe;
   IF (imp > 0) THEN EXECUTE PROCEDURE player_impulse(imp);
 
+  -- MOVETYPE_NOCLIP (the console's noclip): SV_AirMove's wish velocity along the whole view, pitch included,
+  -- capped at sv_maxspeed and taken as the velocity, then SV_Physics_Noclip's move through everything,
+  -- linked without touching; no water, no gravity, no ground; the weapon still fires
+  IF ((SELECT e.movetype FROM ents e WHERE e.id = :pe) = 8) THEN
+  BEGIN
+    maxspd = IIF(run = 1, 320, 200);
+    fx_ = COS(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0);
+    fz = -SIN(pitch * 0.0174532925e0); rx = SIN(yaw * 0.0174532925e0); ry = -COS(yaw * 0.0174532925e0);
+    vx = (fx_ * fwd + rx * side) * maxspd; vy = (fy * fwd + ry * side) * maxspd; vz = fz * fwd * maxspd + IIF(jump = 1, maxspd, 0);
+    wspd = vlen(vx, vy, vz);
+    IF (wspd > 320) THEN BEGIN vx = vx * 320 / wspd; vy = vy * 320 / wspd; vz = vz * 320 / wspd; END
+    UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.x = e.x + :vx * :dt, e.y = e.y + :vy * :dt, e.z = e.z + :vz * :dt,
+                      e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
+    EXECUTE PROCEDURE link_ent(pe);
+    EXECUTE PROCEDURE player_fire(fire);
+    UPDATE player p SET p.weaponframe = IIF(p.attack_finished > :t AND p.weapon <> 0, 1 + FLOOR((:t - p.lightning_time) * 10 + 0.001e0), 0) WHERE p.id = 1;
+    EXIT;
+  END
+
   -- water: drowning, slime and lava
   EXECUTE PROCEDURE check_water(pe) RETURNING_VALUES wl, wt;
   IF (wl = 3) THEN
