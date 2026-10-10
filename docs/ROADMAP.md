@@ -9,12 +9,16 @@ does not do yet, roughly by how much it would change the experience. Items marke
 What is left above is blocked (the registered pak) or by design; these are the next things worth doing,
 in order of what they would change.
 
-- **The painter in a worker, in parallel with the SQL frame** (*JS*): a page frame is the tic (2 to 7 ms
-  amortised), the frame queries (about 4 ms) and the painter (2 to 7 ms, 15 cold), one after the other on
-  one thread. The painter needs only the face rows, the entity rows and the light styles, plain arrays,
-  so it can draw on an `OffscreenCanvas` in a Web Worker while the main thread already runs the next tic
-  and queries; the two halves overlap, and the frame rate can approach twice what it is without a change
-  to the SQL. `Renderer` is self-contained already (`paint-bench.mjs` drives it headless).
+- ~~**The painter in a worker, in parallel with the SQL frame**~~ done the other way round: the engine
+  already ran in a Web Worker (it has to: it blocks on mutexes), so the painter stayed and the loop was
+  pipelined: a tic and its frame queries are issued as one promise and painted when they arrive, the
+  painting of one frame overlapping the engine's work on the next (ARCHITECTURE section 10, the loop).
+  On the way, a bug: the loop ran at least one tic per display frame, so the game ran faster than real
+  time whenever a frame took under 50 ms (2.7× at 55 fps, measured in a headless browser). It now runs
+  twenty tics a second and paints every display frame, the last rows again between tics with the time run
+  on, so the time-driven effects move at the display's rate: E1M1 in both logics 60 fps and 20 tics/s
+  where it was 51 fps and 55 tics/s (PSQL) or 29 fps and 27 tics/s (QuakeC); E1M2 in QuakeC mode 40 fps
+  and 20 tics/s where it was 23 and 20. The stats line shows both rates.
 - **Mods, for real** (*JS*, *tests*): the QuakeC VM exists so mods can run, and none has been tried.
   `PakSet` layers paks and `loadProgs` reads `progs.dat` from the set, so most of the plumbing is there:
   load a mod's pak over id1 as `-game` does (its `progs.dat`, maps, models and sounds over id1's), with a

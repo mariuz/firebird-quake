@@ -201,6 +201,7 @@ function readInput(tics) {
 // seed: the level's random seed (a demo's), else init_map picks one
 async function startMap(name, newGame, { save = null, seed = null } = {}) {
   running = false;
+  await drain();                          // a tic in flight was the old level's
   if (recording) await stopRecording();   // a demo is one level
   if (!seed) demoPlayer = null;
   setStatus(`Loading ${name} into Firebird…`);
@@ -353,6 +354,21 @@ function updateDemoButtons() {
 }
 
 // ── the loop ─────────────────────────────────────────────────────────────
+// The game runs in real time: a tic (0.05 s of game) is issued when the wall clock owes one, twenty a
+// second, up to four at once when the page fell behind. The engine runs in its own worker, so a tic and
+// its frame queries run there while the main thread paints: `pending` is the result in flight, issued as
+// soon as one is owed and painted when it arrives; between tics the last frame is drawn again, so the
+// particles, the light styles, the beams and the weapon's bob move at the display's rate. A level change
+// drains the tic in flight first (drain), and a result from before a level change is dropped.
+let pending = null;
+let mapGen = 0;
+let ticAt = 0;             // when the frame's tic result arrived (the time-driven effects run on from it)
+let drawAt = 0;            // when the last frame was drawn (the particles' wall-clock step)
+let ticCount = 0;          // tics this second, for the stats line
+async function drain() {
+  if (pending) { try { await pending; } catch { /* its error was the old level's */ } pending = null; }
+  mapGen++;
+}
 function nextFrame() {
   let done = false;
   const go = () => { if (!done) { done = true; frame(); } };
@@ -361,6 +377,43 @@ function nextFrame() {
 }
 
 const arr = { rowMode: 'array' };
+
+// the tic (or a demo's recorded calls) and the frame's queries, as one promise: how many tics the wall
+// clock owes, the input for them, then everything the frame needs from the engine
+function issue() {
+  const now = performance.now();
+  const tics = Math.min(4, Math.floor((now - lastTic) / TIC_MS));
+  if (tics < 1) return null;                 // no tic owed yet
+  lastTic += tics * TIC_MS;
+  if (now - lastTic > 200) lastTic = now;    // far behind (a hidden tab): no chase
+  // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row; a demo's recorded calls
+  // when one is playing (the keyboard and mouse are read and dropped)
+  const input = readInput(tics);
+  const calls = demoPlayer ? demoPlayer.take(tics) : [input];
+  return compute(tics, calls, !!demoPlayer?.done, lastSoundId, lastFxId);
+}
+async function compute(tics, calls, demoDone, soundFrom, fxFrom) {
+  const t0 = performance.now();
+  const ticSql = `SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  let row = null;
+  for (const args of calls) row = (await db.query(ticSql, args, { rowMode: 'object' })).rows[0];
+  if (settings.logic === 'qc' && settings.mode !== 'single' && performance.now() - scoresAt > 300) {
+    scoresAt = performance.now();
+    scores = (await db.query('SELECT c, name, frags, alive FROM qc_scores', [], arr)).rows;
+  }
+  // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
+  if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
+  const ticMs = performance.now() - t0;
+  const t1 = performance.now();
+  const q = (sql) => db.query(sql, [], arr).then((r) => r.rows);
+  const [faces, ents, styles, sounds, fx, bframes] = await Promise.all([
+    q(settings.renderer === 'sql' ? 'SELECT * FROM frame_faces' : 'SELECT * FROM frame_faces_fast'), q('SELECT * FROM frame_ents'), q('SELECT * FROM frame_lightstyles'),
+    q(`SELECT id, tic, ent_id, chan, snd, vol, attn, x, y, z FROM sound_events WHERE id > ${soundFrom} ORDER BY id`),
+    q(`SELECT id, kind, x, y, z, x2, y2, z2, n FROM fx_events WHERE id > ${fxFrom} ORDER BY id`),
+    q("SELECT e.id, e.frame FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.frame <> 0"),
+  ]);
+  return { last: row, tics, faces, ents, styles, sounds, fx, bframes, demoDone, ticMs, facesMs: performance.now() - t1 };
+}
 
 async function frame() {
   if (!running || paused || document.hidden || menu?.active) {
@@ -377,88 +430,81 @@ async function frame() {
     return;
   }
   try {
-    const now = performance.now();
-    const tics = Math.max(1, Math.min(4, Math.round((now - lastTic) / TIC_MS)));
-    lastTic += tics * TIC_MS;
-    if (now - lastTic > 200) lastTic = now;
-
     // the PSQL game's intermission: no more tics; the last frame and the stats, until fire after two seconds
     if (interWait) {
-      const [, , , , , fire, jump] = readInput(tics);
+      lastTic = performance.now();
+      const [, , , , , fire, jump] = readInput(1);
       if (lastDraw) drawFrame(lastDraw.faces, lastDraw.ents, lastDraw.styles, last.TIME_, 0);
-      if ((fire || jump) && now - interWait > 2000) { interWait = 0; await nextLevel(); }
+      if ((fire || jump) && performance.now() - interWait > 2000) { interWait = 0; await nextLevel(); }
       nextFrame();
       return;
     }
 
-    let t = performance.now();
-    // the PSQL game, or progs.dat in the QuakeC VM: the same input, the same row; a demo's recorded calls
-    // when one is playing (the keyboard and mouse are read and dropped)
-    const ticSql = `SELECT * FROM ${settings.logic === 'qc' ? 'qc_tic' : 'quake_tic'}(?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    const input = readInput(tics);
-    for (const args of demoPlayer ? demoPlayer.take(tics) : [input]) last = (await db.query(ticSql, args, { rowMode: 'object' })).rows[0];
-    if (demoPlayer?.done) { demoPlayer = null; updateDemoButtons(); flash('the demo has ended: the game is yours'); }
-    if (settings.logic === 'qc' && settings.mode !== 'single' && performance.now() - scoresAt > 300) {
-      scoresAt = performance.now();
-      scores = (await db.query('SELECT c, name, frags, alive FROM qc_scores', [], arr)).rows;
+    let cur = null;
+    if (pending) {
+      const gen = mapGen;
+      cur = await pending;
+      pending = null;
+      if (gen !== mapGen || !running) { nextFrame(); return; }  // a level loaded meanwhile: the result was its predecessor's
     }
-    perf.tic = performance.now() - t;
-    // EF_MUZZLEFLASH for the player: a shot starts the weapon's animation (the axe has no flash; the
-    // nailguns and the lightning gun cycle their frames, one shot a frame)
-    if (last.WEAPONFRAME !== prevWeaponFrame && last.WEAPONFRAME > 0 && last.WEAPON !== 4096 && (last.WEAPONFRAME === 1 || (last.WEAPON & (4 | 8 | 64)))) muzzleUntil = last.TIME_ + 0.1;
-    prevWeaponFrame = last.WEAPONFRAME;
-    // QuakeC mode: about once a second, the hottest few functions still interpreted get compiled
-    if (settings.logic === 'qc' && jit && (jitTics += tics) >= 20) { jitTics = 0; await jit.compileHot({ min: 3, max: 3 }); }
+    if (cur) {
+      last = cur.last;
+      ticAt = performance.now(); ticCount += cur.tics;
+      perf.tic = cur.ticMs; perf.faces = cur.facesMs;
+      if (cur.sounds.length) lastSoundId = cur.sounds[cur.sounds.length - 1][0];
+      if (cur.fx.length) lastFxId = cur.fx[cur.fx.length - 1][0];
+      if (cur.demoDone) { demoPlayer = null; updateDemoButtons(); flash('the demo has ended: the game is yours'); }
+      // EF_MUZZLEFLASH for the player: a shot starts the weapon's animation (the axe has no flash; the
+      // nailguns and the lightning gun cycle their frames, one shot a frame)
+      if (last.WEAPONFRAME !== prevWeaponFrame && last.WEAPONFRAME > 0 && last.WEAPON !== 4096 && (last.WEAPONFRAME === 1 || (last.WEAPON & (4 | 8 | 64)))) muzzleUntil = last.TIME_ + 0.1;
+      prevWeaponFrame = last.WEAPONFRAME;
 
-    // the start map's halls (trigger_setskill) choose the skill, as Quake's do: the next level is spawned with it
-    if (last.SKILL != null && last.SKILL !== settings.skill) { settings.skill = last.SKILL; $('skill').value = String(last.SKILL); saveSettings(); }
-    // what progs.dat told the client: the finale's text starts typing; svc_cdtrack changes the music
-    if (last.INTERMISSION === 2 && !finaleStart) finaleStart = last.TIME_;
-    if (last.CDTRACK >= 0 && last.CDTRACK !== cdTrack) { cdTrack = last.CDTRACK; audio.playMusic(cdTrack); }
+      // the start map's halls (trigger_setskill) choose the skill, as Quake's do: the next level is spawned with it
+      if (last.SKILL != null && last.SKILL !== settings.skill) { settings.skill = last.SKILL; $('skill').value = String(last.SKILL); saveSettings(); }
+      // what progs.dat told the client: the finale's text starts typing; svc_cdtrack changes the music
+      if (last.INTERMISSION === 2 && !finaleStart) finaleStart = last.TIME_;
+      if (last.CDTRACK >= 0 && last.CDTRACK !== cdTrack) { cdTrack = last.CDTRACK; audio.playMusic(cdTrack); }
 
-    if (last.EXIT_KIND === 1 && last.NEXT_MAP) {
-      // QuakeC mode has shown its intermission and waited for fire already; the PSQL game shows it now
-      if (settings.logic === 'qc') { await nextLevel(); nextFrame(); return; }
-      interWait = performance.now();
+      if (last.EXIT_KIND === 1 && last.NEXT_MAP) {
+        // QuakeC mode has shown its intermission and waited for fire already; the PSQL game shows it now
+        if (settings.logic === 'qc') { await nextLevel(); nextFrame(); return; }
+        interWait = performance.now();
+      }
+      if (last.FINALE === 1 && !finaleShown) {
+        // Shub-Niggurath is dead: the ending, then back to the start map
+        finaleShown = true;
+        setStatus('Congratulations and well done! You have beaten the hideous Shub-Niggurath, and its hordes of spawn. The Quake realm is free.');
+        await new Promise((r) => setTimeout(r, 12000));
+        finaleShown = false;
+        await startMap('start', true);
+        nextFrame();
+        return;
+      }
+      if (last.EXIT_KIND === 3) {
+        await startMap(map.name, true);
+        nextFrame();
+        return;
+      }
+      const { faces, ents, styles, sounds, fx, bframes, tics } = cur;
+      brushFrames.clear();
+      for (const [id, f] of bframes) brushFrames.set(id, f);
+      perf.rows = faces.length;
+      const styleMap = new Float32Array(64);
+      for (const [s, v] of styles) if (s < 64) styleMap[s] = v;
+      const listener = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW };
+      if (sounds.length) audio.playEvents(sounds, listener);
+      audio.update(listener, [last.AMB_WATER, last.AMB_SKY], tics * 0.05);
+      if (fx.length) handleFx(fx, last.TIME_);
+      lastDraw = { faces, ents, styles: styleMap };
     }
-    if (last.FINALE === 1 && !finaleShown) {
-      // Shub-Niggurath is dead: the ending, then back to the start map
-      finaleShown = true;
-      setStatus('Congratulations and well done! You have beaten the hideous Shub-Niggurath, and its hordes of spawn. The Quake realm is free.');
-      await new Promise((r) => setTimeout(r, 12000));
-      finaleShown = false;
-      await startMap('start', true);
-      nextFrame();
-      return;
-    }
-    if (last.EXIT_KIND === 3) {
-      await startMap(map.name, true);
-      nextFrame();
-      return;
-    }
+    // the next tic and its queries, in the engine's worker, while this frame is painted
+    if (!interWait && !pending) pending = issue();
+    if (!lastDraw) { nextFrame(); return; }   // the level's first tic is on its way
 
-    t = performance.now();
-    const q = (sql) => db.query(sql, [], arr).then((r) => r.rows);
-    const [faces, ents, styles, sounds, fx, bframes] = await Promise.all([
-      q(settings.renderer === 'sql' ? 'SELECT * FROM frame_faces' : 'SELECT * FROM frame_faces_fast'), q('SELECT * FROM frame_ents'), q('SELECT * FROM frame_lightstyles'),
-      q(`SELECT id, tic, ent_id, chan, snd, vol, attn, x, y, z FROM sound_events WHERE id > ${lastSoundId} ORDER BY id`),
-      q(`SELECT id, kind, x, y, z, x2, y2, z2, n FROM fx_events WHERE id > ${lastFxId} ORDER BY id`),
-      q("SELECT e.id, e.frame FROM ents e JOIN models m ON m.id = e.model_id WHERE m.kind = 'B' AND e.frame <> 0"),
-    ]);
-    brushFrames.clear();
-    for (const [id, f] of bframes) brushFrames.set(id, f);
-    perf.faces = performance.now() - t;
-    perf.rows = faces.length;
-    const styleMap = new Float32Array(64);
-    for (const [s, v] of styles) if (s < 64) styleMap[s] = v;
-    const listener = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW };
-    if (sounds.length) { lastSoundId = sounds[sounds.length - 1][0]; audio.playEvents(sounds, listener); }
-    audio.update(listener, [last.AMB_WATER, last.AMB_SKY], tics * 0.05);
-    if (fx.length) { lastFxId = fx[fx.length - 1][0]; handleFx(fx, last.TIME_); }
-
-    t = performance.now();
-    drawFrame(faces, ents, styleMap, last.TIME_, tics * 0.05);
-    lastDraw = { faces, ents, styles: styleMap };
+    const now = performance.now();
+    const t = now;
+    drawFrame(lastDraw.faces, lastDraw.ents, lastDraw.styles, last.TIME_ + (now - ticAt) / 1000, Math.min(0.1, (now - drawAt) / 1000));
+    drawAt = now;
     perf.draw = performance.now() - t;
     updateStats();
   } catch (err) {
@@ -606,12 +652,12 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
 let prevPos = null;
 const brushFrames = new Map();
 
-let fpsT = performance.now(), fpsN = 0, fps = 0;
+let fpsT = performance.now(), fpsN = 0, fps = 0, tps = 0;
 function updateStats() {
   fpsN++;
   const now = performance.now();
-  if (now - fpsT > 500) { fps = (fpsN * 1000) / (now - fpsT); fpsT = now; fpsN = 0; }
-  statsEl.textContent = `${fps.toFixed(1)} fps · ${settings.logic === 'qc' ? `qc_tic (${jit?.compiled.size ?? 0} functions compiled)` : 'quake_tic'} ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
+  if (now - fpsT > 500) { fps = (fpsN * 1000) / (now - fpsT); tps = (ticCount * 1000) / (now - fpsT); ticCount = 0; fpsT = now; fpsN = 0; }
+  statsEl.textContent = `${fps.toFixed(1)} fps, ${tps.toFixed(0)} tics/s · ${settings.logic === 'qc' ? `qc_tic (${jit?.compiled.size ?? 0} functions compiled)` : 'quake_tic'} ${perf.tic.toFixed(0)} ms · frame queries ${perf.faces.toFixed(0)} ms (${perf.rows} vertex rows) · raster ${perf.draw.toFixed(0)} ms · ${renderer.particles.length} particles`;
 }
 
 // ── SQL console ─────────────────────────────────────────────────────────
@@ -729,6 +775,7 @@ async function openDatabase() {
 
 async function usePak(buffers, label) {
   running = false;
+  await drain();
   progsLoaded = false;
   pak = new PakSet(buffers.map((b) => new Pak(b)));     // pak0.pak, and pak1.pak if you own Quake
   const maps = pak.mapNames();
