@@ -85,8 +85,13 @@ in order of what they would change.
   the keys. Driven in a phone-sized headless Chromium against the built page: the stick walked the
   player 500 units in a second and a half, a drag turned it 32°, a tap on fire spent a shell, the pad
   moved the menu's cursor and closed it. Not tried on a real phone here.
-- Smaller: a `.sav` file export (saves live only in IndexedDB); a note in the README of what is not a
-  goal (multiplayer between humans, GLQuake's features), so the list stops attracting them.
+- ~~Smaller: a `.sav` file export; a note in the README of what is not a goal~~ done: the **Save** controls
+  download the last game saved or loaded as a `.sav.json` (the exported slot with the data set it was
+  made on, since its model ids are that data's) and load one back, refused with the reason when it is of
+  other game data or not a save (`saveFile`, `readSaveFile` in `src/saves.js`, `npm run test:save`;
+  tried in a headless browser: saved at 77 health, downloaded, loaded into a fresh browser at 77). The
+  README's "What it does not try to be" names multiplayer between people, GLQuake, Quake's own file
+  formats and speed.
 
 ## The game
 

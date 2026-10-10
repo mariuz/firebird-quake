@@ -33,7 +33,7 @@ import hostSql from '../sql/host.sql';
 import { Pak, Wad2, loadPalette, PakSet, qpic } from './pak.js';
 import { createSchema, loadResources, loadMap, loadProgs, setView } from './loader.js';
 import { QcJit } from './qcjit.js';
-import { exportSave, importSave, SaveStore } from './saves.js';
+import { exportSave, importSave, saveFile, readSaveFile, SaveStore } from './saves.js';
 import { exportDemo, importDemo, DemoPlayer } from './demos.js';
 import { frameDlights, dlightAt } from './dlights.js';
 import { Menu } from './menu.js';
@@ -268,6 +268,7 @@ async function saveGame(slot) {
     const save = await exportSave(db, slot);
     if (SaveStore.available()) await SaveStore.put(pakKey, slot, save);
     if (slot < 12) saveSlots[slot] = save.meta.COMMENT;
+    lastSave = save; $('save-download').disabled = false;
     flash(`Saving game to s${slot === QUICK_SLOT ? 'quick' : slot}.sav... ${save.meta.COMMENT.replace(/ +/g, ' ')}`);
   } catch (err) {
     flash(sqlMessage(err), true);
@@ -280,19 +281,25 @@ async function loadGame(slot) {
   try {
     const save = SaveStore.available() ? await SaveStore.get(pakKey, slot) : null;
     if (!save) { flash('no saved game in that slot', true); return; }
-    const logic = save.meta.QC_MODE === 1 ? 'qc' : 'psql';
-    if (logic !== settings.logic) { settings.logic = logic; $('logic').value = logic; }
-    settings.skill = save.meta.SKILL; $('skill').value = String(save.meta.SKILL); saveSettings();
-    await startMap(save.meta.MAP_NAME, true, { save });
-    // a deathmatch or coop save brings its rules back with the game row
-    const g = (await db.query('SELECT deathmatch, coop, maxclients FROM game WHERE id = 1')).rows[0];
-    setMode(g.DEATHMATCH ? 'deathmatch' : g.COOP ? 'coop' : 'single', false);
-    if (g.MAXCLIENTS > 1) { settings.bots = g.MAXCLIENTS - 1; $('bots').value = String(settings.bots); saveSettings(); }
+    await loadSave(save);
   } catch (err) {
     console.error(err);
     setStatus(sqlMessage(err), true);
   }
 }
+// a save, from a slot or a file: its map under its logic and skill, its rows put back, its rules
+async function loadSave(save) {
+  lastSave = save; $('save-download').disabled = false;
+  const logic = save.meta.QC_MODE === 1 ? 'qc' : 'psql';
+  if (logic !== settings.logic) { settings.logic = logic; $('logic').value = logic; }
+  settings.skill = save.meta.SKILL; $('skill').value = String(save.meta.SKILL); saveSettings();
+  await startMap(save.meta.MAP_NAME, true, { save });
+  // a deathmatch or coop save brings its rules back with the game row
+  const g = (await db.query('SELECT deathmatch, coop, maxclients FROM game WHERE id = 1')).rows[0];
+  setMode(g.DEATHMATCH ? 'deathmatch' : g.COOP ? 'coop' : 'single', false);
+  if (g.MAXCLIENTS > 1) { settings.bots = g.MAXCLIENTS - 1; $('bots').value = String(settings.bots); saveSettings(); }
+}
+let lastSave = null;       // the save last made or loaded: the one the Download button gives
 
 const refreshSaves = async () => { try { saveSlots = SaveStore.available() ? await SaveStore.list(pakKey) : new Array(12).fill(null); } catch { saveSlots = new Array(12).fill(null); } };
 // the line Firebird's exception carries (save_error's text), not the whole report
@@ -1098,6 +1105,22 @@ $('demo-save').addEventListener('click', () => {
   a.download = `${demo.map}.dem.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+// a save game as a file (saves otherwise live in this browser's IndexedDB), and a file loaded back
+$('save-download').addEventListener('click', () => {
+  if (!lastSave) return;
+  const { name, text } = saveFile(lastSave, pakKey);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('save-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f || !db || !pak) return;
+  try { await loadSave(readSaveFile(await f.text(), pakKey)); } catch (err) { setStatus(sqlMessage(err), true); }
 });
 $('demo-file').addEventListener('change', async (e) => {
   const f = e.target.files[0];

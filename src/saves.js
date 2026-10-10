@@ -40,6 +40,26 @@ export async function importSave(db, save, slot = save.slot) {
   await execInserts(db, inserts);
 }
 
+/**
+ * A save as a file to download ({ name, text }): the exported save with the data set it was made on, since
+ * the model ids in its rows are the ones that data set's paks gave.
+ */
+export function saveFile(save, data) {
+  const name = `${String(save.meta.MAP_NAME).trim().toLowerCase()}-s${save.slot}.sav.json`;
+  return { name, text: JSON.stringify({ ...save, data }) };
+}
+
+/** A downloaded save file's text back into a save for `data`, or an error saying why it cannot load. */
+export function readSaveFile(text, data) {
+  let save;
+  try { save = JSON.parse(text); } catch { throw new Error('not a save file'); }
+  if (!save || typeof save !== 'object' || !save.meta || !save.tables) throw new Error('not a save file');
+  if (save.version !== SAVE_VERSION) throw new Error('a save of another version of Firebird Quake');
+  if (save.data && save.data !== data) throw new Error(`a save made with other game data (${save.data})`);
+  delete save.data;
+  return save;
+}
+
 /** INSERT statements run in EXECUTE BLOCKs: at most 255 table contexts a block, a few hundred KB of text. */
 export async function execInserts(db, inserts) {
   let block = [], size = 0;

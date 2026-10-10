@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
-import { exportSave, importSave } from '../src/saves.js';
+import { exportSave, importSave, saveFile, readSaveFile } from '../src/saves.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -73,9 +73,14 @@ assert(faces > 50, `the view is marked again from the saved leaf (${faces} faces
 for (let i = 0; i < 10; i++) r = await tic(1);
 assert(Math.hypot(r.PX - savedPos.x, r.PY - savedPos.y) > 30, 'and the player walks on');
 
-// as the page does it after a reload: the slot out to the browser's storage as JSON, another level
+// as the page does it after a reload, or with a downloaded save file: the slot out as JSON, another level
 // played (the brush models get other ids), E1M1 loaded again, the slot back in, load_game
-const exported = JSON.stringify(await exportSave(db, 0));
+const file = saveFile(await exportSave(db, 0), 'quake');
+const exported = file.text;
+assert(file.name === 'e1m1-s0.sav.json' && JSON.parse(file.text).data === 'quake', `the save file is ${file.name}, marked with its game data`);
+const refuses = (text, data) => { try { readSaveFile(text, data); return null; } catch (e) { return e.message; } };
+assert(/other game data/.test(refuses(file.text, 'lq1')) && /not a save/.test(refuses('{"x":1}', 'quake')) && /not a save/.test(refuses('PK', 'quake')),
+  'a save file of other game data, or not a save at all, is refused with the reason');
 const worldBefore = (await q1('SELECT world_model w FROM game')).W;
 await db.exec('EXECUTE PROCEDURE delete_save(0)');
 assert(!(await q1('SELECT COUNT(*) n FROM sv_ents WHERE slot = 0')).N, `delete_save empties the slot (the export is ${(exported.length / 1024).toFixed(0)} KB of JSON)`);
@@ -84,7 +89,7 @@ for (let i = 0; i < 5; i++) await tic(1);
 await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
 const worldNow = (await q1('SELECT world_model w FROM game')).W;
 assert(worldNow !== worldBefore, `E1M1's world model is ${worldNow} now, ${worldBefore} when saved`);
-await importSave(db, JSON.parse(exported), 5);
+await importSave(db, readSaveFile(file.text, 'quake'), 5);
 await db.exec('EXECUTE PROCEDURE load_game(5)');
 assert((await snapshot()) === saved, 'imported into slot 5 and loaded, the game is the saved one, its doors and lifts on this copy of the map');
 const doors = await q1(`SELECT COUNT(*) n FROM ents e JOIN models m ON m.id = e.model_id WHERE e.classname = 'func_door' AND m.name LIKE '*%' AND e.model_id >= ${worldNow}`);

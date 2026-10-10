@@ -105,6 +105,7 @@ Click the view to capture the mouse.
 | `` ` `` | Quake's console: `map e1m3`, `god`, `noclip`, `give s 100`, `kill`, `bind k +jump`, `sql SELECT …`, `help` for the rest |
 | **Game** setting | single player, or deathmatch or coop (QuakeC mode, progs.dat's rules) against 1 to 7 bots played by PSQL; the menu's Multiplayer starts a deathmatch |
 | **Demo** buttons | record the level from its start, play it back, save or open a `.dem.json` file |
+| **Save** buttons | download the last game saved or loaded as a `.sav.json` file, or load one (saves otherwise live in the browser) |
 | `Esc` | Quake's menu: new game, load and save (twelve slots), options (customize controls, mouse speed, always run, volumes, screen size…), help |
 
 Every key is a binding, as in Quake: the menu's **Customize controls** or the console's `bind` changes them, and the page keeps them.
@@ -137,6 +138,20 @@ UPDATE ents SET flags = BIN_OR(flags, 64) WHERE classname = 'player';   -- god m
 Ctrl+Enter runs; ↑ and ↓ walk the statements run before (kept across reloads); Tab completes a
 table, column, procedure or function name, or a keyword, and cycles the matches. `window.quake`
 exposes the database, the renderer, the audio and the settings to the browser's own console as well.
+
+## What it does not try to be
+
+So that the list of ideas stays about this project:
+
+- **Multiplayer between people.** Deathmatch and coop are against bots that PSQL plays, in one tab;
+  there is no network code and no server to join. A second person would need a second Firebird.
+- **GLQuake.** The picture is WinQuake's software renderer, drawn from query results: 8-bit
+  palette, lightmaps and the colormap, no OpenGL, no coloured light, no filtering, no high-resolution
+  textures. See-through water is there only because the maps vised for it allow it.
+- **A drop-in Quake engine.** Demos and saves are this project's own JSON (`.dem.json`, `.sav.json`),
+  not Quake's `.dem` and `.sav`; there is no QuakeWorld physics or client prediction.
+- **Fast.** A tic is several milliseconds of SQL where Quake spends microseconds; the point is that it
+  runs at 20 tics a second at all, and the numbers are kept (`npm run perf`).
 
 ## How it works
 
@@ -277,7 +292,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm test` | SQL smoke test: every procedure compiles, E1M1 loads, tics and frames run, every sound the game queued exists in the pak (`PAK=… PAK1=… node scripts/sql-smoke.mjs start` runs it over LibreQuake, as CI does) |
 | `npm run test:boss` | E1M7: the rune wakes Chthon, he rises and throws lava, the lightning does nothing until both terminals are up, three bolts kill him, the exit opens |
 | `npm run test:skill` | the skills: each of the start map's halls sets its skill, nightmare's monsters attack without waiting and flinch at most every five seconds (two hits make a knight flinch twice on normal, once on nightmare), and QuakeC's `localcmd("skill 3")` sets it in QuakeC mode |
-| `npm run test:save` | save games: E1M1 saved mid-play and loaded back exactly (every entity, the client, the totals, the light styles); exported as the page keeps it, loaded onto E1M1 loaded again with other brush model ids; the same in QuakeC mode with progs.dat's globals, fields and run-time strings; no saving dead or in the intermission |
+| `npm run test:save` | save games: E1M1 saved mid-play and loaded back exactly (every entity, the client, the totals, the light styles); exported as the page keeps it and as a downloaded file (another data set's file refused), loaded onto E1M1 loaded again with other brush model ids; the same in QuakeC mode with progs.dat's globals, fields and run-time strings; no saving dead or in the intermission |
 | `npm run test:water` | see-through liquids (the **Liquids** setting): over lq_e0m2's water the floor shows through at alpha 0.5; over E1M1's slime, which id's vis tools did not see through, nothing changes |
 | `npm run test:bsp2` | the BSP2 and 2PSB formats of larger modern maps: E1M1 rewritten in both loads to the same rows, plays the same 150 tics and draws the same faces as the original |
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
