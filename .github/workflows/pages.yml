@@ -84,6 +84,7 @@ jobs:
               npm run test:fire
               npm run test:water
               npm run test:console
+              npm run test:touch
               npm run test:image
               npm run test:boss
               npm run test:e1m8

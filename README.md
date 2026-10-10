@@ -109,7 +109,7 @@ Click the view to capture the mouse.
 
 Every key is a binding, as in Quake: the menu's **Customize controls** or the console's `bind` changes them, and the page keeps them.
 
-On touch screens the left half of the view moves, the right half looks, and a tap fires.
+On a phone or a tablet the controls appear with the first touch: a stick where the left thumb lands (as far as it is pushed, as fast), the right side of the view to look by dragging (a quick tap fires), buttons to fire, jump, change weapon, bring up the menu and go full screen, and arrows, OK and back to drive the menu.
 
 The page's settings: the **map** (every `.bsp` in the pak), the **skill**, the **detail**
 (640×400, 320×200 or 160×100), the **liquids** (opaque as in Quake, or translucent where the map was vised
@@ -283,6 +283,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
 | `npm run test:hazard` | slime and lava as Quake's `WaterMove` hurts: slime 4 × waterlevel a second and nothing in the biosuit, lava 10 × waterlevel every 0.2 s and once a second in the suit, the PSQL game and QuakeC mode alike |
 | `npm run test:image` | the schema image the build ships (`dist/schema-<hash>.fdb.gz`, which the page opens instead of compiling the PSQL): a dumped database reopened from its bytes has every procedure and plays E1M1 tic for tic and frame for frame as one built in place |
+| `npm run test:touch` | the touch controls' logic: the stick where the thumb lands, its dead zone and rim, the look drag in degrees, a tap a shot, a button touched for less than a tic still read once, each thumb by its own touch id |
 | `npm run test:console` | the Quake console (commands split at `;`, quoted arguments, history, Tab) and the key bindings (a button held by any of its keys, a command once a press); `god`, `notarget`, `noclip`, `give` and `kill` in the PSQL game and in QuakeC mode: god takes a rocket at the feet without a scratch, noclip walks through the wall ahead |
 | `npm run test:mod` | mods (needs `npm run fetch-mods`): a mod's zip laid over the shareware pak (its loose files, or a `pak2.pak` inside it, over id1's); id's progs 1.06 recompiled, Reinforcer 1.1 and FrikBot X each spawn and play E1M1 through their own `progs.dat`; FrikBot X's bots connect into spare client slots on impulse 100 and roam the level on its own QuakeC physics |
 | `npm run test:levels` | every level, in both logics: the player standing at full health (on E1M8 once landed from its high start), the monsters there, every exit leading to a map the paks have and ending the level; progs.dat spawning it with the same number of monsters to kill, a second without a QuakeC error. CI runs the shareware levels; `PAK1=/path/to/pak1.pak npm run test:levels` runs episodes 2 to 4, the end and the deathmatch levels where you have the registered data |

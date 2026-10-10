@@ -26,6 +26,7 @@ npm run test:levels            # every level in both logics (shareware: start, e
 npm run test:lq                # LibreQuake's levels and lq_e0m7's boss trap (needs npm run fetch-librequake)
 npm run test:image             # the schema image the build ships: reopened from its bytes, it plays as one built in place
 npm run test:console           # the Quake console and the key bindings; god, noclip, give, kill in both logics
+npm run test:touch             # the touch controls' logic: the stick, the look drag, taps, held buttons
 npm run test:mod               # mods: a mod's zip over id1, its progs.dat in QuakeC mode, FrikBot X's bots (needs npm run fetch-mods)
 npm run test:qcvm              # the QuakeC VM runs the real progs.dat (PAK=... for another)
 npm run test:qcplay            # QuakeC mode: E1M1 played by progs.dat on the engine's physics

@@ -76,8 +76,15 @@ in order of what they would change.
   hands the history with the run added to the build to deploy. Warnings, not failures: on one machine a
   number moves by 10 to 35 % from one run to the next. The microsecond timings (a builtin, a statement)
   still need to be taken inside the engine, as `qc_builtin`'s were for the split above.
-- **Touch controls** (*JS*): there is a `touchstart` handler and no real controls; a virtual stick, a look
-  area and fire and jump buttons would make the deployed page playable on a phone.
+- ~~**Touch controls**~~ done (`src/touch.js`, `npm run test:touch`): from the first touch the view
+  carries a stick that appears where the left thumb lands (forward and sideways as far as it is pushed,
+  a dead zone of an eighth, full speed at 56 px), the right side to look by dragging (0.4° a pixel at the
+  default mouse speed; a quick tap fires once), buttons for fire and jump (held, and a touch shorter
+  than a tic still read once), the next weapon, the menu and full screen (letterboxed at 4:3, turned to
+  landscape where the phone allows), and while the menu is up a pad of arrows, OK and back that sends it
+  the keys. Driven in a phone-sized headless Chromium against the built page: the stick walked the
+  player 500 units in a second and a half, a drag turned it 32°, a tap on fire spent a shell, the pad
+  moved the menu's cursor and closed it. Not tried on a real phone here.
 - Smaller: a `.sav` file export (saves live only in IndexedDB); a note in the README of what is not a
   goal (multiplayer between humans, GLQuake's features), so the list stops attracting them.
 

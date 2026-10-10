@@ -41,6 +41,7 @@ import { Renderer, lightPoint } from './renderer.js';
 import { modFromZip } from './zip.js';
 import { Bindings, keyName, MOUSE_NAMES, BUTTONS } from './binds.js';
 import { Console } from './console.js';
+import { TouchControls, attachTouch } from './touch.js';
 import { Hud, VIEW_MODELS } from './hud.js';
 import { QuakeAudio } from './audio.js';
 
@@ -114,8 +115,6 @@ let binds = new Bindings();
 try { const saved = JSON.parse(localStorage.getItem('firebird-quake:binds') || 'null'); if (saved) binds = new Bindings(saved); } catch { /* the defaults */ }
 const saveBinds = () => { try { localStorage.setItem('firebird-quake:binds', JSON.stringify(binds)); } catch { /* ignore */ } };
 let mouseYaw = 0, mousePitch = 0;
-let fireClick = false;     // a touch tap fires once
-let tapJump = false;       // a touch tap on the left half jumps once
 let impulse = 0;
 const con = new Console({ commands: consoleCommands() });
 con.print('Firebird Quake. The console: help lists the commands, ` puts it away.');
@@ -139,10 +138,10 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => binds.key(keyName(e.code), false));
 let menuOpened = 0;
-function openMenu() { if (!menu || menu.active) return; con.toggle(false); menu.open(); menuOpened = performance.now(); binds.release(); }
+function openMenu() { if (!menu || menu.active) return; con.toggle(false); menu.open(); menuOpened = performance.now(); binds.release(); touch.release(); }
 // the browser's Escape releases the mouse before the page hears the key: bring the menu up then, as Quake's Escape does
 document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas && running && !paused && !interWait && !con.active) openMenu(); });
-window.addEventListener('blur', () => binds.release());
+window.addEventListener('blur', () => { binds.release(); touch.release(); });
 canvas.addEventListener('click', () => {
   if (running && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
 });
@@ -159,36 +158,15 @@ window.addEventListener('wheel', (e) => {
   const name = e.deltaY < 0 ? 'mwheelup' : 'mwheeldown';
   press(name, true); binds.key(name, false);
 });
-// touch: left half moves, right half looks, tap fires
-const touch = { move: null, look: null };
-canvas.addEventListener('touchstart', (e) => {
-  const r = canvas.getBoundingClientRect();
-  for (const t of e.changedTouches) {
-    const rec = { id: t.identifier, x: t.clientX, y: t.clientY, dx: 0, dy: 0, t: performance.now() };
-    if (t.clientX - r.left < r.width / 2) touch.move = rec; else touch.look = rec;
-  }
-  e.preventDefault();
-}, { passive: false });
-canvas.addEventListener('touchmove', (e) => {
-  for (const t of e.changedTouches) for (const k of ['move', 'look']) {
-    const rec = touch[k];
-    if (rec && rec.id === t.identifier) {
-      if (k === 'look') { mouseYaw -= (t.clientX - rec.x - rec.dx) * 0.4; mousePitch += (t.clientY - rec.y - rec.dy) * 0.4; }
-      rec.dx = t.clientX - rec.x; rec.dy = t.clientY - rec.y;
-    }
-  }
-  e.preventDefault();
-}, { passive: false });
-canvas.addEventListener('touchend', (e) => {
-  for (const t of e.changedTouches) for (const k of ['move', 'look']) {
-    const rec = touch[k];
-    if (rec && rec.id === t.identifier) {
-      if (k === 'look' && Math.abs(rec.dx) < 10 && Math.abs(rec.dy) < 10 && performance.now() - rec.t < 250) fireClick = 'tap';
-      if (k === 'move' && Math.abs(rec.dx) < 10 && Math.abs(rec.dy) < 10 && performance.now() - rec.t < 250) tapJump = true;
-      touch[k] = null;
-    }
-  }
-}, { passive: false });
+// touch (src/touch.js): a stick where the left thumb lands, the right side looks (a tap fires), buttons
+// for fire, jump, the next weapon and the menu, and a pad that drives the menu
+const touch = new TouchControls();
+attachTouch(canvas.parentElement, canvas, touch, {
+  run: (cmd) => con.execute(cmd, false),
+  menuKey: (code) => { if (menu?.active) menu.key(code); },
+  openMenu: () => openMenu(),
+  menuActive: () => menu?.active,
+});
 
 function readInput(tics) {
   const b = (button) => (binds.down(button) ? 1 : 0);
@@ -197,17 +175,13 @@ function readInput(tics) {
   const turnKeys = b('+left') - b('+right');
   const lookKeys = b('+lookdown') - b('+lookup');
   const run = (settings.alwaysRun ? !b('+speed') : b('+speed')) ? 1 : 0;     // always run (+speed walks), or +speed runs
-  if (touch.move) {
-    fwd = Math.max(-1, Math.min(1, -touch.move.dy / 40));
-    side = Math.max(-1, Math.min(1, touch.move.dx / 40));
-  }
-  const yaw = turnKeys * 7 * tics + mouseYaw;
-  const pitch = lookKeys * 5 * tics + mousePitch;
+  const stick = touch.axes(), turned = touch.take();
+  if (stick.knob) { fwd = stick.fwd; side = stick.side; }
+  const yaw = turnKeys * 7 * tics + mouseYaw + turned.yaw * settings.sensitivity / 3;
+  const pitch = lookKeys * 5 * tics + mousePitch + turned.pitch * settings.sensitivity / 3 * (settings.invertMouse ? -1 : 1);
   mouseYaw = 0; mousePitch = 0;
-  const fire = b('+attack') || fireClick ? 1 : 0;
-  fireClick = false;
-  const jump = b('+jump') || b('+moveup') || tapJump ? 1 : 0;
-  tapJump = false;
+  const fire = b('+attack') || turned.buttons.has('+attack') || turned.taps ? 1 : 0;
+  const jump = b('+jump') || b('+moveup') || turned.buttons.has('+jump') ? 1 : 0;
   const imp = impulse;
   impulse = 0;
   return [tics, fwd, side, yaw, pitch, fire, jump, run, imp];
