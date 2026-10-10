@@ -58,10 +58,16 @@ in order of what they would change.
   `PAK1=/path/to/pak1.pak npm run test:levels` runs episodes 2 to 4, the end and dm1 to dm6, which has not
   been run here (no registered pak in this environment), so its first run on them is still to come. Set
   pieces per episode (E2's runes, E3's and E4's traps) would follow the same way, gated on the pak.
-- **Split `qcvm.sql` as `game.sql` was** (*SQL*): at 2000 lines it is the largest file; the builtins (one
-  procedure of 500 lines and ninety `IF` branches), the interpreter, the server frame and the page's tic
-  are natural files. Splitting `qc_builtin` into groups also removes the dispatch chain, about 15 µs of
-  every builtin call.
+- ~~**Split `qcvm.sql` as `game.sql` was**~~ done (ARCHITECTURE section 8a): six files of 140 to 560
+  lines in load order, `qcvm.sql` (globals, fields, strings, edicts), `qcbuiltins.sql`, `qcexec.sql`
+  (the interpreter), `qcserver.sql` (spawning, the client), `qcphysics.sql` (the server frame) and
+  `qcpage.sql` (the page's tic). The builtins became five procedures by kind (math, move, trace, ent,
+  io), each declaring only the locals it uses, behind a `qc_builtin` that dispatches on `qc_bi_group(n)`;
+  the JIT calls the group's procedure directly. Measured in the engine, the fixed cost of a builtin call
+  was 5.5 µs of locals (sixty, about 0.1 µs each), 3.4 µs of the prelude's `SELECT` and up to 7 µs of
+  the `IF` chain: `break` went from 10.7 µs to 3.6 called directly, the last builtin from 17.7 to 6.5,
+  `vlen` from 50 to 35. `bench:qc` with every function compiled: a server frame 18 → 16 ms asleep,
+  27 → 24 awake; interpreted, 30 → 26 asleep.
 - **Performance numbers in CI** (*tests*): `bench`, `bench:qc` and `bench:paint` exist and nobody watches
   them. A CI step that runs them and keeps the numbers (a JSON per commit, or the job's log) would have
   caught that timings taken from JavaScript carry 50 µs of round trip each, and will catch regressions.

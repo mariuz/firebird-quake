@@ -34,7 +34,7 @@ COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworke
 service worker that re-issues every response with the headers after one reload.
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
-physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, bots, host, save, demo`, splitting each on `SET TERM`; the generated
+physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, qcbuiltins, qcexec, qcserver, qcphysics, qcpage, bots, host, save, demo`, splitting each on `SET TERM`; the generated
 `load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
 6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
@@ -267,10 +267,16 @@ again), the spawn's explosion, Chthon's pain, death and removal, and Shub-Niggur
 - `run_pushers(dt)` moves the movers, `run_think(t)` runs due thinks (`remove`, `delayed_use`, `grenade_explode`, `fireball_think`, `shooter_think`, …), `run_physics(dt)` moves everything that flies, bounces or falls, skipping what rests.
 - `init_map(name)` sets `game` from worldspawn (message, type, gravity 100 on E1M8) and spawns.
 
-## 8a. The QuakeC VM (`src/progs.js`, `sql/qcvm.sql`)
+## 8a. The QuakeC VM (`src/progs.js`, `sql/qcvm.sql` … `sql/qcpage.sql`)
 
 The game in sections 6 to 8 is a rewrite of `progs.dat`; the VM is the start of running the original
-bytecode instead.
+bytecode instead. Its PSQL is six files in load order: `qcvm.sql` (the tables' helpers: globals, fields,
+strings, edicts), `qcbuiltins.sql`, `qcexec.sql` (the interpreter, `qc_call`, `qc_inv0..8`),
+`qcserver.sql` (spawning a map, the client), `qcphysics.sql` (the server frame) and `qcpage.sql` (the
+page's `qc_begin_map`, `qc_tic`). The builtins are five procedures by kind (`qc_bi_math`, `_move`,
+`_trace`, `_ent`, `_io`), each declaring only the locals its builtins use, since every local costs about
+0.1 µs to set up on each call and each `IF` branch passed about 0.1 µs; `qc_builtin(n, fnum)` dispatches
+on `qc_bi_group(n)` for the interpreter, and the JIT calls the group's procedure directly.
 
 - `Progs` parses `progs.dat` version 6: statements `(op, a, b, c)` with signed 16-bit operands, functions (first statement, parameter start, number of locals, name, file, parameter sizes), global and field definitions (type, offset, name), the string table split at NULs into `(offset, text)` rows, and the global image, typed by the definitions so that string, entity, field and function references load as integers and everything else as floats.
 - Tables: `qc_statements`, `qc_functions`, `qc_defs` (kind 0 global, 1 field), `qc_strings` (negative offsets for strings made at run time by `ftos`/`vtos`), `qc_globals0` (pristine) and `qc_globals` (live), `qc_edicts`, `qc_fields (ent, ofs, v)`, `qc_log` (what the print builtins wrote), `qc_vm` (depth, step counter and limit, the next runtime string, and the cached offsets of `self`, `time`, `v_forward`, the `trace_*` globals and the fields the VM touches), and the temporary `qc_localstack`.

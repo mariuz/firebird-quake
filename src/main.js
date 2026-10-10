@@ -21,6 +21,11 @@ import weaponsSql from '../sql/weapons.sql';
 import monstersSql from '../sql/monsters.sql';
 import renderSql from '../sql/render.sql';
 import qcvmSql from '../sql/qcvm.sql';
+import qcbuiltinsSql from '../sql/qcbuiltins.sql';
+import qcexecSql from '../sql/qcexec.sql';
+import qcserverSql from '../sql/qcserver.sql';
+import qcphysicsSql from '../sql/qcphysics.sql';
+import qcpageSql from '../sql/qcpage.sql';
 import saveSql from '../sql/save.sql';
 import demoSql from '../sql/demo.sql';
 import botsSql from '../sql/bots.sql';
@@ -228,7 +233,7 @@ async function loadLevel(name, newGame, { save = null, seed = null } = {}) {
   setStatus(`Loading ${name} into Firebird…`);
   const t0 = performance.now();
   // QuakeC mode: the client's parms leave with it (SetChangeParms), the level is spawned by progs.dat's own spawn
-  // functions after the geometry is loaded, and the parms come back (sql/qcvm.sql: qc_change_parms, qc_begin_map)
+  // functions after the geometry is loaded, and the parms come back (sql/qcpage.sql: qc_change_parms, qc_begin_map)
   const qc = settings.logic === 'qc';
   if (qc && !newGame && progsLoaded) await db.exec('EXECUTE PROCEDURE qc_change_parms');
   if (!qc) await db.exec('EXECUTE PROCEDURE qc_leave');
@@ -853,7 +858,7 @@ async function openDatabase() {
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
   if (image && schemaFromImage) { console.log(`[firebird-quake] database ready in ${(performance.now() - t0).toFixed(0)} ms (the schema from ${SCHEMA_IMAGE})`); return instance; }
   setStatus('Creating the Quake schema (PSQL)…');
-  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, host: hostSql, save: saveSql, demo: demoSql });
+  await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, qcbuiltins: qcbuiltinsSql, qcexec: qcexecSql, qcserver: qcserverSql, qcphysics: qcphysicsSql, qcpage: qcpageSql, bots: botsSql, host: hostSql, save: saveSql, demo: demoSql });
   console.log(`[firebird-quake] database ready in ${(performance.now() - t0).toFixed(0)} ms (the schema built)`);
   return instance;
 }

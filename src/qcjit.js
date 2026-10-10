@@ -1,5 +1,5 @@
 // qcjit.js – QuakeC compiled to PSQL: each hot function of progs.dat becomes a stored procedure of
-// its own, run by Firebird instead of interpreted statement by statement by qc_exec (sql/qcvm.sql).
+// its own, run by Firebird instead of interpreted statement by statement by qc_exec (sql/qcexec.sql).
 //
 // The interpreter costs a query and an UPDATE per statement and a few more per call. A compiled
 // function keeps its temporaries, locals and parameters in PSQL variables, so most statements become
@@ -27,6 +27,8 @@ const D = 'DOUBLE PRECISION';
 
 // QuakeC v6 opcodes: what each reads and writes (r: global read, w: written, 3: a vector)
 const ARITH = new Set([1, 5, 6, 8, 10, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 62, 63, 64, 65]);
+// qc_bi_group's numbers: the procedure a builtin of that group runs in (sql/qcbuiltins.sql)
+const BUILTIN_GROUPS = [null, 'qc_bi_math', 'qc_bi_move', 'qc_bi_trace', 'qc_bi_ent', 'qc_bi_io'];
 function operands(op, a, b, c) {
   const r = [], w = [];
   const R = (x, n = 1) => { for (let i = 0; i < n; i++) r.push(x + i); };
@@ -84,6 +86,7 @@ function tagOf(progs) {
 
 export class QcJit {
   constructor(db, progs) {
+    this.biGroups = null;            // builtin number → its group, read once from qc_bi_group
     this.db = db;
     this.progs = progs;
     this.tag = tagOf(progs);
@@ -399,7 +402,7 @@ export class QcJit {
             const num = -callee.first_statement;
             if (nargs > 0) emit(`EXECUTE PROCEDURE qc_setp${nargs}(${args(nargs).slice(2)});`);
             if (num === 32 || num === 67) emit('EXECUTE PROCEDURE qc_depth(d + 1);');
-            emit(`EXECUTE PROCEDURE qc_builtin(${num}, ${fn});`);
+            emit(`EXECUTE PROCEDURE ${BUILTIN_GROUPS[this.biGroups?.get(num)] ?? 'qc_builtin'}(${num}, ${fn});`);   // the group's procedure, past qc_builtin's dispatch
             if (returnUsed(s)) emit('EXECUTE PROCEDURE qc_ret RETURNING_VALUES r1, r2, r3;');
           } else if (this.compiled.has(fn)) {              // (itself, recursively: through the dispatcher)
             emit(`EXECUTE PROCEDURE ${this.name(fn)}(d + 1${args(callee.numparms)}) RETURNING_VALUES r1, r2, r3;`);
@@ -475,6 +478,10 @@ END`);
   // compile these functions (those that cannot be are flagged -1 and left to the interpreter)
   async compile(ids) {
     const t0 = performance.now();
+    if (!this.biGroups) {                                // builtin number → its group (qc_bi_group, sql/qcbuiltins.sql)
+      const r = await this.db.query('EXECUTE BLOCK RETURNS (n INTEGER, g SMALLINT) AS BEGIN n = 1; WHILE (n < 256) DO BEGIN g = qc_bi_group(n); IF (g > 0) THEN SUSPEND; n = n + 1; END END');
+      this.biGroups = new Map(r.rows.map((x) => [x.N, x.G]));
+    }
     const done = [], bad = [];
     for (const f of ids) {
       if (this.compiled.has(f) || this.failed.has(f) || !this.body.has(f)) continue;

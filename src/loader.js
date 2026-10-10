@@ -101,7 +101,7 @@ export async function bulkLoad(db, table, rows) {
   await flush();
 }
 
-export const SQL_FILES = ['schema', 'physics', 'game', 'movers', 'triggers', 'items', 'combat', 'spawn', 'weapons', 'monsters', 'render', 'qcvm', 'bots', 'host', 'save', 'demo'];
+export const SQL_FILES = ['schema', 'physics', 'game', 'movers', 'triggers', 'items', 'combat', 'spawn', 'weapons', 'monsters', 'render', 'qcvm', 'qcbuiltins', 'qcexec', 'qcserver', 'qcphysics', 'qcpage', 'bots', 'host', 'save', 'demo'];
 
 export async function createSchema(db, sql) {
   await db.exec(sql.schema);

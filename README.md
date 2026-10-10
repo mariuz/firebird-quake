@@ -328,7 +328,12 @@ sql/spawn.sql      the entity lump: every classname's spawn function
 sql/weapons.sql    the player's tic: movement, firing, impulses
 sql/monsters.sql   the AI, the pushers, the think and physics loops, QUAKE_TIC, INIT_MAP
 sql/render.sql     visibility and projection
-sql/qcvm.sql       the QuakeC VM: progs.dat as tables, the interpreter, the builtins
+sql/qcvm.sql       the QuakeC VM: progs.dat as tables, globals, fields, strings, edicts
+sql/qcbuiltins.sql the builtins, in five procedures by kind
+sql/qcexec.sql     the interpreter
+sql/qcserver.sql   spawning a map, the client
+sql/qcphysics.sql  the server frame and its physics
+sql/qcpage.sql     the page's QuakeC mode: qc_begin_map, qc_tic
 src/qcjit.js       QuakeC compiled to PSQL: a stored procedure per hot function, the dispatchers
 src/loader.js      BSP and MDL to tables, the generated bulk loaders
 src/main.js        the page: input, the game loop, settings, the console
