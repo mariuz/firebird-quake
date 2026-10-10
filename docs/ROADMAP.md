@@ -42,10 +42,14 @@ in order of what they would change.
   turn is a binding with Quake's names, `+` buttons held and commands run, kept in `localStorage`, and the
   menu's **Customize controls** rebinds them as `M_Keys` does. Not there: cvars beyond these few, `alias`,
   `exec` of a config file, and the console's notify lines over the view.
-- **Fast revisits** (*JS*): every page load downloads the shareware pak (about 18 MB), boots the engine,
-  creates the schema and loads the map (1.2 s). Keep the pak in the Cache API or IndexedDB after the
-  first visit, and find out whether firebird-wasm can persist a database, so a reload opens the loaded
-  resources and schema instead of rebuilding them.
+- ~~**Fast revisits**~~ done (`scripts/build.mjs`, `openDatabase` and `cachedBuffer` in `src/main.js`,
+  `npm run test:image`; ARCHITECTURE section 2): the build runs `createSchema` once and ships the database
+  as a gzipped image (0.7 MB, named by a hash of what built it), which the page opens instead of
+  compiling the PSQL, and the paks are kept in the Cache API after the first download, keyed by the
+  server's validator. Measured in a headless browser against the local server: a first visit is playing
+  after 5.0 s instead of 7.9 (the database ready in 1.6 s instead of 5.7), a revisit after 3.1 s instead
+  of 6.0 (0.8 s instead of 4.1, no pak downloaded). What is left is the engine's start (about 0.7 s,
+  the WASM compiled again) and loading the map (1.3 s).
 - **Episodes 2 to 4 scene tests that run where the pak is** (*tests*): CI cannot have `pak1.pak`, the
   owner does. Tests gated on the pak's presence (skipped with a note otherwise), one set piece per
   episode, would cover the registered monsters in their own levels, where `test:registered` only spawns

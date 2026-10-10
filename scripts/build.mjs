@@ -11,7 +11,11 @@ import { build } from 'esbuild-wasm';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
+import { createSchema, loaderSql, SQL_FILES } from '../src/loader.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(root, 'dist');
@@ -24,6 +28,24 @@ const EXTERNAL = ['*firebird-embedded.js'];
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 
+// The schema as a database image: createSchema (every table, procedure and generated loader, 3 to 4 s in
+// the browser) run here once, the database dumped and gzipped (0.7 MB), so the page opens it in a tenth
+// of a second instead. Its name carries a hash of what built it (the SQL files, the generated loaders,
+// the engine's version), and the page asks for that name, so an image never outlives its code.
+// SCHEMA_IMAGE=0 skips it (the page then builds the schema itself, as before).
+let schemaImage = null;
+if (process.env.SCHEMA_IMAGE !== '0') {
+  const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
+  const engine = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/firebird-wasm/package.json'), 'utf8')).version;
+  const hash = crypto.createHash('sha256').update(engine).update(loaderSql()).update(SQL_FILES.map((n) => sql[n].replace(/\r\n/g, '\n')).join('\n')).digest('hex').slice(0, 12);
+  const db = new FirebirdBrowser(`memory://schema-${hash}`, { transport: new DirectTransport() });
+  await createSchema(db, sql);
+  const bytes = await db.dumpDataDir();
+  await db.close();
+  schemaImage = `schema-${hash}.fdb.gz`;
+  fs.writeFileSync(path.join(OUT, schemaImage), zlib.gzipSync(bytes, { level: 9 }));
+}
+
 await build({
   entryPoints: [path.join(root, 'src/main.js')],
   outfile: path.join(OUT, 'main.js'),
@@ -35,6 +57,7 @@ await build({
   minify: true,
   loader: { '.sql': 'text' },
   external: EXTERNAL,
+  define: { __SCHEMA_IMAGE__: JSON.stringify(schemaImage) },
   logLevel: 'warning',
 });
 
@@ -80,7 +103,7 @@ if (process.argv.includes('--serve')) {
   const coi = process.argv.includes('--coi');
   const TYPES = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-    '.wasm': 'application/wasm', '.map': 'application/json', '.pak': 'application/octet-stream', '.zip': 'application/zip', '.svg': 'image/svg+xml',
+    '.wasm': 'application/wasm', '.map': 'application/json', '.pak': 'application/octet-stream', '.zip': 'application/zip', '.gz': 'application/gzip', '.svg': 'image/svg+xml',
   };
   const port = Number(process.env.PORT ?? 8080);
   http.createServer((req, res) => {

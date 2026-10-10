@@ -84,6 +84,7 @@ jobs:
               npm run test:fire
               npm run test:water
               npm run test:console
+              npm run test:image
               npm run test:boss
               npm run test:e1m8
           # episode 1's set pieces: the drawbridge, the zombie pits, the underwater secret, the flooded moat,

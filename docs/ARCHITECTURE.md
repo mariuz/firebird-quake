@@ -34,7 +34,7 @@ COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworke
 service worker that re-issues every response with the headers after one reload.
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
-physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, bots, save, demo`, splitting each on `SET TERM`; the generated
+physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, bots, host, save, demo`, splitting each on `SET TERM`; the generated
 `load_<table>` procedures follow the schema, and the generated save tables (`savedTablesSql`, section
 6a) come just before `save.sql`. The order matters because
 PSQL procedures must exist before a caller compiles: each file starts with stubs (`CREATE OR ALTER
@@ -42,6 +42,18 @@ PROCEDURE x (...) AS BEGIN END^`) for the procedures it calls before defining th
 signature must match the real one exactly. progs.dat's part is six files read as one: `game.sql` holds
 the stubs for all of them, the utilities and the entity helpers, then `movers.sql`, `triggers.sql`,
 `items.sql`, `combat.sql` and `spawn.sql` (section 6).
+
+**The schema image.** The page does not run `createSchema` on a normal visit: `scripts/build.mjs` runs it
+once under Node, dumps the database (`dumpDataDir`, 6.6 MB) and writes it gzipped (0.7 MB) as
+`dist/schema-<hash>.fdb.gz`, the hash taken over the SQL files, the generated loaders and the engine's
+version, and hands the page the name (esbuild's `define`). `openDatabase` fetches it, unpacks it with
+`DecompressionStream` (unless a server sent it already unpacked), and opens the database from the bytes
+(`loadDataDir`); if the image is missing or will not open, it builds the schema as before. The database
+is ready in about 0.8 s on a revisit where building took 4 to 6 s, and a reopened image plays exactly as
+a database built in place (`npm run test:image`), plans included. The paks are kept in the Cache API
+after the first download, keyed by the server's ETag (or Last-Modified and length) from the HEAD the data
+sets make anyway, so a changed pak is fetched again and the old copy dropped; with both, a revisit is
+playing in about 3 s instead of 6.
 
 Then the page picks a data set (section 11), loads it with `loadResources`, and `startMap` loads a
 level with `loadMap`.
@@ -447,6 +459,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |
+| `image-test.mjs` | the schema image: a dumped database reopened from its bytes has every procedure and plays E1M1 tic for tic and frame for frame as the one built in place |
 | `console-test.mjs` | the console's parsing, keys and Tab, the bindings (two keys on one button, commands once a press), and `host_cmd` in both logics: god against a rocket at the feet, notarget, noclip through a wall, give, kill |
 | `mod-test.mjs` | mods: zips laid over id1 (loose files, a pak inside), three released `progs.dat` files spawning and playing E1M1, `findradius` from the map's centre, FrikBot X's bots connecting into spare slots and roaming |
 | `dm-test.mjs` | deathmatch and coop with bots: the spawns, a bot fragging the player and the player a bot, respawning, fraglimit, a coop bot shooting a grunt, a bot demo replaying |
@@ -468,7 +481,7 @@ Timings on a desktop (E1M1, `npm run bench`): a tic 6 ms idle and 12 ms walking;
 
 Every push to `main`: the `paks` job fetches the shareware pak and LibreQuake into the Actions cache
 (once; a hit skips it), then the `test` job runs as a matrix of five groups side by side (demos and
-monsters, QuakeC, LibreQuake and deathmatch, game rules, episode 1), each restoring the paks from the
+monsters, QuakeC, LibreQuake, mods and deathmatch, game rules, episode 1), each restoring the paks from the
 cache and running its tests one after another, about as long as the others; when all pass, `build`
 renders the headless screenshots and builds the site, and `deploy` publishes it to GitHub Pages at
 https://mariuz.github.io/firebird-quake/. A new test goes into the group that keeps the groups even.

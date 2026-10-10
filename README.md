@@ -85,7 +85,7 @@ npm run test:mod     # the three mods' progs.dat files in QuakeC mode, FrikBot X
 
 Firebird WASM uses pthreads, so the page must be cross-origin isolated. The dev server sends the
 COOP/COEP headers with `--coi`; a static host like GitHub Pages cannot, so `coi-serviceworker.js`
-re-issues responses with the headers after a one-time reload. Node 20 or later is required for the
+re-issues responses with the headers after a one-time reload. The build runs the schema once and ships the database as an image (`schema-<hash>.fdb.gz`, 0.7 MB) that the page opens instead of compiling the PSQL, and the page keeps the paks in the browser's cache after the first visit, so a revisit is playing in about three seconds. Node 20 or later is required for the
 scripts.
 
 ### Playing
@@ -282,6 +282,7 @@ physics, the movers and the AI, and they run in CI before every deploy.
 | `npm run test:bsp2` | the BSP2 and 2PSB formats of larger modern maps: E1M1 rewritten in both loads to the same rows, plays the same 150 tics and draws the same faces as the original |
 | `npm run test:fire` | the shambler's lightning on `sham_magic6`, 9 and 10 (and 11 on nightmare) with magic7 and 8 skipped, and the lava fireballs' throw, with misc.qc's speed bug for spawners without a speed key |
 | `npm run test:hazard` | slime and lava as Quake's `WaterMove` hurts: slime 4 × waterlevel a second and nothing in the biosuit, lava 10 × waterlevel every 0.2 s and once a second in the suit, the PSQL game and QuakeC mode alike |
+| `npm run test:image` | the schema image the build ships (`dist/schema-<hash>.fdb.gz`, which the page opens instead of compiling the PSQL): a dumped database reopened from its bytes has every procedure and plays E1M1 tic for tic and frame for frame as one built in place |
 | `npm run test:console` | the Quake console (commands split at `;`, quoted arguments, history, Tab) and the key bindings (a button held by any of its keys, a command once a press); `god`, `notarget`, `noclip`, `give` and `kill` in the PSQL game and in QuakeC mode: god takes a rocket at the feet without a scratch, noclip walks through the wall ahead |
 | `npm run test:mod` | mods (needs `npm run fetch-mods`): a mod's zip laid over the shareware pak (its loose files, or a `pak2.pak` inside it, over id1's); id's progs 1.06 recompiled, Reinforcer 1.1 and FrikBot X each spawn and play E1M1 through their own `progs.dat`; FrikBot X's bots connect into spare client slots on impulse 100 and roam the level on its own QuakeC physics |
 | `npm run test:lq` | LibreQuake's levels: each loads with the player standing (or swimming) at full health, its monsters, and exits that lead to maps the pak has; lq_e0m7's boss trap (two buttons sink the vore's pillar into lava, where a `trigger_hurt` kills it through its armour) in both modes; the `light_globe` and QuakeC's static torches drawn |

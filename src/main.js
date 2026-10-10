@@ -778,7 +778,46 @@ $('sql').addEventListener('keydown', (e) => {
 });
 for (const b of document.querySelectorAll('[data-sql]')) b.addEventListener('click', () => { $('sql').value = b.dataset.sql; runConsole(); });
 
-// ── boot ────────────────────────────────────────────────────────────────
+// ── boot ─────────────────────────────────────────────────────────────
+const SCHEMA_IMAGE = __SCHEMA_IMAGE__;   // the build's schema image (scripts/build.mjs), or null
+let schemaFromImage = false;
+async function schemaImage() {
+  if (!SCHEMA_IMAGE) return null;
+  try {
+    const r = await fetch(new URL(`./${SCHEMA_IMAGE}`, location.href));
+    if (!r.ok) return null;
+    let bytes = new Uint8Array(await r.arrayBuffer());
+    // gzip's magic number: a server that sent it with Content-Encoding has had the browser unpack it already
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    schemaFromImage = true;
+    return bytes;
+  } catch { return null; }
+}
+
+// The paks, kept in the Cache API after the first visit: 18 MB of shareware pak not fetched again. The
+// key carries the server's validator (ETag, else Last-Modified and length, from the HEAD the data sets
+// already make), so a changed pak is fetched anew and the old copy dropped.
+const PAK_CACHE = 'firebird-quake-paks';
+async function cachedBuffer(rel, validator) {
+  const url = new URL('./' + rel, location.href).href;
+  const key = `${url}?v=${encodeURIComponent(validator || '')}`;
+  let cache = null;
+  try { cache = await caches.open(PAK_CACHE); } catch { /* no Cache API (an insecure origin): fetch */ }
+  if (cache && validator) {
+    const hit = await cache.match(key);
+    if (hit) return hit.arrayBuffer();
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`could not fetch ${rel} (${r.status})`);
+  const buf = await r.arrayBuffer();
+  if (cache && validator) {
+    try {
+      for (const old of await cache.keys()) if (old.url.startsWith(`${url}?v=`) && old.url !== key) await cache.delete(old);
+      await cache.put(key, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } }));
+    } catch { /* storage full or refused: next time it is fetched again */ }
+  }
+  return buf;
+}
 async function openDatabase() {
   if (!window.crossOriginIsolated && window.isSecureContext && 'serviceWorker' in navigator &&
       Number(sessionStorage.getItem('firebird-quake:coi-reloads') || '0') < 2) {
@@ -789,15 +828,33 @@ async function openDatabase() {
     throw new Error('This page is not cross-origin isolated, so Firebird WASM cannot start. Reload once (the service worker enables it), and use HTTPS or localhost.');
   }
   setStatus('Starting Firebird 6 (WebAssembly)…');
-  const instance = new FirebirdBrowser('memory://quake', {
+  const t0 = performance.now();
+  // the schema as the build made it (scripts/build.mjs: every table and procedure, dumped and gzipped), so
+  // the database opens ready instead of compiling the PSQL; without it, or if it will not open, as before
+  const image = await schemaImage();
+  const open = (bytes) => new FirebirdBrowser('memory://quake', {
     worker: new Worker(new URL('./firebird-engine-worker.js', import.meta.url)),
     multiTab: 'allow-unsafe',
     autoPersist: false,
+    ...(bytes ? { loadDataDir: bytes } : {}),
   });
-  const v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
+  let instance = open(image);
+  let v;
+  try {
+    v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
+    if (image) await instance.query('SELECT COUNT(*) FROM rdb$procedures WHERE rdb$procedure_name = \'QUAKE_TIC\'');
+  } catch (err) {
+    if (!image) throw err;
+    console.warn('[firebird-quake] the schema image did not open; building the schema', err);
+    instance = open(null);
+    v = await instance.query("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS v FROM rdb$database");
+    schemaFromImage = false;
+  }
   $('engine').textContent = `Firebird ${v.rows[0].V}`;
+  if (image && schemaFromImage) { console.log(`[firebird-quake] database ready in ${(performance.now() - t0).toFixed(0)} ms (the schema from ${SCHEMA_IMAGE})`); return instance; }
   setStatus('Creating the Quake schema (PSQL)…');
   await createSchema(instance, { schema: schemaSql, physics: physicsSql, game: gameSql, movers: moversSql, triggers: triggersSql, items: itemsSql, combat: combatSql, spawn: spawnSql, weapons: weaponsSql, monsters: monstersSql, render: renderSql, qcvm: qcvmSql, bots: botsSql, host: hostSql, save: saveSql, demo: demoSql });
+  console.log(`[firebird-quake] database ready in ${(performance.now() - t0).toFixed(0)} ms (the schema built)`);
   return instance;
 }
 
@@ -851,8 +908,13 @@ async function boot() {
       'shareware+lq1': { label: 'Quake shareware + LibreQuake monsters', paks: ['pak/pak0.pak', 'pak/lq1/pak1.pak'] },
       librequake: { label: 'LibreQuake', paks: ['pak/lq1/pak0.pak', 'pak/lq1/pak1.pak'] },
     };
+    // a pak the site serves: its validator (for the cache), or false
     const served = async (rel) => {
-      try { const r = await fetch(new URL('./' + rel, location.href), { method: 'HEAD' }); return r.ok && (r.headers.get('content-type') ?? '').indexOf('text/html') < 0; } catch { return false; }
+      try {
+        const r = await fetch(new URL('./' + rel, location.href), { method: 'HEAD', cache: 'no-cache' });
+        if (!r.ok || (r.headers.get('content-type') ?? '').indexOf('text/html') >= 0) return false;
+        return r.headers.get('etag') || `${r.headers.get('last-modified') ?? ''}/${r.headers.get('content-length') ?? ''}`;
+      } catch { return false; }
     };
     const have = Object.fromEntries(await Promise.all([...new Set(Object.values(DATASETS).flatMap((d) => d.paks))].map(async (p) => [p, await served(p)])));
     const sets = Object.entries(DATASETS).filter(([, d]) => d.paks.every((p) => have[p]));
@@ -861,7 +923,7 @@ async function boot() {
     const loadDataset = async (key) => {
       const d = DATASETS[key];
       setStatus(`Downloading ${d.paks.map((p) => p.slice(4)).join(' + ')}…`);
-      const buffers = await Promise.all(d.paks.map(async (p) => { const r = await fetch(new URL('./' + p, location.href)); if (!r.ok) throw new Error(`could not fetch ${p} (${r.status})`); return r.arrayBuffer(); }));
+      const buffers = await Promise.all(d.paks.map((p) => cachedBuffer(p, have[p])));
       await usePak(buffers, d.paks.map((p) => p.slice(4)).join(' + '));
     };
     $('data').addEventListener('change', (e) => { settings.data = e.target.value; saveSettings(); loadDataset(e.target.value).catch((err) => setStatus(err.message, true)); });   // the frame loop keeps running; usePak pauses it while loading
