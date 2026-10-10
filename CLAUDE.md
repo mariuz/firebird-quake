@@ -22,6 +22,7 @@ npm run test:hazard            # slime and lava damage, with and without the bio
 npm run test:fire              # the shambler's lightning frames, the fireballs' throw
 npm run test:bsp2              # BSP2 and 2PSB maps: E1M1 rewritten in both, the same rows and the same game
 npm run test:water             # see-through liquids where the map was vised for them (LibreQuake), not elsewhere
+npm run test:levels            # every level in both logics (shareware: start, episode 1); PAK1=…/pak1.pak for episodes 2–4, end and dm1–dm6
 npm run test:lq                # LibreQuake's levels and lq_e0m7's boss trap (needs npm run fetch-librequake)
 npm run test:image             # the schema image the build ships: reopened from its bytes, it plays as one built in place
 npm run test:console           # the Quake console and the key bindings; god, noclip, give, kill in both logics

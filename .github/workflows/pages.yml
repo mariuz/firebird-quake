@@ -97,6 +97,7 @@ jobs:
               npm run test:e1m5
               npm run test:e1m6
               npm run test:qcai
+              npm run test:levels
     name: test (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4

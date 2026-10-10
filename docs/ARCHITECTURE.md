@@ -459,6 +459,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |
+| `levels-test.mjs` | every level of the paks it is given (shareware by default; `PAK1` adds the registered ones), in both logics: the player's footing, health and monsters, the exits, `total_monsters` equal between the PSQL game and progs.dat, no QuakeC error |
 | `image-test.mjs` | the schema image: a dumped database reopened from its bytes has every procedure and plays E1M1 tic for tic and frame for frame as the one built in place |
 | `console-test.mjs` | the console's parsing, keys and Tab, the bindings (two keys on one button, commands once a press), and `host_cmd` in both logics: god against a rocket at the feet, notarget, noclip through a wall, give, kill |
 | `mod-test.mjs` | mods: zips laid over id1 (loose files, a pak inside), three released `progs.dat` files spawning and playing E1M1, `findradius` from the map's centre, FrikBot X's bots connecting into spare slots and roaming |

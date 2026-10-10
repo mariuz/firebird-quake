@@ -24,6 +24,7 @@
     "test:bsp2": "node scripts/bsp2-test.mjs",
     "test:water": "node scripts/water-test.mjs",
     "test:lq": "node scripts/lq-test.mjs",
+    "test:levels": "node scripts/levels-test.mjs",
     "test:mod": "node scripts/mod-test.mjs",
     "test:console": "node scripts/console-test.mjs",
     "test:image": "node scripts/image-test.mjs",
