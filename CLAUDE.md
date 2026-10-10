@@ -36,6 +36,7 @@ npm run bench:paint            # the painter alone, warm and cold, at 320×200 a
 npm run test:qcjit             # QuakeC compiled to PSQL: every function compiles, compiled = interpreted, E1M1 with the JIT
 npm run test:qclq              # LibreQuake's progs.dat in QuakeC mode (FTEQCC's overlapping locals)
 npm run bench:qc               # the QuakeC VM: µs per statement, per call, ms per server frame asleep and awake
+NODE_USE_ENV_PROXY=1 npm run perf   # every bench against the deployed perf-history.json: a table, warnings, dist/perf-history.json
 QCJIT=all npm run test:qcai    # any QuakeC test, or the bench, with every function compiled first
 npm run serve                  # http://localhost:8080/ (add --coi for browsers without service workers; SCHEMA_IMAGE=0 skips the schema image)
 node scripts/screenshot.mjs <map> <prefix> --at=x,y,z,yaw --sql="…" --tics=N --single --fast   # a posed frame

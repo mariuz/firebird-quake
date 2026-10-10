@@ -2,7 +2,7 @@
 // huge angle), QuakeC function calls (crandom), and E1M1 server frames in
 // QuakeC mode with the monsters asleep and with the grunts on the bridge awake.
 //
-//   node scripts/qcvm-bench.mjs
+//   node scripts/qcvm-bench.mjs                  (BENCH_JSON=file writes the numbers there too)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,5 +70,8 @@ await frames(20, 'awake');
 out.awake.monstersAwake = awake;
 
 console.log(JSON.stringify(out, null, 1));
+if (process.env.BENCH_JSON) fs.writeFileSync(process.env.BENCH_JSON, JSON.stringify({
+  'loop µs per statement': out.loop.usPerStatement, 'µs per call': out.calls.usPerCall,
+  'server frame asleep ms': out.asleep.medianMs, 'server frame awake ms': out.awake.medianMs }));
 await db.close();
 process.exit(0);

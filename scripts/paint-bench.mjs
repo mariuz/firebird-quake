@@ -3,7 +3,7 @@
 // resolution, with the surface cache warm (a frame while standing still) and cold (every surface built,
 // as when the lights flicker or the view turns into a new room).
 //
-//   node scripts/paint-bench.mjs [frames]
+//   node scripts/paint-bench.mjs [frames]          (BENCH_JSON=file writes the ms there too)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,5 +71,7 @@ for (const [map, label, at] of SCENES) {
   }
 }
 console.table(results);
+if (process.env.BENCH_JSON) fs.writeFileSync(process.env.BENCH_JSON, JSON.stringify(Object.fromEntries(
+  results.flatMap((r) => [[`${r.scene} ${r.res} warm`, +r.warm], [`${r.scene} ${r.res} cold`, +r.cold]]))));
 await db.close();
 process.exit(0);

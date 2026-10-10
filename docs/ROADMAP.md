@@ -68,9 +68,14 @@ in order of what they would change.
   the `IF` chain: `break` went from 10.7 µs to 3.6 called directly, the last builtin from 17.7 to 6.5,
   `vlen` from 50 to 35. `bench:qc` with every function compiled: a server frame 18 → 16 ms asleep,
   27 → 24 awake; interpreted, 30 → 26 asleep.
-- **Performance numbers in CI** (*tests*): `bench`, `bench:qc` and `bench:paint` exist and nobody watches
-  them. A CI step that runs them and keeps the numbers (a JSON per commit, or the job's log) would have
-  caught that timings taken from JavaScript carry 50 µs of round trip each, and will catch regressions.
+- ~~**Performance numbers in CI**~~ done (`npm run perf`, the workflow's `perf` job): `bench`, `bench:qc`
+  (interpreted and with every function compiled) and `bench:paint` write their numbers to a JSON
+  (`BENCH_JSON`), and `scripts/perf.mjs` sets each against the median of the last five runs in the
+  history the site serves (`perf-history.json`, the last 200 runs, each with its commit and runner),
+  puts the table in the job summary, flags a number more than 50 % and 1 ms slower as a warning, and
+  hands the history with the run added to the build to deploy. Warnings, not failures: on one machine a
+  number moves by 10 to 35 % from one run to the next. The microsecond timings (a builtin, a statement)
+  still need to be taken inside the engine, as `qc_builtin`'s were for the split above.
 - **Touch controls** (*JS*): there is a `touchstart` handler and no real controls; a virtual stick, a look
   area and fire and jump buttons would make the deployed page playable on a phone.
 - Smaller: a `.sav` file export (saves live only in IndexedDB); a note in the README of what is not a

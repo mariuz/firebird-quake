@@ -475,6 +475,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
 | `paint-bench.mjs` | the painter alone: four scenes queried once, painted again and again at 320×200 and 640×400, with the surface cache warm and cold |
 | `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |
+| `perf.mjs` | runs `bench`, `qcvm-bench` (interpreted and compiled) and `paint-bench` with `BENCH_JSON`, compares each number with the median of the last five runs in the deployed `perf-history.json`, warns on one 50 % and 1 ms slower, and writes the history with the run added (CI's `perf` job; the build deploys it) |
 | `screenshot.mjs` | renders frames headlessly: `--at=x,y,z,yaw`, `--sql="…"` and `--tics=N` (repeatable, in order), `--single`, `--fast`, `--compare` (SQL-projected vs JS-projected frame, must match), `--gallery` (a view from every item spot) |
 | `gen-frame-layouts.mjs` | regenerates `src/framelayouts.js` |
 | `png.mjs` | a tiny PNG encoder for the screenshots |

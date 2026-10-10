@@ -117,8 +117,35 @@ jobs:
       - name: ${{ matrix.group }}
         run: ${{ matrix.run }}
 
+  # The benchmarks (scripts/perf.mjs): compared with the history the site serves, slower numbers flagged
+  # in the job summary, and the history with this run added handed to the build to deploy
+  perf:
+    needs: paks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: The paks, from the cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/pak/
+            mods/
+          key: paks-${{ hashFiles('scripts/fetch-pak.mjs') }}
+          fail-on-cache-miss: true
+      - name: Benchmarks
+        run: npm run perf -- --out=perf/perf-history.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf
+          path: perf/perf-history.json
+
   build:
-    needs: test
+    needs: [test, perf]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +166,11 @@ jobs:
         run: npm run screenshots
       - name: Build site
         run: npm run build
+      - name: The benchmarks' history, served beside the page
+        uses: actions/download-artifact@v4
+        with:
+          name: perf
+          path: dist
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

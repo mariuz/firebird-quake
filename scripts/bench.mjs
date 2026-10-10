@@ -1,4 +1,5 @@
-// bench.mjs – where does a tic and a frame spend their time?
+// bench.mjs – where does a tic and a frame spend their time? BENCH_JSON=file writes the timings there too
+// (scripts/perf.mjs, which CI runs).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,13 +13,16 @@ await createSchema(db, sql);
 const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
 const res = await loadResources(db, pak);
 const t = () => performance.now();
+const metrics = {};                // label → ms, for BENCH_JSON
 const tLoad = t();
 await loadMap(db, pak, res, process.argv[2] ?? 'e1m1');
+metrics['loadMap (the loaders, init_map)'] = t() - tLoad;
 console.log(`${'loadMap (the loaders, init_map)'.padEnd(44)} ${(t() - tLoad).toFixed(0)} ms`);
 async function time(label, q, n = 5) {
   const t0 = t();
   let r;
   for (let i = 0; i < n; i++) r = await db.query(q, [], { rowMode: 'array' });
+  metrics[label.trim()] = (t() - t0) / n;
   console.log(`${label.padEnd(44)} ${((t() - t0) / n).toFixed(1)} ms  (${r.rows.length} rows)`);
   return r;
 }
@@ -58,4 +62,5 @@ await time('frame_faces_fast, a leaf seen before', 'SELECT * FROM frame_faces_fa
 await time('frame_faces_fast, the same leaf', 'SELECT * FROM frame_faces_fast');
 console.log('ents near player in pvs:', (await db.query(`SELECT e.id, e.classname, e.leaf, e.leafs, pvs_visible('${v.PVS}', e.leaf) vis FROM ents e WHERE e.model_id IS NOT NULL AND e.id <> ${pe} ORDER BY vlen(e.x - ${p.X}, e.y - ${p.Y}, e.z - ${p.Z}) ROWS 6`)).rows);
 await db.close();
+if (process.env.BENCH_JSON) fs.writeFileSync(process.env.BENCH_JSON, JSON.stringify(metrics));
 process.exit(0);

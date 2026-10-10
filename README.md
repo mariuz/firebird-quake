@@ -309,6 +309,7 @@ Tools for the same purpose:
 ```bash
 npm run check          # compile every sql/*.sql against the engine, nothing else
 npm run bench          # where a tic and a frame spend their time
+npm run perf           # every benchmark against the deployed history (perf-history.json), as CI runs it
 npm run screenshots    # headless frames to docs/ (node scripts/screenshot.mjs e1m1 --at=x,y,z,yaw [--fast] [--compare])
 ```
 
