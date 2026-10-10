@@ -185,11 +185,12 @@ BEGIN
     DELETE FROM ents x WHERE x.id = :c;
     INSERT INTO ents (id, classname) VALUES (:c, 'player');
   END
-  -- Host_Spawn_f: the edict's colormap is its client number, its team its colours' (0, so 1), its netname
-  -- the client's name (mods find a client's slot by colormap: FrikBot's rankings)
+  -- Host_Spawn_f: the edict's colormap is its client number (the painter dresses the skin in that client's
+  -- colours, and mods find a client's slot by it: FrikBot's rankings), its team its bottom colour + 1
+  -- (Host_Color_f), its netname the client's name
   EXECUTE PROCEDURE qc_set_str(c, qc_fdef('netname'), name);
   EXECUTE PROCEDURE qc_sf(c, qc_fdef('colormap'), c);
-  EXECUTE PROCEDURE qc_sf(c, qc_fdef('team'), 1);
+  EXECUTE PROCEDURE qc_sf(c, qc_fdef('team'), BIN_AND(client_colors(c), 15) + 1);
   EXECUTE PROCEDURE qc_sg(g_self, c);
   IF (carry = 0) THEN
   BEGIN

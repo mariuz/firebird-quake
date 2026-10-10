@@ -66,7 +66,7 @@ const ROUTED = [['origin', 3, 0, ['x', 'y', 'z']], ['velocity', 3, 0, ['vx', 'vy
   ['modelindex', 1, 0, [['model_id', 'INTEGER', 'NULLIF']]], ['ltime', 1, 0, ['ltime']], ['waterlevel', 1, 0, [['waterlevel', 'SMALLINT']]],
   ['watertype', 1, 0, [['watertype', 'INTEGER']]], ['owner', 1, 0, [['owner_id', 'INTEGER']]], ['absmin', 3], ['absmax', 3], ['size', 3],
   ['model'], ['enemy', 1, 0, [['enemy_id', 'INTEGER']]], ['goalentity', 1, 0, [['goal_id', 'INTEGER']]], ['ideal_yaw', 1, 0, ['ideal_yaw']],
-  ['yaw_speed', 1, 0, ['yaw_speed']]];
+  ['yaw_speed', 1, 0, ['yaw_speed']], ['colormap', 1, 0, [['colormap', 'SMALLINT']]]];
 
 // a float as a DOUBLE PRECISION literal
 function lit(v) {

@@ -52,7 +52,7 @@ BEGIN
           WHEN 11 THEN e.minx WHEN 12 THEN e.miny WHEN 13 THEN e.minz WHEN 14 THEN e.maxx WHEN 15 THEN e.maxy WHEN 16 THEN e.maxz
           WHEN 17 THEN e.solid WHEN 18 THEN e.movetype WHEN 19 THEN e.flags WHEN 20 THEN e.frame WHEN 21 THEN e.skin WHEN 22 THEN e.effects
           WHEN 23 THEN COALESCE(e.model_id, 0) WHEN 24 THEN e.ltime WHEN 25 THEN e.waterlevel WHEN 26 THEN e.watertype WHEN 27 THEN COALESCE(e.owner_id, 0)
-          WHEN 28 THEN COALESCE(e.enemy_id, 0) WHEN 29 THEN COALESCE(e.goal_id, 0) WHEN 41 THEN e.ideal_yaw WHEN 42 THEN e.yaw_speed
+          WHEN 28 THEN COALESCE(e.enemy_id, 0) WHEN 29 THEN COALESCE(e.goal_id, 0) WHEN 41 THEN e.ideal_yaw WHEN 42 THEN e.yaw_speed WHEN 43 THEN COALESCE(e.colormap, 0)
           -- SV_LinkEdict's absolute box: items grow by 15 sideways, everything else by 1
           WHEN 31 THEN e.x + e.minx - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 32 THEN e.y + e.miny - IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 33 THEN e.z + e.minz - 1
           WHEN 34 THEN e.x + e.maxx + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 35 THEN e.y + e.maxy + IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) WHEN 36 THEN e.z + e.maxz + 1
@@ -104,6 +104,7 @@ BEGIN
       ELSE IF (c = 21) THEN UPDATE ents e SET e.skin = CAST(:v AS INTEGER) WHERE e.id = :ent;
       ELSE IF (c = 23) THEN UPDATE ents e SET e.model_id = NULLIF(CAST(:v AS INTEGER), 0) WHERE e.id = :ent;
       ELSE IF (c = 42) THEN UPDATE ents e SET e.yaw_speed = :v WHERE e.id = :ent;
+      ELSE IF (c = 43) THEN UPDATE ents e SET e.colormap = CAST(:v AS SMALLINT) WHERE e.id = :ent;
       ELSE IF (c = 11) THEN UPDATE ents e SET e.minx = :v WHERE e.id = :ent;
       ELSE IF (c = 12) THEN UPDATE ents e SET e.miny = :v WHERE e.id = :ent;
       ELSE IF (c = 13) THEN UPDATE ents e SET e.minz = :v WHERE e.id = :ent;
@@ -431,6 +432,7 @@ BEGIN
   EXECUTE PROCEDURE qc_route(qc_fdef('model'), 40);
   EXECUTE PROCEDURE qc_route(qc_fdef('enemy'), 28); EXECUTE PROCEDURE qc_route(qc_fdef('goalentity'), 29);
   EXECUTE PROCEDURE qc_route(qc_fdef('ideal_yaw'), 41); EXECUTE PROCEDURE qc_route(qc_fdef('yaw_speed'), 42);
+  EXECUTE PROCEDURE qc_route(qc_fdef('colormap'), 43);
   EXECUTE PROCEDURE qc_reset;
   DELETE FROM vis_faces; DELETE FROM vis_ents;
   UPDATE viewcfg c SET c.vis_leaf = NULL;

@@ -46,7 +46,9 @@ CREATE TABLE game (
   coop           SMALLINT DEFAULT 0 NOT NULL,
   maxclients     SMALLINT DEFAULT 1 NOT NULL,
   fraglimit      INTEGER DEFAULT 0 NOT NULL,
-  timelimit      INTEGER DEFAULT 0 NOT NULL
+  timelimit      INTEGER DEFAULT 0 NOT NULL,
+  -- the player's colours as Quake's `color` command sets them: top * 16 + bottom (0: none, the skin's own)
+  player_colors  SMALLINT DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE viewcfg (
@@ -259,6 +261,7 @@ CREATE TABLE ents (
   -- monsters
   ideal_yaw  DOUBLE PRECISION DEFAULT 0 NOT NULL,
   yaw_speed  DOUBLE PRECISION DEFAULT 20 NOT NULL,
+  colormap   SMALLINT,                      -- QuakeC mode: the client whose colours its skin wears (players, their corpses)
   attack_finished DOUBLE PRECISION DEFAULT 0 NOT NULL,
   pain_finished   DOUBLE PRECISION DEFAULT 0 NOT NULL,
   search_time     DOUBLE PRECISION DEFAULT 0 NOT NULL,
@@ -553,6 +556,7 @@ CREATE TABLE bots (
   c          INTEGER NOT NULL PRIMARY KEY,     -- the client's edict
   name       VARCHAR(32) NOT NULL,
   aim_error  DOUBLE PRECISION NOT NULL,
+  colors     SMALLINT DEFAULT 0 NOT NULL,      -- top * 16 + bottom, as the player's game.player_colors
   yaw        DOUBLE PRECISION,                 -- the view it holds (NULL: take the body's)
   pitch      DOUBLE PRECISION DEFAULT 0 NOT NULL,
   enemy      INTEGER,                          -- whom it fights

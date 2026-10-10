@@ -584,14 +584,14 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   // alias models and sprites
   const bsp = map.bsp;
   for (const e of ents) {
-    const [, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kindRaw] = e;
+    const [, mid, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kindRaw, , colors] = e;
     const kind = String(kindRaw).trim();   // CHAR(1) comes back padded
     const m = res.models.get(mid);
     if (!m) continue;
     if (kind === 'M') {
       const light = effects & 8 ? 255 : Math.min(255, Math.max(lightPoint(bsp, x, y, z + 8), effects & 4 ? 160 : 0) + dlightAt(dl, x, y, z));
       const spin = m.mdl.flags & 8 ? (time * 100) % 360 : 0;   // EF_ROTATE items spin
-      r.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw + spin, roll], light, { time, alpha: alpha === 1 });
+      r.drawAlias(m.mdl, frame, skin, [x, y, z], [pitch, yaw + spin, roll], light, { time, alpha: alpha === 1, colors });
     } else if (kind === 'S') {
       r.drawSprite(m.spr, frame, [x, y, z]);
     }
@@ -1018,6 +1018,7 @@ function consoleCommands() {
     skill: { help: '<0..3>: the skill of the next map', run: value('skill', (v) => { settings.skill = Math.max(0, Math.min(3, Math.round(v))); $('skill').value = String(settings.skill); saveSettings(); }) },
     god: { help: 'take no damage', run: () => host('god') },
     notarget: { help: 'monsters do not see you', run: () => host('notarget') },
+    color: { help: '<top> [bottom]: your shirt and pants, 0..13 (what the bots see in deathmatch)', run: (a) => host('color', a[0] ?? '', a[1] ?? '') },
     noclip: { help: 'fly through walls', run: () => host('noclip') },
     give: { help: '<2..8 | s n r c h> <amount>: a weapon, ammo or health', run: ([a, n]) => host('give', a ?? '', n ?? '') },
     kill: { help: 'suicide', run: () => host('kill') },

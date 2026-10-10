@@ -329,6 +329,13 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   edict loop visits all of them every frame, and `checkclient` takes turns between the live ones every
   0.1 s as `PF_newcheckclient` does. `centerprint`, `sprint` and `stuffcmd` reach the page only for
   client 1; `bprint` reaches everyone (the obituaries show on the message line).
+- **The colours**: a client's colours are `top * 16 + bottom` (`client_colors(c)`: the player's
+  `game.player_colors`, set by the console's `color`, and each bot's `bots.colors`, red, blue, green and
+  on). `colormap` is routed to an `ents` column, so a client's edict, and the corpse `CopyToBodyQue`
+  copies it to, carry the client's number; `frame_ents` returns the colours for it, and the painter
+  recolours the skin's shirt (palette row 1) and pants (row 6) into the colours' rows as
+  `R_TranslatePlayerSkin` does (`translateSkin`, kept per skin and colours). The team is the bottom
+  colour + 1, as `Host_Color_f` sets it.
 - **The bots** are clients 2..: `qc_server_frame` asks `qc_bot_think(c, t, dt)` for each one's move (the
   same forward/side/up speeds, view angles, buttons and impulse a player's packet carries) before the
   physics. The brain keeps its state in the `bots` table: every 0.3 s it looks for the nearest enemy
@@ -389,7 +396,8 @@ view transform, the projection and the texel coordinates in the select list, one
 first costs about a quarter of the second since a frame is ~300 face rows instead of ~1400 vertex rows.
 
 `frame_ents` lists the alias models and sprites whose `leafs` intersect the PVS, with pose, frame,
-skin, effects and alpha. `frame_lightstyles` evaluates the 64 light styles at the current time.
+skin, effects, alpha and, for a player model or a corpse in QuakeC mode, the colours of the client its
+`colormap` names. `frame_lightstyles` evaluates the 64 light styles at the current time.
 
 ## 10. The painter (`src/renderer.js`, `src/hud.js`)
 
@@ -468,7 +476,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `levels-test.mjs` | every level of the paks it is given (shareware by default; `PAK1` adds the registered ones), in both logics: the player's footing, health and monsters, the exits, `total_monsters` equal between the PSQL game and progs.dat, no QuakeC error |
 | `image-test.mjs` | the schema image: a dumped database reopened from its bytes has every procedure and plays E1M1 tic for tic and frame for frame as the one built in place |
 | `touch-test.mjs` | the touch controls' logic (`src/touch.js`) without a page: the stick, its dead zone and rim, the look drag, taps, held and short button touches, one thumb per touch id |
-| `console-test.mjs` | the console's parsing, keys and Tab, the bindings (two keys on one button, commands once a press), and `host_cmd` in both logics: god against a rocket at the feet, notarget, noclip through a wall, give, kill |
+| `console-test.mjs` | the console's parsing, keys and Tab, the bindings (two keys on one button, commands once a press), and `host_cmd` in both logics: god against a rocket at the feet, notarget, noclip through a wall, give, kill (`color` is in `dm-test.mjs`) |
 | `mod-test.mjs` | mods: zips laid over id1 (loose files, a pak inside), three released `progs.dat` files spawning and playing E1M1, `findradius` from the map's centre, FrikBot X's bots connecting into spare slots and roaming |
 | `dm-test.mjs` | deathmatch and coop with bots: the spawns, a bot fragging the player and the player a bot, respawning, fraglimit, a coop bot shooting a grunt, a bot demo replaying |
 | `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |

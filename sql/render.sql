@@ -286,12 +286,22 @@ BEGIN
   END
 END^
 
--- the alias models and sprites to draw: entities in the PVS, with their pose
+-- a client's colours, top * 16 + bottom: the player's (game.player_colors, set by the console's color) or a
+-- bot's (bots.colors); 0 for none (the skin as painted)
+CREATE OR ALTER FUNCTION client_colors (c INTEGER) RETURNS SMALLINT
+AS
+BEGIN
+  IF (c = 1) THEN RETURN COALESCE((SELECT g.player_colors FROM game g WHERE g.id = 1), 0);
+  RETURN COALESCE((SELECT b.colors FROM bots b WHERE b.c = :c), 0);
+END^
+
+-- the alias models and sprites to draw: entities in the PVS, with their pose, and the colours of the client
+-- whose colormap a player model or a corpse carries (R_TranslatePlayerSkin: the painter recolours the skin)
 CREATE OR ALTER PROCEDURE frame_ents
 RETURNS (id INTEGER, model_id INTEGER, frame INTEGER, skin INTEGER,
          x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION,
          pitch DOUBLE PRECISION, yaw DOUBLE PRECISION, roll DOUBLE PRECISION,
-         effects INTEGER, alpha SMALLINT, kind CHAR(1), flags INTEGER)
+         effects INTEGER, alpha SMALLINT, kind CHAR(1), flags INTEGER, colors SMALLINT)
 AS
 DECLARE pvs d_pvs; DECLARE pe INTEGER; DECLARE leafs VARCHAR(200) CHARACTER SET ASCII;
 DECLARE p INTEGER; DECLARE q INTEGER; DECLARE vis SMALLINT; DECLARE lf INTEGER;
@@ -301,15 +311,15 @@ DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION; DECLARE rz DOUBLE PREC
 DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
 DECLARE w INTEGER; DECLARE h INTEGER; DECLARE sc DOUBLE PRECISION; DECLARE nearz DOUBLE PRECISION;
 DECLARE kx DOUBLE PRECISION; DECLARE ky DOUBLE PRECISION; DECLARE vleaf INTEGER;
-DECLARE radius DOUBLE PRECISION; DECLARE cf DOUBLE PRECISION;
+DECLARE radius DOUBLE PRECISION; DECLARE cf DOUBLE PRECISION; DECLARE cm SMALLINT;
 BEGIN
   EXECUTE PROCEDURE view_setup RETURNING_VALUES ex, ey, ez, fx, fy, fz, rx, ry, rz, ux, uy, uz, w, h, sc, nearz, kx, ky, pvs, vleaf;
   pe = player_ent();
   FOR SELECT e.id, e.model_id, e.frame, e.skin, e.x, e.y, e.z, e.pitch, e.yaw, e.roll, e.effects, e.alpha, m.kind, e.flags, e.leaf, e.leafs,
-             MAXVALUE(m.radius, vlen(e.maxx - e.minx, e.maxy - e.miny, e.maxz - e.minz) / 2)
+             MAXVALUE(m.radius, vlen(e.maxx - e.minx, e.maxy - e.miny, e.maxz - e.minz) / 2), e.colormap
         FROM ents e JOIN models m ON m.id = e.model_id
        WHERE m.kind IN ('M', 'S') AND e.id <> :pe
-        INTO id, model_id, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kind, flags, lf, leafs, radius
+        INTO id, model_id, frame, skin, x, y, z, pitch, yaw, roll, effects, alpha, kind, flags, lf, leafs, radius, cm
   DO
   BEGIN
     cf = (x - ex) * fx + (y - ey) * fy + (z - ez) * fz;
@@ -331,6 +341,7 @@ BEGIN
     END
     ELSE vis = pvs_visible(pvs, COALESCE(lf, point_leaf(x, y, z)));
     IF (vis = 0) THEN CONTINUE;
+    colors = IIF(cm > 0, client_colors(cm), 0);
     SUSPEND;
   END
 END^

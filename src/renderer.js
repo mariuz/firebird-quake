@@ -10,6 +10,28 @@ import { ANORMS } from './mdl.js';
 const SURF_CACHE_MAX = 2000;
 const NO_OFFSET = [0, 0, 0];
 
+// R_TranslatePlayerSkin: a player skin in a client's colours (top * 16 + bottom). The palette's rows 1
+// (16..31, the shirt) and 6 (96..111, the pants) become the colours' rows; rows from 8 on run dark to light,
+// so they are taken backwards to keep the shading. Kept per skin and colours.
+const translated = new WeakMap();
+export function translateSkin(skin, colors) {
+  let bySkin = translated.get(skin);
+  if (!bySkin) translated.set(skin, (bySkin = new Map()));
+  let out = bySkin.get(colors);
+  if (out) return out;
+  const map = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) map[i] = i;
+  const top = colors & 0xf0, bottom = (colors & 15) << 4;
+  for (let i = 0; i < 16; i++) {
+    map[16 + i] = top < 128 ? top + i : top + 15 - i;
+    map[96 + i] = bottom < 128 ? bottom + i : bottom + 15 - i;
+  }
+  out = new Uint8Array(skin.length);
+  for (let i = 0; i < skin.length; i++) out[i] = map[skin[i]];
+  bySkin.set(colors, out);
+  return out;
+}
+
 export class Renderer {
   constructor(canvas, { palette, colormap }) {
     this.canvas = canvas;
@@ -461,7 +483,8 @@ export class Renderer {
       const d = (nx * ldx + ny * ldy + nz * ldz) * 0.7071;
       lv[i] = Math.min(255, ambient + shade * Math.max(0, d));
     }
-    const skinData = mdl.skins[Math.min(skin, mdl.skins.length - 1)] ?? mdl.skins[0];
+    let skinData = mdl.skins[Math.min(skin, mdl.skins.length - 1)] ?? mdl.skins[0];
+    if (opts.colors) skinData = translateSkin(skinData, opts.colors);
     const tris = mdl.tris, st = mdl.st, skinW = mdl.skinW, skinH = mdl.skinH;
     const depthHack = opts.depthHack ? 3 : 1;
     const transparent = opts.transparent ? 255 : -1;

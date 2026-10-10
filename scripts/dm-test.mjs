@@ -13,6 +13,7 @@ import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadProgs, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 import { exportDemo, DemoPlayer } from '../src/demos.js';
+import { translateSkin } from '../src/renderer.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -71,6 +72,28 @@ const at = await Promise.all([1, 2, 3].map(pos));
 const onSpot = at.map((p) => spots.findIndex((o) => Math.hypot(o.OX - p.X, o.OY - p.Y) < 1));   // as spawned, before the first frame
 assert(onSpot.every((i) => i >= 0) && new Set(onSpot).size === 3, `each client starts on its own info_player_deathmatch (spots ${onSpot.join(', ')} of ${spots.length})`);
 assert((await q1('SELECT COUNT(*) n FROM ents WHERE BIN_AND(flags, 32) <> 0')).N === 0, 'deathmatch has no monsters (their spawn functions remove them)');
+
+// colours: each client's edict carries its colormap (its client number), each bot its own colours, the team
+// its bottom colour + 1; the frame query hands the colours over with the model and the painter recolours
+// the shirt (palette row 1) and the pants (row 6) as R_TranslatePlayerSkin does
+const cm = await qa('SELECT id, colormap, client_colors(colormap) colors FROM ents WHERE id IN (1, 2, 3) ORDER BY id');
+assert(cm.map((r) => r.COLORMAP).join() === '1,2,3' && cm[1].COLORS === 4 * 17 && cm[2].COLORS === 13 * 17 && cm[0].COLORS === 0,
+  `colormap is each client's number, the bots red (${cm[1].COLORS}) and blue (${cm[2].COLORS}), the player its skin's own (${cm[0].COLORS})`);
+assert(await field(2, 'colormap') === 2 && await field(2, 'team') === 5 && await field(3, 'team') === 14, 'progs.dat reads them: colormap 2, team = bottom + 1 (5 and 14)');
+assert((await q1("SELECT msg FROM host_cmd('color', '3', '9')")).MSG === null && (await q1('SELECT player_colors c FROM game')).C === 57 && await field(1, 'team') === 10,
+  "the console's color 3 9: green shirt, magenta pants, team 10");
+assert((await q1("SELECT msg FROM host_cmd('color', '', '')")).MSG === '"color" is "3 9"', 'color alone says them');
+{
+  const near = await spotNear(160), was = await pos(2);
+  await place(2, near.x, near.y, near.z);
+  const row = (await qa('SELECT id, colors FROM frame_ents')).find((r) => r.ID === 2);
+  await place(2, was.X, was.Y, was.Z);
+  assert(row?.COLORS === 68, `frame_ents gives the bot in view its colours (${row?.COLORS})`);
+  const skin = Uint8Array.from([5, 16, 31, 96, 111, 200, 255]);
+  const red = translateSkin(skin, 68), blue = translateSkin(skin, 13 * 17);
+  assert(red.join() === '5,64,79,64,79,200,255' && blue.join() === '5,223,208,223,208,200,255' && translateSkin(skin, 68) === red,
+    'the painter: shirt and pants into the colour rows (backwards from row 8, as the artists drew them), the rest untouched, kept per colours');
+}
 await tic();
 await run(100);
 const moved = await Promise.all([2, 3].map(async (c, i) => { const p = await pos(c); return Math.hypot(p.X - at[c - 1].X, p.Y - at[c - 1].Y); }));

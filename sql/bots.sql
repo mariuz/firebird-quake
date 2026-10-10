@@ -29,10 +29,12 @@ BEGIN
   DELETE FROM bots;
   WHILE (i < nbots) DO
   BEGIN
-    INSERT INTO bots (c, name, aim_error)
+    -- each its own colours (top and bottom alike: red, blue, green, yellow, magenta, orange, light blue)
+    INSERT INTO bots (c, name, aim_error, colors)
     VALUES (:i + 2, TRIM(CASE MOD(:i, 7) WHEN 0 THEN 'Grunt' WHEN 1 THEN 'Enforcer' WHEN 2 THEN 'Ogre' WHEN 3 THEN 'Knight'
                                          WHEN 4 THEN 'Fiend' WHEN 5 THEN 'Vore' ELSE 'Shambler' END),
-            CASE :sk WHEN 0 THEN 20 WHEN 1 THEN 12 WHEN 2 THEN 6 ELSE 3 END);
+            CASE :sk WHEN 0 THEN 20 WHEN 1 THEN 12 WHEN 2 THEN 6 ELSE 3 END,
+            CASE MOD(:i, 7) WHEN 0 THEN 4 WHEN 1 THEN 13 WHEN 2 THEN 3 WHEN 3 THEN 12 WHEN 4 THEN 9 WHEN 5 THEN 6 ELSE 2 END * 17);
     i = i + 1;
   END
 END^

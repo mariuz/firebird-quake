@@ -1,4 +1,4 @@
--- host.sql – the console's game commands (host_cmd.c): god, notarget, noclip, give, kill, in both logics.
+-- host.sql – the console's game commands (host_cmd.c): god, notarget, noclip, give, color, kill, in both logics.
 -- The flags and the movetype are the player edict's ents columns either way (QuakeC mode routes the
 -- engine's fields there); the inventory is the player table's in the PSQL game and the client's QuakeC
 -- fields in QuakeC mode; kill is ClientKill in QuakeC mode and a death past god mode in the PSQL game.
@@ -59,6 +59,19 @@ BEGIN
       ELSE UPDATE ents e SET e.health = :n WHERE e.id = :pe;
     END
     ELSE msg = 'give <2..8 | s n r c h> <amount>';
+  END
+  ELSE IF (cmd = 'color') THEN                         -- Host_Color_f: top [bottom], 0..13; the team is bottom + 1
+  BEGIN
+    IF (COALESCE(TRIM(arg1), '') = '') THEN
+      msg = '"color" is "' || BIN_SHR((SELECT g.player_colors FROM game g WHERE g.id = 1), 4) || ' '
+            || BIN_AND((SELECT g.player_colors FROM game g WHERE g.id = 1), 15) || '"';
+    ELSE
+    BEGIN
+      n = MINVALUE(13, MAXVALUE(0, CAST(arg1 AS INTEGER)));
+      w = MINVALUE(13, MAXVALUE(0, CAST(COALESCE(NULLIF(TRIM(arg2), ''), arg1) AS INTEGER)));
+      UPDATE game g SET g.player_colors = :n * 16 + :w WHERE g.id = 1;
+      IF (qc = 1) THEN EXECUTE PROCEDURE qc_sf(pe, qc_fdef('team'), w + 1);
+    END
   END
   ELSE IF (cmd = 'kill') THEN                          -- Host_Kill_f: ClientKill, not when dead already
   BEGIN
