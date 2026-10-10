@@ -4,6 +4,46 @@ What Firebird Quake does today is in [ARCHITECTURE.md](ARCHITECTURE.md). This is
 does not do yet, roughly by how much it would change the experience. Items marked *SQL* belong in
 `sql/`, *JS* in `src/`, *tests* in `scripts/`.
 
+## Next
+
+What is left above is blocked (the registered pak) or by design; these are the next things worth doing,
+in order of what they would change.
+
+- **The painter in a worker, in parallel with the SQL frame** (*JS*): a page frame is the tic (2 to 7 ms
+  amortised), the frame queries (about 4 ms) and the painter (2 to 7 ms, 15 cold), one after the other on
+  one thread. The painter needs only the face rows, the entity rows and the light styles, plain arrays,
+  so it can draw on an `OffscreenCanvas` in a Web Worker while the main thread already runs the next tic
+  and queries; the two halves overlap, and the frame rate can approach twice what it is without a change
+  to the SQL. `Renderer` is self-contained already (`paint-bench.mjs` drives it headless).
+- **Mods, for real** (*JS*, *tests*): the QuakeC VM exists so mods can run, and none has been tried.
+  `PakSet` layers paks and `loadProgs` reads `progs.dat` from the set, so most of the plumbing is there:
+  load a mod's pak over id1 as `-game` does (its `progs.dat`, maps, models and sounds over id1's), with a
+  test on a free QuakeC mod and a line in the README on how to drop one in. It is also the first test of
+  `qcvm.sql` against a `progs.dat` that is neither id's nor LibreQuake's.
+- **A Quake console** (*JS*): the page has an SQL console, not Quake's (`~`): `map e1m2`, `skill 2`,
+  `god`, `noclip`, `give`, `kill`, `impulse N`, the cvars, drawn in the frame over `gfx/conback.lmp` with
+  the console font, each command becoming the SQL it already stands for. With it, the menu's missing
+  **Customize controls**: key bindings kept in `localStorage` like the settings.
+- **Fast revisits** (*JS*): every page load downloads the shareware pak (about 18 MB), boots the engine,
+  creates the schema and loads the map (1.2 s). Keep the pak in the Cache API or IndexedDB after the
+  first visit, and find out whether firebird-wasm can persist a database, so a reload opens the loaded
+  resources and schema instead of rebuilding them.
+- **Episodes 2 to 4 scene tests that run where the pak is** (*tests*): CI cannot have `pak1.pak`, the
+  owner does. Tests gated on the pak's presence (skipped with a note otherwise), one set piece per
+  episode, would cover the registered monsters in their own levels, where `test:registered` only spawns
+  them in E1M1.
+- **Split `qcvm.sql` as `game.sql` was** (*SQL*): at 2000 lines it is the largest file; the builtins (one
+  procedure of 500 lines and ninety `IF` branches), the interpreter, the server frame and the page's tic
+  are natural files. Splitting `qc_builtin` into groups also removes the dispatch chain, about 15 µs of
+  every builtin call.
+- **Performance numbers in CI** (*tests*): `bench`, `bench:qc` and `bench:paint` exist and nobody watches
+  them. A CI step that runs them and keeps the numbers (a JSON per commit, or the job's log) would have
+  caught that timings taken from JavaScript carry 50 µs of round trip each, and will catch regressions.
+- **Touch controls** (*JS*): there is a `touchstart` handler and no real controls; a virtual stick, a look
+  area and fire and jump buttons would make the deployed page playable on a phone.
+- Smaller: a `.sav` file export (saves live only in IndexedDB); a note in the README of what is not a
+  goal (multiplayer between humans, GLQuake's features), so the list stops attracting them.
+
 ## The game
 
 - ~~**Dynamic lights**~~ done (`src/dlights.js`, ARCHITECTURE section 10): rockets, explosions, the muzzle flashes and the powerup glows light the world and the models, the lit faces rebuilt for the frame as Quake's `R_AddDynamicLights` does. Left: the slow renderer (`frame_faces`) lights world faces only (its rows carry no brush model origin), and the PSQL game has no muzzle flash for monsters (its effects bits mean fullbright).
