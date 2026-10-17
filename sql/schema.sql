@@ -274,6 +274,10 @@ CREATE TABLE ents (
   -- placement
   leaf       INTEGER,                      -- leaf of the origin (hull 0)
   leafs      VARCHAR(200) CHARACTER SET ASCII,   -- ',' separated leaves the box touches
+  -- the origin and box link_ent last linked: unchanged, the leaves are too (most of a frame's links)
+  lk_x DOUBLE PRECISION, lk_y DOUBLE PRECISION, lk_z DOUBLE PRECISION,
+  lk_mnx DOUBLE PRECISION, lk_mny DOUBLE PRECISION, lk_mnz DOUBLE PRECISION,
+  lk_mxx DOUBLE PRECISION, lk_mxy DOUBLE PRECISION, lk_mxz DOUBLE PRECISION, lk_grow DOUBLE PRECISION,
   waterlevel SMALLINT DEFAULT 0 NOT NULL,
   watertype  INTEGER DEFAULT -1 NOT NULL,
   ltime      DOUBLE PRECISION DEFAULT 0 NOT NULL,
@@ -591,9 +595,10 @@ CREATE TABLE nav_links (
   a INTEGER NOT NULL, b INTEGER NOT NULL,
   PRIMARY KEY (a, b)
 );
-CREATE TABLE nav_track (                       -- each client's last node
+CREATE TABLE nav_track (                       -- each client's last node, and where it was marked last
   c INTEGER NOT NULL PRIMARY KEY,
-  node INTEGER
+  node INTEGER,
+  mx DOUBLE PRECISION, my DOUBLE PRECISION, mz DOUBLE PRECISION
 );
 CREATE TABLE nav_search (                      -- a breadth-first search from one node: depth and the way back
   node INTEGER NOT NULL PRIMARY KEY,

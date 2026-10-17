@@ -500,10 +500,15 @@ DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PREC
 DECLARE mnx DOUBLE PRECISION; DECLARE mny DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
 DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE PRECISION;
 DECLARE lf INTEGER; DECLARE l2 INTEGER; DECLARE ap SMALLINT; DECLARE grow DOUBLE PRECISION;
-DECLARE lst VARCHAR(200) CHARACTER SET ASCII;
+DECLARE lst VARCHAR(200) CHARACTER SET ASCII; DECLARE same SMALLINT;
 BEGIN
-  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) FROM ents e WHERE e.id = :eid
-    INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, grow;
+  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, IIF(BIN_AND(e.flags, 256) <> 0, 15, 1),
+         IIF(e.leafs IS NOT NULL AND e.lk_x = e.x AND e.lk_y = e.y AND e.lk_z = e.z AND e.lk_mnx = e.minx AND e.lk_mny = e.miny
+             AND e.lk_mnz = e.minz AND e.lk_mxx = e.maxx AND e.lk_mxy = e.maxy AND e.lk_mxz = e.maxz
+             AND e.lk_grow = IIF(BIN_AND(e.flags, 256) <> 0, 15, 1), 1, 0)
+    FROM ents e WHERE e.id = :eid
+    INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, grow, same;
+  IF (same = 1) THEN EXIT;                       -- not moved since its last link: the same leaves
   -- the origin's leaf comes first (one outside its box, such as a door's at 0 0 0, has a walk of its own)
   lst = ',';
   FOR SELECT b.leaf, b.at_point FROM box_leafs(:px, :py, :pz, :px + :mnx - :grow, :py + :mny - :grow, :pz + :mnz - 1,
@@ -513,7 +518,8 @@ BEGIN
     ELSE IF (l2 > 0 AND POSITION(',' || l2 || ',', lst) = 0 AND CHAR_LENGTH(lst) < 180) THEN lst = lst || l2 || ',';
   END
   IF (lf IS NULL) THEN BEGIN lf = point_leaf(px, py, pz); lst = ',' || lf || lst; END
-  UPDATE ents e SET e.leaf = :lf, e.leafs = :lst WHERE e.id = :eid;
+  UPDATE ents e SET e.leaf = :lf, e.leafs = :lst, e.lk_x = :px, e.lk_y = :py, e.lk_z = :pz, e.lk_mnx = :mnx, e.lk_mny = :mny,
+                    e.lk_mnz = :mnz, e.lk_mxx = :mxx, e.lk_mxy = :mxy, e.lk_mxz = :mxz, e.lk_grow = :grow WHERE e.id = :eid;
 END^
 
 -- SV_CheckWater: water level 0 none, 1 feet, 2 waist, 3 eyes.

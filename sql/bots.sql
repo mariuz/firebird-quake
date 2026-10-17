@@ -106,6 +106,7 @@ CREATE OR ALTER PROCEDURE nav_mark (c INTEGER)
 AS
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE fl INTEGER; DECLARE wl SMALLINT;
 DECLARE n INTEGER; DECLARE last INTEGER; DECLARE lx DOUBLE PRECISION; DECLARE ly DOUBLE PRECISION; DECLARE lz DOUBLE PRECISION;
+DECLARE mx DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mz DOUBLE PRECISION;
 BEGIN
   SELECT e.x, e.y, e.z, e.flags, e.waterlevel FROM ents e WHERE e.id = :c INTO x, y, z, fl, wl;
   IF (x IS NULL OR qc_f(c, qc_fdef('health')) <= 0) THEN
@@ -114,9 +115,10 @@ BEGIN
     EXIT;
   END
   IF (BIN_AND(fl, 512) = 0 OR wl >= 2) THEN EXIT;         -- in the air, or swimming
-  -- still by its last node: nothing to do (most frames, and no trace)
-  SELECT d.x, d.y, d.z FROM nav_track t JOIN nav_nodes d ON d.id = t.node WHERE t.c = :c INTO lx, ly, lz;
+  -- still by its last node, or not moved since the last mark: nothing to do (most frames, and no trace)
+  SELECT d.x, d.y, d.z, t.mx, t.my, t.mz FROM nav_track t JOIN nav_nodes d ON d.id = t.node WHERE t.c = :c INTO lx, ly, lz, mx, my, mz;
   IF (lx IS NOT NULL AND (lx - x) * (lx - x) + (ly - y) * (ly - y) < 32 * 32 AND ABS(lz - z) < 24) THEN EXIT;
+  IF (mx IS NOT NULL AND ABS(mx - x) < 4 AND ABS(my - y) < 4 AND ABS(mz - z) < 4) THEN EXIT;
   n = nav_near(x, y, z, 64);
   IF (n IS NULL) THEN
   BEGIN
@@ -140,7 +142,8 @@ BEGIN
     ELSE IF (lx IS NOT NULL AND (x - lx) * (x - lx) + (y - ly) * (y - ly) > 256 * 256) THEN
       UPDATE OR INSERT INTO nav_links (a, b) VALUES (:last, :n) MATCHING (a, b);   -- teleported: one way
   END
-  UPDATE OR INSERT INTO nav_track (c, node) VALUES (:c, :n) MATCHING (c);
+  SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :c INTO x, y, z;
+  UPDATE OR INSERT INTO nav_track (c, node, mx, my, mz) VALUES (:c, :n, :x, :y, :z) MATCHING (c);
 END^
 
 -- every node reachable from one, by breadth-first search: nav_search's depth and the way back

@@ -141,7 +141,7 @@ A direct port of `world.c` and `sv_phys.c`:
 - `trace_hull(hull, head, ...)` runs `rhc` from a hull's head node, offsetting by the entity's origin.
 - `trace_box` clips a moving box against another entity's box (Minkowski sum, slab test).
 - `trace_move(ent, minx..maxz, from, to, nomonsters)` picks the hull by the box size (point, player, or the big hull), runs the world, then every brush-model entity at its own origin with its own hull, then monsters and the player as boxes; returns `fraction`, end point, `hit_ent`, normal, `allsolid`, `startsolid`, `inwater`. Note the mapping `trace_hull(IIF(hull = 0, 0, 1), …)`: hulls 1 and 2 are both stored under hull row 1 since they share clipnodes; the hull number only selects the head node.
-- `test_position`, `link_ent` (recomputes `leaf` and `leafs` for the PVS and the touch loop: `box_leafs` is `SV_FindTouchedLeafs`, one recursive query that walks the BSP tree down both sides of every plane the box straddles, carrying the origin along so that its leaf comes out of the same walk; it replaced ten point walks, the corners, the centre and the origin, and made `link_ent` four to five times cheaper), `check_water` (waterlevel 0..3 and watertype from the point hull), `clip_velocity` (slide along a plane with overbounce).
+- `test_position`, `link_ent` (recomputes `leaf` and `leafs` for the PVS and the touch loop: `box_leafs` is `SV_FindTouchedLeafs`, one recursive query that walks the BSP tree down both sides of every plane the box straddles, carrying the origin along so that its leaf comes out of the same walk; it replaced ten point walks, the corners, the centre and the origin, and made `link_ent` four to five times cheaper; and an entity whose origin, box and touch margin are those of its last link (`ents.lk_*`) keeps its leaves without the walk, which is most links of a frame: the monsters standing, the items, a client at rest), `check_water` (waterlevel 0..3 and watertype from the point hull), `clip_velocity` (slide along a plane with overbounce).
 - `fly_move(ent, dt)`: up to four bumps, planes collected in `clip_planes`, the velocity clipped against each and against pairs (crease); returns the blocked bits and the entity hit.
 - `walk_move`: the player's step: try the move, if blocked try from 18 units up and settle down, with the step-smoothing that the client applies.
 - `move_step(ent, dx, dy, dz)`: monsters' step with the drop-to-floor check (no walking off ledges, flying and swimming variants by the type's flags).
@@ -354,7 +354,8 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   within 64 units in sight, and links it from the client's last node (`nav_track`) when the two are in
   sight of each other: back again too unless that would climb more than a step (18) or the hop was
   longer than a run (a teleporter, linked one way however far). A client still within 32 units of its
-  last node costs one query and no trace. The graph is emptied by `qc_begin_map` (2000 nodes at most).
+  last node, or within 4 units on each axis of where it was last marked (`nav_track`'s `mx`, `my`, `mz`:
+  a client stuck against a wall far from any node), costs one query and no trace. The graph is emptied by `qc_begin_map` (2000 nodes at most).
   With nothing in sight a bot asks `bot_plan` for a way: `nav_bfs` searches the links breadth first from
   its nearest node into `nav_search`, a node beside a pickup at least three links off is picked at
   random, and the way back from it becomes `bot_route`'s steps. The bot turns towards each step's node
