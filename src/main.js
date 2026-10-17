@@ -71,7 +71,8 @@ let beams = [];          // lightning beams to draw briefly
 let playerEnt = 1;       // the player's ents row: its own beam follows it (cl_tent.c)
 let explosions = [];
 const settings = { map: 'start', detail: 'high', sfx: 70, music: 50, musicMode: 'tracks', skill: 1, fov: 90, renderer: 'fast', data: 'shareware', logic: 'psql',
-  sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10, liquids: 'opaque' };
+  sensitivity: 3, alwaysRun: true, invertMouse: false, mode: 'single', bots: 3, fraglimit: 10, liquids: 'opaque',
+  alphas: { water: 0.5, lava: 0, slime: 0, tele: 0 } };   // r_wateralpha (when Liquids is translucent), r_lavaalpha, r_slimealpha, r_telealpha
 let progsLoaded = false;   // the pak's progs.dat in the QuakeC VM's tables (QuakeC mode)
 let jit = null;            // its hot functions compiled to PSQL procedures (src/qcjit.js)
 let jitTics = 0;
@@ -266,6 +267,7 @@ async function loadLevel(name, newGame, { save = null, seed = null } = {}) {
   interWait = 0; finaleStart = 0; cdTrack = -1; lastDraw = null; muzzleUntil = 0; prevWeaponFrame = 0; scores = []; scoresAt = 0;
   audio.setAmbients(bsp.entities);
   const world = bsp.entities.find((e) => e.classname === 'worldspawn');
+  renderer.setMapAlphas(world);         // the map's own wateralpha, lavaalpha… (LibreQuake sets them)
   audio.playMusic(Number(world?.sounds ?? 0));
   const { rows } = await db.query('SELECT MAX(id) m FROM sound_events');
   lastSoundId = rows[0].M ?? 0;
@@ -885,7 +887,7 @@ async function loadData(buffers, label) {
   const colormap = pak.get('gfx/colormap.lmp');
   wad = new Wad2(pak.get('gfx.wad'));
   renderer = new Renderer(canvas, { palette, colormap });
-  renderer.liquidAlpha = settings.liquids === 'translucent' ? 0.5 : 1;
+  applyLiquids();
   renderer.sbarLines = sbarLines();
   renderer.setSize(viewWidth(), viewHeight());
   hud = new Hud(wad, (n) => (pak.has(n) ? qpic(pak.get(n)) : null));
@@ -1014,13 +1016,28 @@ function setMode(v, restart = true) {
   if (restart && map) startMap(map.name, true).catch((err) => setStatus(err.message, true));
 }
 // r_wateralpha: liquids drawn see-through at half where the map was vised for it (LibreQuake's are; id's are not)
-function setLiquids(v) { settings.liquids = v; saveSettings(); $('liquids').value = v; if (renderer) renderer.liquidAlpha = v === 'translucent' ? 0.5 : 1; }
+// (opaque: every liquid opaque, as Quake; translucent: the map's alphas, else r_wateralpha and the rest)
+function applyLiquids() {
+  if (!renderer) return;
+  settings.alphas = { water: 0.5, lava: 0, slime: 0, tele: 0, ...settings.alphas };
+  renderer.liquidAlpha = settings.liquids === 'translucent' ? Math.min(0.999, settings.alphas.water) : 1;
+  renderer.liquidAlphas = { lava: settings.alphas.lava, slime: settings.alphas.slime, tele: settings.alphas.tele };
+}
+function setLiquids(v) { settings.liquids = v; saveSettings(); $('liquids').value = v; applyLiquids(); }
 function setRenderer(v) { settings.renderer = v; saveSettings(); $('renderer').value = v; }
 function setSfx(v) { settings.sfx = v; saveSettings(); $('sfxvol').value = v; audio.unlock(); audio.setVolume(v / 100); }
 function setMusicVolume(v) { settings.music = v; saveSettings(); $('musicvol').value = v; audio.setMusicVolume(v / 100); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // M_Menu_Options and the rest of the menu's actions: New Game is Quake's "map start"
+// r_wateralpha and its kin: alone, the value; with one, set and kept (the map's own keys still come first)
+const alphaCmd = (k) => ([v]) => {
+  if (v === undefined) return `"r_${k}alpha" is "${settings.alphas?.[k] ?? (k === 'water' ? 0.5 : 0)}"`;
+  settings.alphas = { water: 0.5, lava: 0, slime: 0, tele: 0, ...settings.alphas, [k]: Math.max(0, Math.min(1, Number(v) || 0)) };
+  saveSettings(); applyLiquids();
+  return settings.liquids === 'translucent' ? null : 'Liquids is set to opaque: set it to translucent to see through them';
+};
+
 // the console's commands (cmd.c, host_cmd.c, keys.c): the game's become host_cmd's SQL (sql/host.sql)
 function consoleCommands() {
   const need = () => { if (!running || !db) throw new Error('no game running'); };
@@ -1073,6 +1090,10 @@ function consoleCommands() {
     },
     viewsize: { help: '<30..120>: (the view always fills the screen here, as viewsize 100)', run: ([v]) => (v === undefined ? '"viewsize" is "100"' : null) },
     gamma: { help: '<0.5..1>: (the palette is drawn as it is)', run: ([v]) => (v === undefined ? '"gamma" is "1"' : null) },
+    r_wateralpha: { help: '<0..1>: how see-through water is with Liquids translucent (0.5)', run: alphaCmd('water') },
+    r_lavaalpha: { help: '<0..1>: lava (0: as water)', run: alphaCmd('lava') },
+    r_slimealpha: { help: '<0..1>: slime (0: as water)', run: alphaCmd('slime') },
+    r_telealpha: { help: '<0..1>: teleporters (0: as water)', run: alphaCmd('tele') },
     fov: { help: '<10..170>: the field of view', run: value('fov', async (v) => { settings.fov = Math.max(10, Math.min(170, v)); saveSettings(); await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov); }) },
     sensitivity: { help: '<1..11>: the mouse speed', run: value('sensitivity', (v) => { settings.sensitivity = Math.max(1, Math.min(11, v)); saveSettings(); }) },
     volume: { help: '<0..1>: the sound volume', run: (a) => (a.length ? setSfx(Math.round(Math.max(0, Math.min(1, Number(a[0]) || 0)) * 100)) : `"volume" is "${settings.sfx / 100}"`) },

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
-import { Pak, loadPalette } from '../src/pak.js';
+import { Pak, PakSet, loadPalette } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
 import { Renderer } from '../src/renderer.js';
 
@@ -19,10 +19,10 @@ const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.joi
 let failed = 0;
 const assert = (cond, msg) => { if (!cond) { console.error(`FAIL: ${msg}`); failed++; } else console.log(`ok   ${msg}`); };
 
-async function scene(pakFile, map) {
+async function scene(pakFile, map, { kind = null, mapAlphas = false } = {}) {
   const db = new FirebirdBrowser(`memory://water${Math.random()}`, { transport: new DirectTransport() });
   await createSchema(db, sql);
-  const pak = new Pak(fs.readFileSync(pakFile).buffer);
+  const pak = new PakSet([pakFile].flat().map((f) => new Pak(fs.readFileSync(f).buffer)));
   const res = await loadResources(db, pak);
   const bsp = await loadMap(db, pak, res, map, { skill: 1, seed: 1 });
   const q1 = (s) => db.query(s).then((r) => r.rows[0]);
@@ -31,7 +31,7 @@ async function scene(pakFile, map) {
   // above the largest liquid surface facing up (not a teleporter), 96 units over it, looking down
   const pe = (await q1('SELECT ent_id e FROM player')).E;
   const water = await db.query(`SELECT f.cx, f.cy, f.cz, m.name FROM faces f JOIN miptex m ON m.id = f.miptex
-    WHERE f.id < 1000000 AND m.name STARTING WITH '*' AND m.name NOT STARTING WITH '*tele' AND f.nz > 0.9 AND f.model_id = (SELECT world_model FROM game)
+    WHERE f.id < 1000000 AND m.name STARTING WITH '${kind ?? '*'}' AND m.name NOT STARTING WITH '*tele' AND f.nz > 0.9 AND f.model_id = (SELECT world_model FROM game)
     ORDER BY f.radius DESC ROWS 12`).then((r) => r.rows);
   let at = null;
   for (const w of water) {
@@ -46,6 +46,7 @@ async function scene(pakFile, map) {
   const canvas = { width: 0, height: 0, getContext: () => ({ createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} }) };
   const r = new Renderer(canvas, { palette: loadPalette(pak.get('gfx/palette.lmp')), colormap: pak.get('gfx/colormap.lmp') });
   r.setResources(res);
+  if (mapAlphas) r.setMapAlphas(bsp.entities.find((e) => e.classname === 'worldspawn'));
   const paint = (alpha) => {
     r.liquidAlpha = alpha;
     r.beginFrame({ x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: 0, pitch: 70, fov: 90 });
@@ -66,6 +67,29 @@ if (fs.existsSync(lq)) {
   assert(s.bsp.seeThrough.has(-3), "lq_e0m2 was vised for its water (an open leaf's PVS holds water leaves)");
   assert(s.diff > s.pixels * 0.05, `over its ${s.at.NAME}, at alpha 0.5 the floor shows through: ${s.diff} of ${s.pixels} pixels change`);
 } else console.log(`note: ${lq} missing (npm run fetch-librequake), the LibreQuake half skipped`);
+// per liquid: lq_e0m4 asks for water at 0.6 and opaque lava (its worldspawn's wateralpha and lavaalpha, as
+// QuakeSpasm reads them); without the map's keys its lava is see-through like the rest
+const lq1 = path.join(root, 'public/pak/lq1/pak1.pak');
+if (fs.existsSync(lq1) && fs.existsSync(lq)) {
+  const own = await scene([lq, lq1], 'lq_e0m4', { kind: '*lava', mapAlphas: true });
+  const plain = await scene([lq, lq1], 'lq_e0m4', { kind: '*lava' });
+  assert(own.bsp.seeThrough.has(-5) && own.diff === 0 && plain.diff > plain.pixels * 0.02,
+    `over lq_e0m4's ${own.at.NAME}: the map's lavaalpha 1 keeps it opaque with Liquids translucent (${own.diff} pixels change), without it the lava shows through (${plain.diff})`);
+}
+{
+  const canvas = { width: 0, height: 0, getContext: () => ({ createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }), putImageData() {} }) };
+  const r = new Renderer(canvas, { palette: new Uint32Array(256), colormap: new Uint8Array(16384) });
+  r.liquidAlpha = 0.5;
+  const a = () => [-3, -5, -4, 1].map((t) => r.alphaFor(t)).join(' ');
+  const plain = a();
+  r.liquidAlphas = { lava: 0.9, slime: 0, tele: 0.3 };
+  const cvars = a();
+  r.setMapAlphas({ wateralpha: '.6', lavaalpha: '1' });
+  const map = a();
+  r.liquidAlpha = 1;
+  assert(plain === '0.5 0.5 0.5 0.5' && cvars === '0.5 0.9 0.5 0.3' && map === '0.6 1 0.6 0.3' && a() === '1 1 1 1',
+    `alphas (water, lava, slime, teleporter): ${plain} by r_wateralpha; ${cvars} with r_lavaalpha 0.9 and r_telealpha 0.3; ${map} under the map's keys; all opaque at r_wateralpha 1`);
+}
 const id = await scene(path.join(root, 'public/pak/pak0.pak'), 'e1m1');
 assert(id.bsp.seeThrough.size === 0, 'E1M1 was not vised for its liquids');
 assert(id.diff === 0, `over E1M1's ${id.at.NAME}, alpha 0.5 changes nothing: the liquid stays opaque rather than show the void`);

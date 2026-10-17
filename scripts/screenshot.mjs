@@ -45,6 +45,7 @@ const res = await loadResources(db, pak, { width: W, height: H - 24 });
 const bsp = await loadMap(db, pak, res, mapName);
 const renderer = new Renderer(stubCanvas, { palette: loadPalette(pak.get('gfx/palette.lmp')), colormap: pak.get('gfx/colormap.lmp') });
 renderer.liquidAlpha = Number(process.argv.find((a) => a.startsWith('--wateralpha='))?.slice(13) ?? 1);   // r_wateralpha
+renderer.setMapAlphas(bsp.entities.find((e) => e.classname === 'worldspawn'));   // the map's own (applied below 1)
 renderer.setSize(W, H);
 renderer.setResources(res);
 renderer.skyTex = bsp.textures.find((t) => t && t.name.startsWith('sky')) ?? null;

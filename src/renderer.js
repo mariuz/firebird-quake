@@ -49,6 +49,8 @@ export class Renderer {
     this.particles = [];
     this.sbarLines = 24;
     this.liquidAlpha = 1;        // r_wateralpha: below 1, liquids the map was vised for are drawn see-through
+    this.liquidAlphas = { lava: 0, slime: 0, tele: 0 };   // r_lavaalpha, r_slimealpha, r_telealpha (0: as the water)
+    this.mapAlphas = {};         // the map's own (worldspawn's wateralpha, lavaalpha, slimealpha, telealpha keys)
     this.deferred = [];          // this frame's see-through liquid polygons, drawn after the models
     this.setSize(320, 200);
   }
@@ -56,7 +58,9 @@ export class Renderer {
   // the colour of `alpha` of src over 1 - alpha of dst, as the nearest palette entry (fullbrights left out so
   // a mix never glows): an 8-bit frame's translucency, a 64 KB table per alpha
   blendTable(alpha) {
-    if (this.blend?.alpha === alpha) return this.blend.table;
+    this.blends ??= new Map();
+    const cached = this.blends.get(alpha);
+    if (cached) return cached;
     const pal = this.palette, r = new Float32Array(256), g = new Float32Array(256), b = new Float32Array(256);
     for (let i = 0; i < 256; i++) { r[i] = pal[i] & 255; g[i] = (pal[i] >> 8) & 255; b[i] = (pal[i] >> 16) & 255; }
     const table = new Uint8Array(65536);
@@ -69,13 +73,35 @@ export class Renderer {
       }
       table[(s << 8) | d] = best;
     }
-    this.blend = { alpha, table };
+    if (this.blends.size >= 8) this.blends.clear();
+    this.blends.set(alpha, table);
     return table;
+  }
+
+  /**
+   * GL_WaterAlphaForSurface (QuakeSpasm): a liquid's alpha, by its kind (lava -5, slime -4, a teleporter 1,
+   * water -3). With r_wateralpha at 1 every liquid is opaque, as in Quake; below 1, the map's own keys come
+   * first, and lava, slime and teleporters without one take r_lavaalpha and the rest, or, at 0, the water's.
+   */
+  alphaFor(type) {
+    if (this.liquidAlpha >= 1) return 1;
+    const water = this.mapAlphas.water ?? this.liquidAlpha;
+    const own = (k) => { const v = this.mapAlphas[k] ?? this.liquidAlphas[k]; return v > 0 ? v : water; };
+    return Math.min(1, type === -5 ? own('lava') : type === -4 ? own('slime') : type === 1 ? own('tele') : water);
+  }
+
+  /** The map's alphas from its worldspawn entity's keys (QuakeSpasm's map_wateralpha and the rest). */
+  setMapAlphas(worldspawn) {
+    this.mapAlphas = {};
+    for (const k of ['water', 'lava', 'slime', 'tele']) {
+      const v = parseFloat(worldspawn?.[`${k}alpha`]);
+      if (Number.isFinite(v) && v >= 0) this.mapAlphas[k] = v;
+    }
   }
 
   /** The see-through liquids put aside by drawFaces, over everything drawn since (call after the models). */
   drawDeferred(time) {
-    for (const [verts, surf] of this.deferred) this.fillPolygon(verts, surf, 3, time);
+    for (const [verts, surf, alpha] of this.deferred) this.fillPolygon(verts, surf, 3, time, alpha);
     this.deferred = [];
   }
 
@@ -315,8 +341,10 @@ export class Renderer {
         const scale = (view.scale / Math.max(near, nearest)) * (info.ti.mipadjust ?? 1);
         const mip = info.f.liquid ? 0 : scale >= 1 ? 0 : scale >= 0.4 ? 1 : scale >= 0.2 ? 2 : 3;
         const s = this.surface(face, styles, time, entFrames.get(ent) ?? 0, ent, mip);
-        // a liquid the map was vised for, with r_wateralpha below 1: drawn see-through after the models
-        if (s && info.f.liquid && this.liquidAlpha < 1 && info.bsp.seeThrough?.has(info.f.liquidType)) this.deferred.push([verts, s]);
+        // a liquid the map was vised for, with its alpha below 1: drawn see-through after the models (a
+        // teleporter sits in water leaves, so the water's vis decides for it)
+        const alpha = info.f.liquid ? this.alphaFor(info.f.liquidType) : 1;
+        if (s && alpha < 1 && info.bsp.seeThrough?.has(info.f.liquidType === 1 ? -3 : info.f.liquidType)) this.deferred.push([verts, s, alpha]);
         else if (s) this.fillPolygon(verts, s, info.f.liquid ? 1 : 0, time);
       }
     }
@@ -357,7 +385,7 @@ export class Renderer {
    * 1: liquid (warped), 2: sky, 3: a see-through liquid (warped, depth-tested but not written, blended
    * over the frame). 1/z, s/z and t/z are affine in screen space.
    */
-  fillPolygon(poly, surf, mode, time) {
+  fillPolygon(poly, surf, mode, time, alpha) {
     const { w, h, edgeL, edgeR, fb, zb } = this;
     let ymin = Infinity, ymax = -Infinity;
     for (const p of poly) { if (p[1] < ymin) ymin = p[1]; if (p[1] > ymax) ymax = p[1]; }
@@ -389,7 +417,7 @@ export class Renderer {
     const sd = surf ? surf.data : null;
     const sw = surf ? surf.w : 0, sh = surf ? surf.h : 0, smin = surf ? surf.smin : 0, tmin = surf ? surf.tmin : 0;
     const mscale = surf ? 1 / (1 << surf.mip) : 1;     // a mip surface: texels 2^mip apart
-    const blend = mode === 3 ? this.blendTable(this.liquidAlpha) : null;
+    const blend = mode === 3 ? this.blendTable(alpha ?? this.liquidAlpha) : null;
     const sin = this.sinTable;
     const tphase = (time * 20) & 255;
     const view = this.view;

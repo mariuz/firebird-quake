@@ -436,7 +436,9 @@ pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcR
 (`liquidAlpha` below 1, the **Liquids** setting) are put aside by `drawFaces` when the map was vised for
 that liquid (`Bsp.seeThrough`, from the leaves' PVS) and drawn by `drawDeferred` after the models: depth
 tested, not written, each texel mixed with what is behind through `blendTable(alpha)`, the nearest
-palette colour for every pair.
+palette colour for every pair (a table per alpha). Each kind of liquid has its alpha (`alphaFor`, QuakeSpasm's
+`GL_WaterAlphaForSurface`): the map's worldspawn keys (`setMapAlphas`), else `r_lavaalpha`, `r_slimealpha`,
+`r_telealpha` (`liquidAlphas`), 0 meaning the water's; a teleporter goes by the water's vis.
 
 **Dynamic lights** (`src/dlights.js`, Quake's `cl_dlights`): each frame the page lists the lights:
 rockets and lava balls (the model's `EF_ROCKET` flag, 200 units), explosions from the fx events
