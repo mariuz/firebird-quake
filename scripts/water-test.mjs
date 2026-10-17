@@ -94,5 +94,26 @@ const id = await scene(path.join(root, 'public/pak/pak0.pak'), 'e1m1');
 assert(id.bsp.seeThrough.size === 0, 'E1M1 was not vised for its liquids');
 assert(id.diff === 0, `over E1M1's ${id.at.NAME}, alpha 0.5 changes nothing: the liquid stays opaque rather than show the void`);
 
+// from under E1M1's water, looking up, the surface is there: qbsp makes every liquid face both ways, so the
+// underside is a face of its own, facing down, and the frame query hands it over
+{
+  const db = new FirebirdBrowser(`memory://under${Math.random()}`, { transport: new DirectTransport() });
+  await createSchema(db, sql);
+  const pak = new Pak(fs.readFileSync(path.join(root, 'public/pak/pak0.pak')).buffer);
+  const res = await loadResources(db, pak);
+  await loadMap(db, pak, res, 'e1m1', { skill: 1, seed: 1 });
+  const q1 = (q) => db.query(q).then((r) => r.rows[0]);
+  const w = await q1(`SELECT f.cx, f.cy, f.cz FROM faces f JOIN miptex m ON m.id = f.miptex WHERE m.name = '*water0' AND f.nz > 0.9
+    AND f.model_id = (SELECT world_model FROM game) ORDER BY f.radius DESC ROWS 1`);
+  const pe = (await q1('SELECT ent_id e FROM player')).E;
+  await db.exec(`UPDATE ents SET x = ${w.CX}, y = ${w.CY}, z = ${w.CZ - 44}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+  await q1('SELECT * FROM quake_tic(1, 0, 0, 0, -60, 0, 0, 1, 0)');
+  const under = await q1(`SELECT COUNT(*) n FROM frame_faces_fast v JOIN faces f ON f.id = v.face JOIN miptex m ON m.id = f.miptex
+    WHERE m.name STARTING WITH '*water' AND f.nz < -0.9`);
+  assert(under.N > 0, `from under E1M1's water looking up, ${under.N} faces of its underside are in the frame (qbsp's own, facing down)`);
+  await db.close();
+}
+
 console.log(failed ? `${failed} failure(s)` : 'all water checks passed');
 process.exit(failed ? 1 : 0);
