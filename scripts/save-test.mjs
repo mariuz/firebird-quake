@@ -101,7 +101,7 @@ assert(r.HEALTH > 0 && Math.hypot(r.PX - savedPos.x, r.PY - savedPos.y) > 30, 'a
 
 // Host_Savegame_f's refusals, and a load onto the wrong map
 const pe = (await q1('SELECT ent_id e FROM player')).E;
-assert(await refused('EXECUTE PROCEDURE save_game(13)', 'slot'), 'slot 13 is refused');
+assert(await refused('EXECUTE PROCEDURE save_game(14)', 'slot'), 'slot 14 is refused (13 is the demo\'s start)');
 await db.exec(`UPDATE ents SET deadflag = 1, health = 0 WHERE id = ${pe}`);
 assert(await refused('EXECUTE PROCEDURE save_game(1)', "Can't savegame with a dead player"), "a dead player can't save");
 await db.exec(`UPDATE ents SET deadflag = 0, health = 100 WHERE id = ${pe}; UPDATE game SET intermission = 1, exit_kind = 1`);
