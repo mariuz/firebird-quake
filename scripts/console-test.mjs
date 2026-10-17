@@ -1,5 +1,6 @@
 // console-test.mjs – the console and the key bindings (src/console.js, src/binds.js) and the console's game
-// commands (sql/host.sql: host_cmd.c's god, notarget, noclip, give, kill), each in the PSQL game and in
+// commands (sql/host.sql: host_cmd.c's god, notarget, noclip, give, kill), cmd.c's alias and exec and the
+// notify lines, the game commands each in the PSQL game and in
 // QuakeC mode: god keeps a rocket at the feet from hurting, noclip walks through the wall in front,
 // give hands over a weapon, cells and health, kill kills.
 //
@@ -43,6 +44,35 @@ assert(JSON.stringify(splitCommands('god; give h 200 ;echo "a;b"')) === '["god",
   assert(con.lines.at(-1) === 'Unknown command "nosuch"', 'an unknown command says so');
   con.key('Backquote');
   assert(!con.active, '` puts the console away');
+}
+{
+  // cmd.c's alias, exec and the notify lines
+  const ran = [];
+  let kept = null;
+  const files = { 'my.cfg': '// a comment\nalias +zoom "fov 50"\nalias -zoom "fov 90"\n\ngod // and a trailing one\nexec loop.cfg\n', 'loop.cfg': 'exec loop.cfg' };
+  const con = new Console({
+    commands: { god: { help: '', run: () => { ran.push('god'); return 'godmode ON'; } }, fov: { help: '', run: ([v]) => { ran.push(`fov ${v}`); } } },
+    onAliases: (a) => { kept = a; }, readFile: (n) => files[n] ?? null,
+  });
+  await con.execute('alias g2 "god; god"');
+  await con.execute('g2');
+  assert(ran.join() === 'god,god' && kept?.g2 === 'god; god', 'alias g2 "god; god": runs both, and the page is told to keep it');
+  await con.execute('alias');
+  assert(con.lines.includes('g2 : god; god'), 'alias alone lists them');
+  await con.execute('alias me "me"'); await con.execute('me');
+  assert(con.lines.at(-1) === 'alias me: runs itself', 'an alias that runs itself stops');
+  ran.length = 0;
+  await con.execute('exec my.cfg');
+  assert(ran.join() === 'god' && con.aliases.get('+zoom') === 'fov 50' && con.lines.some((l) => l.includes('exec loop.cfg: runs itself')),
+    'exec my.cfg: a line at a time, comments dropped, its aliases set, a file that execs itself stopped');
+  await con.execute('exec nosuch.cfg');
+  assert(con.lines.at(-1) === "couldn't exec nosuch.cfg", "a file the paks lack: couldn't exec");
+  const now = performance.now() / 1000;
+  const notes = con.notifyLines(now);
+  assert(notes.length === 4 && notes.includes("couldn't exec nosuch.cfg") && !notes.some((l) => l.startsWith(']')) && con.notifyLines(now + 4).length === 0,
+    'the notify area: the last four lines printed (not the typed ones), gone after three seconds');
+  await con.execute('alias g2 ""');
+  assert(!con.aliases.has('g2') && !('g2' in kept), 'alias g2 "": removed');
 }
 {
   const b = new Bindings();

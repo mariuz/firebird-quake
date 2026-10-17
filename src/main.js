@@ -116,9 +116,28 @@ try { const saved = JSON.parse(localStorage.getItem('firebird-quake:binds') || '
 const saveBinds = () => { try { localStorage.setItem('firebird-quake:binds', JSON.stringify(binds)); } catch { /* ignore */ } };
 let mouseYaw = 0, mousePitch = 0;
 let impulse = 0;
-const con = new Console({ commands: consoleCommands() });
-con.print('Firebird Quake. The console: help lists the commands, ` puts it away.');
-const press = (name, down) => { const cmd = binds.key(name, down); if (cmd) con.execute(cmd, false); };
+// the console's aliases are kept as the bindings are; exec reads its files from the paks (a mod's first)
+let savedAliases = null;
+try { savedAliases = JSON.parse(localStorage.getItem('firebird-quake:aliases') || 'null'); } catch { /* none */ }
+const con = new Console({
+  commands: consoleCommands(),
+  aliases: savedAliases,
+  onAliases: (a) => { try { localStorage.setItem('firebird-quake:aliases', JSON.stringify(a)); } catch { /* ignore */ } },
+  readFile: (name) => (pak?.has(name) ? new TextDecoder('latin1').decode(pak.get(name)) : null),
+});
+con.print('Firebird Quake. The console: help lists the commands, ` puts it away.', false);
+// a key: its binding runs, or holds its button; a binding to a +alias runs the alias on the key going down
+// and its -alias on the key coming up, as keys.c does for any + command
+const press = (name, down) => {
+  const b = name ? binds.get(name) : null;
+  if (b?.startsWith('+') && con.aliases.has(b.toLowerCase())) {
+    if (down) con.execute(b, false);
+    else if (con.aliases.has(`-${b.slice(1).toLowerCase()}`)) con.execute(`-${b.slice(1)}`, false);
+    return;
+  }
+  const cmd = binds.key(name, down);
+  if (cmd) con.execute(cmd, false);
+};
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
   if (!running) return;
@@ -136,7 +155,7 @@ window.addEventListener('keydown', (e) => {
   if (name && binds.get(name)) e.preventDefault();
   if (!e.repeat) press(name, true);
 });
-window.addEventListener('keyup', (e) => binds.key(keyName(e.code), false));
+window.addEventListener('keyup', (e) => press(keyName(e.code), false));
 let menuOpened = 0;
 function openMenu() { if (!menu || menu.active) return; con.toggle(false); menu.open(); menuOpened = performance.now(); binds.release(); touch.release(); }
 // the browser's Escape releases the mouse before the page hears the key: bring the menu up then, as Quake's Escape does
@@ -146,7 +165,7 @@ canvas.addEventListener('click', () => {
   if (running && document.pointerLockElement !== canvas) canvas.requestPointerLock?.()?.catch?.(() => {});
 });
 canvas.addEventListener('mousedown', (e) => { if (document.pointerLockElement === canvas && MOUSE_NAMES[e.button]) press(MOUSE_NAMES[e.button], true); });
-window.addEventListener('mouseup', (e) => { if (MOUSE_NAMES[e.button]) binds.key(MOUSE_NAMES[e.button], false); });
+window.addEventListener('mouseup', (e) => { if (MOUSE_NAMES[e.button]) press(MOUSE_NAMES[e.button], false); });
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement === canvas) {
     mouseYaw -= e.movementX * 0.05 * settings.sensitivity;
@@ -156,7 +175,7 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('wheel', (e) => {
   if (document.pointerLockElement !== canvas || !e.deltaY) return;
   const name = e.deltaY < 0 ? 'mwheelup' : 'mwheeldown';
-  press(name, true); binds.key(name, false);
+  press(name, true); press(name, false);
 });
 // touch (src/touch.js): a stick where the left thumb lands, the right side looks (a tap fires), buttons
 // for fire, jump, the next weapon and the menu, and a pad that drives the menu
@@ -642,7 +661,8 @@ function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   else if (last.INTERMISSION === 1) hud.drawIntermission(r, last);
   else hud.draw(r, last, time);
   if (last.CPRINT && !last.INTERMISSION) hud.drawCenter(r, last.CPRINT, Math.floor(r.h * 0.35));
-  if (last.MSG) r.drawString(hud.conchars, last.MSG, 0, 0);
+  // the notify lines: the message line and what the console printed in the last three seconds (Con_DrawNotify)
+  con.drawNotify(r, performance.now() / 1000);
   if (last.DEAD) hud.drawCenter(r, settings.mode === 'single' ? 'you died\n\npress fire to restart' : 'press fire to respawn', 60);
   // deathmatch: the frags, best first, the player's line marked (Sbar_DrawFrags, as a list)
   if (settings.mode === 'deathmatch' && scores.length && !last.INTERMISSION) {
@@ -1012,7 +1032,8 @@ function consoleCommands() {
     return apply(v);
   };
   const C = {
-    help: { help: 'these commands', run: () => Object.entries(C).map(([n, c]) => `${n.padEnd(13)} ${c.help}`).join('\n') },
+    help: { help: 'these commands', run: () => [...Object.entries(C).map(([n, c]) => `${n.padEnd(13)} ${c.help}`),
+      `${'alias'.padEnd(13)} [name] [commands]: a name for a line of commands`, `${'exec'.padEnd(13)} <file>: a config file from the paks (default.cfg…)`].join('\n') },
     clear: { help: 'empty the console', run: (a, c) => { c.lines = []; } },
     echo: { help: 'print the text', run: (a, c, raw) => raw },
     map: { help: '<map>: a new game on that map', run: async ([m]) => { if (!m) return `map is ${map?.name}`; if (!pak.has(`maps/${m}.bsp`)) return `map ${m} not found`; await startMap(m, true); } },
@@ -1049,6 +1070,8 @@ function consoleCommands() {
         return [cols.join(' '), ...r.rows.slice(0, 20).map((row) => cols.map((k) => fmt(row[k])).join(' ')), ...(r.rows.length > 20 ? [`… ${r.rows.length} rows`] : [])].join('\n');
       },
     },
+    viewsize: { help: '<30..120>: (the view always fills the screen here, as viewsize 100)', run: ([v]) => (v === undefined ? '"viewsize" is "100"' : null) },
+    gamma: { help: '<0.5..1>: (the palette is drawn as it is)', run: ([v]) => (v === undefined ? '"gamma" is "1"' : null) },
     fov: { help: '<10..170>: the field of view', run: value('fov', async (v) => { settings.fov = Math.max(10, Math.min(170, v)); saveSettings(); await setView(db, viewWidth(), viewHeight() - sbarLines(), settings.fov); }) },
     sensitivity: { help: '<1..11>: the mouse speed', run: value('sensitivity', (v) => { settings.sensitivity = Math.max(1, Math.min(11, v)); saveSettings(); }) },
     volume: { help: '<0..1>: the sound volume', run: (a) => (a.length ? setSfx(Math.round(Math.max(0, Math.min(1, Number(a[0]) || 0)) * 100)) : `"volume" is "${settings.sfx / 100}"`) },

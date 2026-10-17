@@ -40,8 +40,14 @@ in order of what they would change.
   logics (the PSQL player got `MOVETYPE_NOCLIP`, and QuakeC mode's `localcmd("restart")`, which
   `ClientKill`'s single-player `respawn` sends, restarts the level). Every key, mouse button and wheel
   turn is a binding with Quake's names, `+` buttons held and commands run, kept in `localStorage`, and the
-  menu's **Customize controls** rebinds them as `M_Keys` does. Not there: cvars beyond these few, `alias`,
-  `exec` of a config file, and the console's notify lines over the view.
+  menu's **Customize controls** rebinds them as `M_Keys` does. ~~`alias`, `exec` of a config file, and the console's notify lines over the view~~ done (`src/console.js`,
+  `npm run test:console`): `alias` names a line of commands and runs it like one (kept in `localStorage`, an alias
+  that runs itself stopped at 16 deep; a key bound to `+name` runs the `+name` alias going down and `-name`
+  coming up, as keys.c does), `exec` runs a config file from the paks a line at a time (`exec default.cfg`
+  runs id's own, every line known: `unbindall`, its binds, its zoom aliases, `viewsize` and `gamma` accepted),
+  `wait` is accepted, and the last four lines printed in three seconds show over the top of the view while the
+  console is away (`Con_DrawNotify`: the game's messages, and what a bound key's command answers). Not there:
+  cvars beyond these few, and `wait` holding the rest of a line a frame (a zoom alias jumps to its end).
 - ~~**Fast revisits**~~ done (`scripts/build.mjs`, `openDatabase` and `cachedBuffer` in `src/main.js`,
   `npm run test:image`; ARCHITECTURE section 2): the build runs `createSchema` once and ships the database
   as a gzipped image (0.7 MB, named by a hash of what built it), which the page opens instead of
