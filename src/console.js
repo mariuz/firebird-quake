@@ -4,7 +4,7 @@
 // the lines typed before, Tab completes a command's name, PageUp and PageDown scroll back. The commands
 // are the page's (src/main.js hands them in): most become the SQL they stand for. The console's own are
 // cmd.c's: alias (a name for a line of commands, run like a command), exec (a config file from the paks,
-// a line at a time) and wait. With the console put away, what was printed in the last three seconds shows at
+// a line at a time) and wait (the rest of the line on the next frame). With the console put away, what was printed in the last three seconds shows at
 // the top of the view (Con_DrawNotify).
 //
 //   const con = new Console({ commands: { god: { help, run(args, con) } … }, conchars, conback,
@@ -39,11 +39,12 @@ export function splitCommands(line) {
 }
 
 export class Console {
-  constructor({ commands, conchars = null, conback = null, title = 'Firebird Quake', aliases = null, onAliases = null, readFile = null }) {
+  constructor({ commands, conchars = null, conback = null, title = 'Firebird Quake', aliases = null, onAliases = null, readFile = null, nextFrame = null }) {
     this.commands = commands;
     this.aliases = new Map(Object.entries(aliases ?? {}));
     this.onAliases = onAliases;        // the aliases changed: the page keeps them
     this.readFile = readFile;          // exec's files: the text of a file in the paks, or null
+    this.nextFrame = nextFrame;        // wait's frame: a promise that settles at the next one (none: wait does nothing)
     this.times = [];                   // when each of this.lines was printed (null: not for the notify area)
     this.conchars = conchars;
     this.conback = conback;
@@ -89,7 +90,7 @@ export class Console {
       // cmd.c's own commands, then the page's, then the aliases (Cmd_ExecuteString's order)
       if (lname === 'alias') { this.alias(args); continue; }
       if (lname === 'exec') { await this.exec(args[0], depth); continue; }
-      if (lname === 'wait') continue;                  // (Cmd_Wait_f holds the rest a frame: nothing here waits on a frame)
+      if (lname === 'wait') { if (this.nextFrame) await this.nextFrame(); continue; }   // Cmd_Wait_f: the rest of the line a frame later
       const cmd = this.commands[lname];
       if (!cmd && this.aliases.has(lname)) {
         if (depth >= MAX_ALIAS_DEPTH) { this.print(`alias ${name}: runs itself`); continue; }

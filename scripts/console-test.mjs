@@ -71,6 +71,14 @@ assert(JSON.stringify(splitCommands('god; give h 200 ;echo "a;b"')) === '["god",
   const notes = con.notifyLines(now);
   assert(notes.length === 4 && notes.includes("couldn't exec nosuch.cfg") && !notes.some((l) => l.startsWith(']')) && con.notifyLines(now + 4).length === 0,
     'the notify area: the last four lines printed (not the typed ones), gone after three seconds');
+  // wait: the rest of the line on the next frame
+  {
+    const seen = [];
+    let frame = 0;
+    const w = new Console({ commands: { fov: { help: '', run: ([v]) => { seen.push(`${frame}:${v}`); } } }, nextFrame: () => new Promise((r) => setTimeout(() => { frame++; r(); }, 1)) });
+    await w.execute('fov 70; wait; fov 50; wait; fov 30');
+    assert(seen.join() === '0:70,1:50,2:30', `wait holds the rest of the line a frame (${seen.join(' ')})`);
+  }
   await con.execute('alias g2 ""');
   assert(!con.aliases.has('g2') && !('g2' in kept), 'alias g2 "": removed');
 }

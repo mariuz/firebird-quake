@@ -124,6 +124,7 @@ const con = new Console({
   aliases: savedAliases,
   onAliases: (a) => { try { localStorage.setItem('firebird-quake:aliases', JSON.stringify(a)); } catch { /* ignore */ } },
   readFile: (name) => (pak?.has(name) ? new TextDecoder('latin1').decode(pak.get(name)) : null),
+  nextFrame: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
 });
 con.print('Firebird Quake. The console: help lists the commands, ` puts it away.', false);
 // a key: its binding runs, or holds its button; a binding to a +alias runs the alias on the key going down

@@ -46,8 +46,9 @@ in order of what they would change.
   coming up, as keys.c does), `exec` runs a config file from the paks a line at a time (`exec default.cfg`
   runs id's own, every line known: `unbindall`, its binds, its zoom aliases, `viewsize` and `gamma` accepted),
   `wait` is accepted, and the last four lines printed in three seconds show over the top of the view while the
-  console is away (`Con_DrawNotify`: the game's messages, and what a bound key's command answers). Not there:
-  cvars beyond these few, and `wait` holding the rest of a line a frame (a zoom alias jumps to its end).
+  console is away (`Con_DrawNotify`: the game's messages, and what a bound key's command answers). `wait` holds the rest
+  of a line until the next display frame, so the zoom aliases step through their fields of view. Not there:
+  cvars beyond these few.
 - ~~**Fast revisits**~~ done (`scripts/build.mjs`, `openDatabase` and `cachedBuffer` in `src/main.js`,
   `npm run test:image`; ARCHITECTURE section 2): the build runs `createSchema` once and ships the database
   as a gzipped image (0.7 MB, named by a hash of what built it), which the page opens instead of
