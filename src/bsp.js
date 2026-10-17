@@ -57,10 +57,14 @@ export class Bsp {
     l = lump(LUMP.nodes);
     this.nodes = [];
     const nsz = wide ? 4 + 8 + 6 * bsz + 8 : 24;
+    // BSP 29's 16-bit children are unsigned (QuakeSpasm's Mod_LoadNodes_S, Mod_LoadClipnodes): below the
+    // count a node, above it a leaf or contents (-1 - leaf as before); so a map may have 32768 to 65535
+    const child16 = (p, count) => { const u = dv.getUint16(p, true); return u < count ? u : u - 65536; };
+    const nnodes = l.len / nsz;
     for (let p = l.off; p < l.off + l.len; p += nsz) {
       if (!wide) this.nodes.push({
         plane: dv.getInt32(p, true),
-        children: [dv.getInt16(p + 4, true), dv.getInt16(p + 6, true)],
+        children: [child16(p + 4, nnodes), child16(p + 6, nnodes)],
         mins: [dv.getInt16(p + 8, true), dv.getInt16(p + 10, true), dv.getInt16(p + 12, true)],
         maxs: [dv.getInt16(p + 14, true), dv.getInt16(p + 16, true), dv.getInt16(p + 18, true)],
         firstFace: dv.getUint16(p + 20, true), numFaces: dv.getUint16(p + 22, true),
@@ -136,9 +140,10 @@ export class Bsp {
     // clipnodes
     l = lump(LUMP.clipnodes);
     this.clipnodes = [];
+    const nclip = l.len / (wide ? 12 : 8);
     for (let p = l.off; p < l.off + l.len; p += wide ? 12 : 8) {
       this.clipnodes.push(wide ? { plane: dv.getInt32(p, true), children: [dv.getInt32(p + 4, true), dv.getInt32(p + 8, true)] }
-                               : { plane: dv.getInt32(p, true), children: [dv.getInt16(p + 4, true), dv.getInt16(p + 6, true)] });
+                               : { plane: dv.getInt32(p, true), children: [child16(p + 4, nclip), child16(p + 6, nclip)] });
     }
 
     // leaves

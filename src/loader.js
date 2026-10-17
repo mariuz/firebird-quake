@@ -131,6 +131,11 @@ export const SAVED_TABLES = {
   qc_vm: { qc: true, where: '' },
   qc_saved: { qc: true, where: '' },
   bots: { qc: true, where: '' },
+  // the bots' map of the level (sql/bots.sql): what they and the player learnt goes on after a load
+  nav_nodes: { qc: true, where: '' },
+  nav_links: { qc: true, where: '' },
+  nav_track: { qc: true, where: '' },
+  bot_route: { qc: true, where: '' },
 };
 
 /** The sv_ tables and the two copying procedures, generated from the live tables' columns so that a

@@ -359,8 +359,8 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   and runs, takes the next within 24 units, and after the last wanders for 3 to 7 s before planning
   again. A step not reached in 3 s strikes its link off. Roaming chooses, of five ways round a wall, the
   one with the most room and no node yet, and counts a step up as no wall, so the bots learn the level
-  as they go; the player's walk teaches them the rest. A save does not keep the map: after a load the
-  bots learn it again.
+  as they go; the player's walk teaches them the rest. A save keeps the map (`nav_nodes`, `nav_links`,
+  `nav_track` and `bot_route` are saved tables in QuakeC mode).
 - **The page**: the **Game** setting (single player, deathmatch, coop) and **Bots** (1 to 7) start a
   game in QuakeC mode with `qc_setup_server` before `qc_begin_map`; `qc_scores` (client, name, frags,
   alive) feeds the frag list drawn in the corner. Demos store the rules (the `demo` row) and saves

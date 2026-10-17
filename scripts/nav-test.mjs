@@ -113,6 +113,16 @@ for (let i = 0; i < 20 * 6; i++) await tic();
 const gone = (await q1(`SELECT COUNT(*) n FROM nav_links WHERE b = 99999`)).N;
 assert(p2.OK === 1 && gone === 0, 'a link the bot could not cross in three seconds is struck off the map');
 
+// ── a save keeps the map ──
+{
+  const before = await counts();
+  await db.exec('EXECUTE PROCEDURE save_game(3)');
+  await db.exec('DELETE FROM nav_links'); await db.exec('DELETE FROM nav_nodes');
+  await db.exec('EXECUTE PROCEDURE load_game(3)');
+  const after = await counts();
+  assert(after.N === before.N && after.L === before.L && before.N > 0, `saved and loaded, the bots keep their map (${after.N} nodes, ${after.L} links)`);
+}
+
 await db.close();
 console.log(failed ? `${failed} failure(s)` : 'all nav checks passed');
 process.exit(failed ? 1 : 0);
