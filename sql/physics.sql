@@ -46,13 +46,17 @@ AS
 DECLARE n INTEGER;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE d DOUBLE PRECISION;
 DECLARE c0 INTEGER; DECLARE c1 INTEGER;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION; DECLARE fd DOUBLE PRECISION; DECLARE f0 INTEGER; DECLARE f1 INTEGER;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE bd DOUBLE PRECISION; DECLARE b0 INTEGER; DECLARE b1 INTEGER;
 BEGIN
   n = node;
   WHILE (n >= 0) DO
   BEGIN
-    SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1 FROM hulls h WHERE h.hull = :hull AND h.node = :n INTO nx, ny, nz, d, c0, c1;
+    -- two levels a lookup (a FOR SELECT: no check for a second row)
+    FOR SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1, h.f_nx, h.f_ny, h.f_nz, h.f_dist, h.f0, h.f1, h.b_nx, h.b_ny, h.b_nz, h.b_dist, h.b0, h.b1 FROM hulls h WHERE h.hull = :hull AND h.node = :n
+      INTO nx, ny, nz, d, c0, c1, fx, fy, fz, fd, f0, f1, bx, by_, bz, bd, b0, b1 DO
+      n = IIF(nx * px + ny * py + nz * pz - d >= 0, IIF(fx * px + fy * py + fz * pz - fd >= 0, f0, f1), IIF(bx * px + by_ * py + bz * pz - bd >= 0, b0, b1));
     IF (nx IS NULL) THEN RETURN -2;
-    n = IIF(nx * px + ny * py + nz * pz - d >= 0, c0, c1);
     nx = NULL;
   END
   IF (hull = 0) THEN
@@ -70,13 +74,16 @@ AS
 DECLARE n INTEGER;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE d DOUBLE PRECISION;
 DECLARE c0 INTEGER; DECLARE c1 INTEGER;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION; DECLARE fd DOUBLE PRECISION; DECLARE f0 INTEGER; DECLARE f1 INTEGER;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE bd DOUBLE PRECISION; DECLARE b0 INTEGER; DECLARE b1 INTEGER;
 BEGIN
   SELECT m.hull0 FROM models m JOIN game g ON g.world_model = m.id WHERE g.id = 1 INTO n;
   WHILE (n >= 0) DO
   BEGIN
-    SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1 FROM hulls h WHERE h.hull = 0 AND h.node = :n INTO nx, ny, nz, d, c0, c1;
+    FOR SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1, h.f_nx, h.f_ny, h.f_nz, h.f_dist, h.f0, h.f1, h.b_nx, h.b_ny, h.b_nz, h.b_dist, h.b0, h.b1 FROM hulls h WHERE h.hull = 0 AND h.node = :n
+      INTO nx, ny, nz, d, c0, c1, fx, fy, fz, fd, f0, f1, bx, by_, bz, bd, b0, b1 DO
+      n = IIF(nx * px + ny * py + nz * pz - d >= 0, IIF(fx * px + fy * py + fz * pz - fd >= 0, f0, f1), IIF(bx * px + by_ * py + bz * pz - bd >= 0, b0, b1));
     IF (nx IS NULL) THEN RETURN 0;
-    n = IIF(nx * px + ny * py + nz * pz - d >= 0, c0, c1);
     nx = NULL;
   END
   RETURN -n - 1;
@@ -110,6 +117,9 @@ END^
 -- SV_RecursiveHullCheck. Returns res = 1 to keep going, 0 when the trace is
 -- finished (hit, or never left solid). State in: allsolid/startsolid/inopen/
 -- inwater; state out: the same plus fraction, end point and the hit plane.
+-- Quake's tail calls are a loop here: a node the segment lies wholly on one side
+-- of is stepped through, and the far side of a split continues the loop, so only
+-- the near side of a split costs a call (most nodes of a walk are not split).
 CREATE OR ALTER PROCEDURE rhc (
   hull SMALLINT, head INTEGER, node INTEGER,
   p1f DOUBLE PRECISION, p2f DOUBLE PRECISION,
@@ -130,82 +140,91 @@ DECLARE frac DOUBLE PRECISION; DECLARE midf DOUBLE PRECISION;
 DECLARE mx DOUBLE PRECISION; DECLARE my DOUBLE PRECISION; DECLARE mz DOUBLE PRECISION;
 DECLARE side_ SMALLINT;
 DECLARE near_ INTEGER; DECLARE far_ INTEGER;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION; DECLARE fd DOUBLE PRECISION; DECLARE f0 INTEGER; DECLARE f1 INTEGER;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE bd DOUBLE PRECISION; DECLARE b0 INTEGER; DECLARE b1 INTEGER;
 BEGIN
   allsolid = allsolid_in; startsolid = startsolid_in; inopen = inopen_in; inwater = inwater_in;
   fraction = 1; ex = p2x; ey = p2y; ez = p2z; nx = 0; ny = 0; nz = 0; pdist = 0;
 
-  IF (node < 0) THEN
+  WHILE (1 = 1) DO
   BEGIN
-    IF (hull = 0) THEN
-      SELECT l.contents FROM leaves l WHERE l.id = -:node - 1 INTO contents;
-    ELSE contents = node;
-    contents = COALESCE(contents, -2);
-    IF (contents <> -2) THEN
+    -- down through the nodes the segment does not cross
+    t1 = NULL;
+    WHILE (node >= 0) DO
     BEGIN
-      allsolid = 0;
-      IF (contents = -1) THEN inopen = 1; ELSE inwater = 1;
+      plnx = NULL;
+      FOR SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1, h.f_nx, h.f_ny, h.f_nz, h.f_dist, h.f0, h.f1, h.b_nx, h.b_ny, h.b_nz, h.b_dist, h.b0, h.b1 FROM hulls h WHERE h.hull = :hull AND h.node = :node
+        INTO plnx, plny, plnz, pld, c0, c1, fx, fy, fz, fd, f0, f1, bx, by_, bz, bd, b0, b1 DO
+        plnx = plnx;
+      IF (plnx IS NULL) THEN
+      BEGIN
+        res = 1;                          -- a missing node: as if empty
+        SUSPEND;
+        EXIT;
+      END
+      t1 = plnx * p1x + plny * p1y + plnz * p1z - pld;
+      t2 = plnx * p2x + plny * p2y + plnz * p2z - pld;
+      IF (t1 >= 0 AND t2 >= 0) THEN
+      BEGIN
+        node = c0; plnx = fx; plny = fy; plnz = fz; pld = fd; c0 = f0; c1 = f1;
+      END
+      ELSE IF (t1 < 0 AND t2 < 0) THEN
+      BEGIN
+        node = c1; plnx = bx; plny = by_; plnz = bz; pld = bd; c0 = b0; c1 = b1;
+      END
+      ELSE LEAVE;
+      -- and the child's plane from the same row (a leaf's keeps the segment in front, on to the leaf)
+      t1 = plnx * p1x + plny * p1y + plnz * p1z - pld;
+      t2 = plnx * p2x + plny * p2y + plnz * p2z - pld;
+      IF (t1 >= 0 AND t2 >= 0) THEN node = c0;
+      ELSE IF (t1 < 0 AND t2 < 0) THEN node = c1;
+      ELSE LEAVE;                         -- split at the child: its plane and children are in hand
     END
-    ELSE startsolid = 1;
-    res = 1;
-    SUSPEND;
-    EXIT;
-  END
 
-  SELECT h.nx, h.ny, h.nz, h.dist, h.c0, h.c1 FROM hulls h WHERE h.hull = :hull AND h.node = :node
-    INTO plnx, plny, plnz, pld, c0, c1;
-  IF (plnx IS NULL) THEN
-  BEGIN
-    res = 1;
-    SUSPEND;
-    EXIT;
-  END
-  t1 = plnx * p1x + plny * p1y + plnz * p1z - pld;
-  t2 = plnx * p2x + plny * p2y + plnz * p2z - pld;
+    IF (node < 0) THEN
+    BEGIN
+      contents = NULL;
+      IF (hull = 0) THEN
+        SELECT l.contents FROM leaves l WHERE l.id = -:node - 1 INTO contents;
+      ELSE contents = node;
+      contents = COALESCE(contents, -2);
+      IF (contents <> -2) THEN
+      BEGIN
+        allsolid = 0;
+        IF (contents = -1) THEN inopen = 1; ELSE inwater = 1;
+      END
+      ELSE startsolid = 1;
+      res = 1;
+      SUSPEND;
+      EXIT;
+    END
 
-  IF (t1 >= 0 AND t2 >= 0) THEN
-  BEGIN
-    EXECUTE PROCEDURE rhc(hull, head, c0, p1f, p2f, p1x, p1y, p1z, p2x, p2y, p2z, allsolid, startsolid, inopen, inwater)
+    -- the segment crosses the plane: split it, 1/32 unit onto the near side
+    IF (t1 < 0) THEN frac = (t1 + 0.03125e0) / (t1 - t2);
+    ELSE frac = (t1 - 0.03125e0) / (t1 - t2);
+    IF (frac < 0) THEN frac = 0;
+    IF (frac > 1) THEN frac = 1;
+    midf = p1f + (p2f - p1f) * frac;
+    mx = p1x + frac * (p2x - p1x);
+    my = p1y + frac * (p2y - p1y);
+    mz = p1z + frac * (p2z - p1z);
+    side_ = IIF(t1 < 0, 1, 0);
+    near_ = IIF(side_ = 0, c0, c1);
+    far_ = IIF(side_ = 0, c1, c0);
+
+    -- the near side first
+    EXECUTE PROCEDURE rhc(hull, head, near_, p1f, midf, p1x, p1y, p1z, mx, my, mz, allsolid, startsolid, inopen, inwater)
       RETURNING_VALUES res, fraction, ex, ey, ez, nx, ny, nz, pdist, allsolid, startsolid, inopen, inwater;
-    SUSPEND;
-    EXIT;
-  END
-  IF (t1 < 0 AND t2 < 0) THEN
-  BEGIN
-    EXECUTE PROCEDURE rhc(hull, head, c1, p1f, p2f, p1x, p1y, p1z, p2x, p2y, p2z, allsolid, startsolid, inopen, inwater)
-      RETURNING_VALUES res, fraction, ex, ey, ez, nx, ny, nz, pdist, allsolid, startsolid, inopen, inwater;
-    SUSPEND;
-    EXIT;
-  END
+    IF (res = 0) THEN
+    BEGIN
+      SUSPEND;
+      EXIT;
+    END
 
-  -- the segment crosses the plane: split it, 1/32 unit onto the near side
-  IF (t1 < 0) THEN frac = (t1 + 0.03125e0) / (t1 - t2);
-  ELSE frac = (t1 - 0.03125e0) / (t1 - t2);
-  IF (frac < 0) THEN frac = 0;
-  IF (frac > 1) THEN frac = 1;
-  midf = p1f + (p2f - p1f) * frac;
-  mx = p1x + frac * (p2x - p1x);
-  my = p1y + frac * (p2y - p1y);
-  mz = p1z + frac * (p2z - p1z);
-  side_ = IIF(t1 < 0, 1, 0);
-  near_ = IIF(side_ = 0, c0, c1);
-  far_ = IIF(side_ = 0, c1, c0);
-
-  -- the near side first
-  EXECUTE PROCEDURE rhc(hull, head, near_, p1f, midf, p1x, p1y, p1z, mx, my, mz, allsolid, startsolid, inopen, inwater)
-    RETURNING_VALUES res, fraction, ex, ey, ez, nx, ny, nz, pdist, allsolid, startsolid, inopen, inwater;
-  IF (res = 0) THEN
-  BEGIN
-    SUSPEND;
-    EXIT;
-  END
-
-  -- the far side, if it is not solid where we would enter it
-  IF (hull_contents(hull, far_, mx, my, mz) <> -2) THEN
-  BEGIN
-    EXECUTE PROCEDURE rhc(hull, head, far_, midf, p2f, mx, my, mz, p2x, p2y, p2z, allsolid, startsolid, inopen, inwater)
-      RETURNING_VALUES res, fraction, ex, ey, ez, nx, ny, nz, pdist, allsolid, startsolid, inopen, inwater;
-    SUSPEND;
-    EXIT;
+    -- the far side, if it is not solid where we would enter it: on round the loop
+    IF (hull_contents(hull, far_, mx, my, mz) = -2) THEN LEAVE;
+    node = far_; p1f = midf; p1x = mx; p1y = my; p1z = mz;
+    fraction = 1; ex = p2x; ey = p2y; ez = p2z; nx = 0; ny = 0; nz = 0; pdist = 0;
   END
 
   IF (allsolid = 1) THEN

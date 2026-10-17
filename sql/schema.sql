@@ -96,7 +96,10 @@ CREATE TABLE lightstyles (
 -- Collision hulls. hull 0 is the node tree itself (children < 0 are leaf
 -- contents); hull 1 (player size) and hull 2 (shambler size) share the
 -- CLIPNODES array and differ only by head node. The plane is copied in so
--- a trace step is one lookup.
+-- a trace step is one lookup, and so are both children's planes and children
+-- (f_ the front child's, b_ the back one's), so one lookup descends two levels:
+-- a child that is a leaf has the plane (0, 0, 0, -1), in front of every point,
+-- and itself as both children.
 CREATE TABLE hulls (
   hull SMALLINT NOT NULL,
   node INTEGER NOT NULL,
@@ -104,6 +107,10 @@ CREATE TABLE hulls (
   dist DOUBLE PRECISION NOT NULL,
   c0 INTEGER NOT NULL,                  -- front child: >= 0 node, < 0 contents
   c1 INTEGER NOT NULL,
+  f_nx DOUBLE PRECISION NOT NULL, f_ny DOUBLE PRECISION NOT NULL, f_nz DOUBLE PRECISION NOT NULL, f_dist DOUBLE PRECISION NOT NULL,
+  f0 INTEGER NOT NULL, f1 INTEGER NOT NULL,
+  b_nx DOUBLE PRECISION NOT NULL, b_ny DOUBLE PRECISION NOT NULL, b_nz DOUBLE PRECISION NOT NULL, b_dist DOUBLE PRECISION NOT NULL,
+  b0 INTEGER NOT NULL, b1 INTEGER NOT NULL,
   PRIMARY KEY (hull, node)
 );
 

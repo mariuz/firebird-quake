@@ -23,7 +23,7 @@ export const ITEM_ID_BASE = 1000000;      // b_*.bsp boxes: loaded once, kept ac
 // column specs: name:type where type ∈ i (integer) d (double) s (string); a ? after the type marks a
 // number that may be NULL (it costs a TRIM and a NULLIF per row, so only where needed). An empty string is NULL.
 const TABLES = {
-  hulls: 'hull:i node:i nx:d ny:d nz:d dist:d c0:i c1:i',
+  hulls: 'hull:i node:i nx:d ny:d nz:d dist:d c0:i c1:i f_nx:d f_ny:d f_nz:d f_dist:d f0:i f1:i b_nx:d b_ny:d b_nz:d b_dist:d b0:i b1:i',
   leaves: 'id:i contents:i minx:d miny:d minz:d maxx:d maxy:d maxz:d first_ms:i num_ms:i ambient:i ambient_sky:i pvs:s',
   marksurfaces: 'id:i face:i',
   faces: 'id:i model_id:i nx:d ny:d nz:d dist:d nverts:i miptex:i sx:d sy:d sz:d soff:d tx:d ty:d tz:d toff:d sky:i liquid:i style0:i cx:d cy:d cz:d radius:d',
@@ -289,17 +289,22 @@ function geometryRows(bsp, base, res, { pvs = true } = {}) {
     out.modelInfo.set(id, { id, name, kind: 'B', bsp, sub: mi, faceBase: base });
   });
   if (pvs) {
+    // a node's row: its plane and children, then each child's plane and children (a leaf, or a node
+    // missing from the lump: the plane (0, 0, 0, -1), every point in front, and itself as both children)
+    const tree = (hull, list, child) => list.forEach((n, ni) => {
+      const pl = bsp.planes[n.plane];
+      const ch = n.children.map(child);
+      const sub = (c, k) => {
+        const m = c >= 0 ? list[n.children[k]] : null;
+        if (!m) return [0, 0, 0, -1, c, c];
+        const q = bsp.planes[m.plane];
+        return [q.nx, q.ny, q.nz, q.dist, ...m.children.map(child)];
+      };
+      out.hulls.push([hull, base + ni, pl.nx, pl.ny, pl.nz, pl.dist, ch[0], ch[1], ...sub(ch[0], 0), ...sub(ch[1], 1)]);
+    });
     // hull 0: the node tree; leaf children become contents
-    bsp.nodes.forEach((n, ni) => {
-      const pl = bsp.planes[n.plane];
-      const ch = n.children.map((c) => (c >= 0 ? base + c : -(base + (-1 - c)) - 1));
-      out.hulls.push([0, base + ni, pl.nx, pl.ny, pl.nz, pl.dist, ch[0], ch[1]]);
-    });
-    bsp.clipnodes.forEach((n, ni) => {
-      const pl = bsp.planes[n.plane];
-      const ch = n.children.map((c) => (c >= 0 ? base + c : c));
-      out.hulls.push([1, base + ni, pl.nx, pl.ny, pl.nz, pl.dist, ch[0], ch[1]]);
-    });
+    tree(0, bsp.nodes, (c) => (c >= 0 ? base + c : -(base + (-1 - c)) - 1));
+    tree(1, bsp.clipnodes, (c) => (c >= 0 ? base + c : c));
     bsp.leaves.forEach((l, li) => {
       out.leaves.push([base + li, l.contents, ...l.mins, ...l.maxs, base + l.firstMarksurface, l.numMarksurfaces, l.ambient[0], l.ambient[1], bsp.pvsHex[li]]);
     });
