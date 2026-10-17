@@ -570,7 +570,41 @@ CREATE TABLE bots (
   stuck      INTEGER DEFAULT 0 NOT NULL,
   goal_until DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- it gives up on the item then
   shun       INTEGER,                          -- an item it could not reach, left alone until shun_until
-  shun_until DOUBLE PRECISION DEFAULT 0 NOT NULL
+  shun_until DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  route_goal INTEGER,                          -- the nav node it is making for (NULL: none)
+  route_step INTEGER DEFAULT 0 NOT NULL,       -- the bot_route step it runs to now
+  route_at   DOUBLE PRECISION DEFAULT 0 NOT NULL    -- when it set out for that step (or may plan again)
+);
+
+-- The bots' map of the level (sql/bots.sql), learnt as FrikBot's dynamic waypoints are: every client on
+-- the floor drops a node where none is within 64 units and links it from the node it came from (both
+-- ways when it could walk back: no drop of more than a step), so the graph holds the ways people and
+-- bots have actually gone, teleporters and drops one-way. Emptied with the level.
+CREATE TABLE nav_nodes (
+  id INTEGER NOT NULL PRIMARY KEY,
+  x DOUBLE PRECISION NOT NULL, y DOUBLE PRECISION NOT NULL, z DOUBLE PRECISION NOT NULL
+);
+CREATE INDEX nav_nodes_x ON nav_nodes (x);
+CREATE TABLE nav_links (
+  a INTEGER NOT NULL, b INTEGER NOT NULL,
+  PRIMARY KEY (a, b)
+);
+CREATE TABLE nav_track (                       -- each client's last node
+  c INTEGER NOT NULL PRIMARY KEY,
+  node INTEGER
+);
+CREATE TABLE nav_search (                      -- a breadth-first search from one node: depth and the way back
+  node INTEGER NOT NULL PRIMARY KEY,
+  prev INTEGER,
+  depth INTEGER NOT NULL
+);
+CREATE INDEX nav_search_depth ON nav_search (depth);
+CREATE TABLE nav_pick (                        -- the nodes a bot may make for, this planning
+  node INTEGER NOT NULL PRIMARY KEY
+);
+CREATE TABLE bot_route (                       -- a bot's way to its route_goal, step 1 the first node to run to
+  c INTEGER NOT NULL, step INTEGER NOT NULL, node INTEGER NOT NULL,
+  PRIMARY KEY (c, step)
 );
 
 -- ── save games (sql/save.sql) ────────────────────────────────────────────────

@@ -379,6 +379,9 @@ BEGIN
   ELSE EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
 END^
 
+-- the bots' map: a client's place recorded after the frame's physics (sql/bots.sql)
+CREATE OR ALTER PROCEDURE nav_mark (c INTEGER) AS BEGIN END^
+
 -- a bot's move for the frame (sql/bots.sql): what SV_ReadClientMove would read from its connection
 CREATE OR ALTER PROCEDURE qc_bot_think (c INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
 RETURNS (fmove DOUBLE PRECISION, smove DOUBLE PRECISION, upmove DOUBLE PRECISION, pitch DOUBLE PRECISION, yaw DOUBLE PRECISION,
@@ -456,6 +459,16 @@ BEGIN
       DELETE FROM qc_localstack;
       EXECUTE PROCEDURE qc_print('error', 'edict ' || e || ' failed: ' || SUBSTRING(RDB$ERROR(MESSAGE) FROM 1 FOR 400));
     END
+    END
+  END
+  -- with bots in the game, every client's place goes into their map of the level (FrikBot's waypoints)
+  IF (EXISTS (SELECT 1 FROM bots)) THEN
+  BEGIN
+    c = 1;
+    WHILE (c <= mc) DO
+    BEGIN
+      IF (c = 1 OR EXISTS (SELECT 1 FROM bots b WHERE b.c = :c)) THEN EXECUTE PROCEDURE nav_mark(c);
+      c = c + 1;
     END
   END
   -- the camera: the view pitch and the punch

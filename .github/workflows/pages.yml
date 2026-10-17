@@ -71,6 +71,7 @@ jobs:
               npm run test:lq
               npm run test:qclq
               npm run test:dm
+              npm run test:nav
               npm run test:bsp2
               npm run test:mod
           # the smoke test on E1M1; saves; slime and lava; the registered monsters; the shambler and the

@@ -347,6 +347,20 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   and turns; an item it cannot reach (4 s, or stuck) is shunned for 10 s. Dead, it lets go of fire
   and presses it again to respawn; in the intermission it touches nothing (any client's button would
   end it). Its random choices are `rnd()`, so a demo replays the bots.
+- **The bots' map** (FrikBot's dynamic waypoints): after each server frame `nav_mark(c)` puts every
+  client standing on the floor (not swimming, not dead) at a `nav_nodes` row, a new one where no node is
+  within 64 units in sight, and links it from the client's last node (`nav_track`) when the two are in
+  sight of each other: back again too unless that would climb more than a step (18) or the hop was
+  longer than a run (a teleporter, linked one way however far). A client still within 32 units of its
+  last node costs one query and no trace. The graph is emptied by `qc_begin_map` (2000 nodes at most).
+  With nothing in sight a bot asks `bot_plan` for a way: `nav_bfs` searches the links breadth first from
+  its nearest node into `nav_search`, a node beside a pickup at least three links off is picked at
+  random, and the way back from it becomes `bot_route`'s steps. The bot turns towards each step's node
+  and runs, takes the next within 24 units, and after the last wanders for 3 to 7 s before planning
+  again. A step not reached in 3 s strikes its link off. Roaming chooses, of five ways round a wall, the
+  one with the most room and no node yet, and counts a step up as no wall, so the bots learn the level
+  as they go; the player's walk teaches them the rest. A save does not keep the map: after a load the
+  bots learn it again.
 - **The page**: the **Game** setting (single player, deathmatch, coop) and **Bots** (1 to 7) start a
   game in QuakeC mode with `qc_setup_server` before `qc_begin_map`; `qc_scores` (client, name, frags,
   alive) feeds the frag list drawn in the corner. Demos store the rules (the `demo` row) and saves

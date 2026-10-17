@@ -46,10 +46,13 @@ BEGIN
                       p.dmg_take = 0, p.dmg_save = 0, p.pitch = 0, p.punchangle = 0, p.view_ofs = 22, p.stepz = 0 WHERE p.id = 1;
   SELECT r.spawned, r.failed, r.skipped FROM qc_spawn_map(:skill, 1.0) r INTO a, b, c;
   EXECUTE PROCEDURE qc_client_join(1.0, carry);
+  -- the bots' map of the level starts empty (sql/bots.sql: they learn it as they and the player go)
+  DELETE FROM nav_links; DELETE FROM nav_nodes; DELETE FROM nav_track; DELETE FROM bot_route;
   -- the bots come in after the player, as clients connecting (sql/bots.sql)
   FOR SELECT b.c, b.name FROM bots b WHERE b.c <= qc_maxclients() ORDER BY b.c INTO a, mn DO
   BEGIN
-    UPDATE bots b SET b.yaw = NULL, b.enemy = NULL, b.goal = NULL, b.look_at = 0, b.turn = 0, b.stuck = 0, b.lastx = NULL WHERE b.c = :a;
+    UPDATE bots b SET b.yaw = NULL, b.enemy = NULL, b.goal = NULL, b.look_at = 0, b.turn = 0, b.stuck = 0, b.lastx = NULL,
+                      b.route_goal = NULL, b.route_step = 0, b.route_at = 0 WHERE b.c = :a;
     EXECUTE PROCEDURE qc_client_join_n(a, 1.0, 0, mn);
   END
   -- the level's name, as the PSQL game shows it

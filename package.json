@@ -19,6 +19,7 @@
     "test:save": "node scripts/save-test.mjs",
     "test:demo": "node scripts/demo-test.mjs",
     "test:dm": "node scripts/dm-test.mjs",
+    "test:nav": "node scripts/nav-test.mjs",
     "test:hazard": "node scripts/hazard-test.mjs",
     "test:fire": "node scripts/fire-test.mjs",
     "test:bsp2": "node scripts/bsp2-test.mjs",
