@@ -443,8 +443,9 @@ rockets and lava balls (the model's `EF_ROCKET` flag, 200 units), explosions fro
 (350 units, shrinking by 300 a second for half a second), the player's muzzle flash (a shot starts
 the weapon's animation) and the quad's or the pentagram's glow, and in QuakeC mode the entities'
 own `EF_MUZZLEFLASH`, `EF_BRIGHTLIGHT` and `EF_DIMLIGHT` (the PSQL game uses effects 4 and 8 to mark
-fullbright things; `qc_tic` clears the muzzle flash at its start, as `SV_CleanupEnts` does, so it lights
-the frame drawn after the shot). A face that a light reaches (`faceDlights`: the plane within the
+fullbright things, and `EF_MUZZLEFLASH` as Quake does, set by a grunt's or an enforcer's shot; `qc_tic`
+and `quake_tic` clear the muzzle flash at their start, as `SV_CleanupEnts` does, so it lights the frame
+drawn after the shot). A face that a light reaches (`faceDlights`: the plane within the
 radius, the lit disc over its rectangle) is built for that frame alone, its lightmap block raised by
 `R_AddDynamicLights`' octagonal falloff before the colormap; a brush model's faces see the light moved
 into the model's frame by the origin the face list carries. Models add `radius - distance` of every

@@ -3,7 +3,7 @@
 // light (R_LightPoint). Rockets and lava balls by their model's EF_ROCKET flag; explosions (350 units,
 // shrinking for half a second); the player's muzzle flash and the quad's or the pentagram's glow; and,
 // in QuakeC mode, the entities' own effects bits (the PSQL game uses effects 4 and 8 to mark fullbright
-// things, not lights).
+// things, not lights, and only EF_MUZZLEFLASH as Quake does: a grunt's or an enforcer's shot).
 
 const EF_MUZZLEFLASH = 2, EF_BRIGHTLIGHT = 4, EF_DIMLIGHT = 8, EF_ROCKET = 1;
 
@@ -18,11 +18,12 @@ export function frameDlights({ ents, models, explosions = [], player = null, qc 
     const [, mid, , , x, y, z, , yaw, , effects] = e;
     const m = models.get(mid);
     if (m?.mdl && (m.mdl.flags & EF_ROCKET)) out.push({ x, y, z, radius: 200, minlight: 0 });
-    if (!qc || !effects) continue;
+    if (!effects) continue;
     if (effects & EF_MUZZLEFLASH) {
       const a = (yaw * Math.PI) / 180;
       out.push({ x: x + Math.cos(a) * 18, y: y + Math.sin(a) * 18, z: z + 16, radius: 200 + jitter(), minlight: 32 });
     }
+    if (!qc) continue;
     if (effects & EF_BRIGHTLIGHT) out.push({ x, y, z: z + 16, radius: 400 + jitter(), minlight: 0 });
     if (effects & EF_DIMLIGHT) out.push({ x, y, z, radius: 200 + jitter(), minlight: 0 });
   }

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { FirebirdBrowser, DirectTransport } from 'firebird-wasm/browser';
 import { Pak } from '../src/pak.js';
 import { createSchema, loadResources, loadMap, SQL_FILES } from '../src/loader.js';
+import { frameDlights } from '../src/dlights.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
@@ -98,6 +99,29 @@ for (let i = 0; i < 10; i++) { await tic(); w = await mon(winner); if (w.ENEMY_I
 assert(w.ENEMY_ID === pe && w.OLDENEMY_ID === null && w.ST !== 'stand', 'its enemy dead, the survivor goes back to the player (ai_run: HuntTarget on oldenemy)');
 const s = await tic();
 assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Killed does (${s.KILLED} of ${s.TOTAL_MONSTERS})`);
+
+// a grunt's shot flashes (army_fire's EF_MUZZLEFLASH) for the frame it was fired in, and the flash lights
+// the room as the player's does
+{
+  const grunt = await spawn('army', 200);
+  // on the player's floor, in its sight
+  const p = await q1(`SELECT x, y, z FROM ents WHERE id = ${pe}`);
+  for (const [dx, dy] of [[160, 0], [-160, 0], [0, 160], [0, -160], [110, 110], [-110, -110]]) {
+    const ok = await q1(`SELECT test_position(${grunt}, ${p.X + dx}, ${p.Y + dy}, ${p.Z}) t,
+      (SELECT fraction FROM trace_move(NULL, 0,0,0,0,0,0, ${p.X + dx}, ${p.Y + dy}, ${p.Z + 25}, ${p.X}, ${p.Y}, ${p.Z + 22}, 1)) f FROM rdb$database`);
+    if (ok.T === 0 && ok.F >= 1) { await db.exec(`UPDATE ents SET x = ${p.X + dx}, y = ${p.Y + dy}, z = ${p.Z}, attack_finished = 0 WHERE id = ${grunt}`); await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`); break; }
+  }
+  await hunt(grunt, pe);
+  let lit = null, after = null;
+  for (let i = 0; i < 200 && lit === null; i++) {
+    await tic();
+    const e = await q1(`SELECT effects f FROM ents WHERE id = ${grunt}`);
+    if (e.F & 2) { lit = i; after = (await tic(), (await q1(`SELECT effects f FROM ents WHERE id = ${grunt}`)).F); }
+  }
+  const lights = frameDlights({ ents: [[grunt, 0, 0, 0, 0, 0, 0, 0, 90, 0, 2]], models: new Map(), qc: false, time: 0 });
+  assert(lit !== null && (after & 2) === 0 && lights.length === 1 && lights[0].minlight === 32,
+    `a grunt firing at the player flashes (tic ${lit}) for that frame only, and the flash is a light in the PSQL game too`);
+}
 
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);

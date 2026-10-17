@@ -287,6 +287,7 @@ CREATE INDEX ents_tname ON ents (targetname);
 CREATE INDEX ents_solid ON ents (solid);
 CREATE INDEX ents_think ON ents (nextthink);
 CREATE INDEX ents_model ON ents (model_id);
+CREATE INDEX ents_effects ON ents (effects);
 
 -- The one client.
 CREATE TABLE player (

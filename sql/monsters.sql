@@ -223,6 +223,7 @@ BEGIN
   BEGIN
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
     EXECUTE PROCEDURE fire_bullets(eid, 4, x1, y1, z1 + 20, x2 - x1, y2 - y1, z2 + 16 - z1 - 20, 0.1e0, 0.1e0);
+    UPDATE ents e SET e.effects = BIN_OR(e.effects, 2) WHERE e.id = :eid;   -- army_fire: EF_MUZZLEFLASH
   END
   ELSE IF (mk = 'grenade') THEN
   BEGIN
@@ -274,6 +275,7 @@ BEGIN
     EXECUTE PROCEDURE launch_rocket(eid, x1 + COS(yaw * 0.0174532925e0) * 30 + SIN(yaw * 0.0174532925e0) * 8.5e0,
       y1 + SIN(yaw * 0.0174532925e0) * 30 - COS(yaw * 0.0174532925e0) * 8.5e0, z1 + 16, dx, dy, dz, 600, 15, 'progs/laser.mdl');
     UPDATE ents e SET e.classname = 'laser', e.effects = 4 WHERE e.id = (SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid);
+    UPDATE ents e SET e.effects = BIN_OR(e.effects, 2) WHERE e.id = :eid;   -- enforcer_fire: EF_MUZZLEFLASH
   END
   ELSE IF (mk = 'kspike') THEN
   BEGIN
@@ -1085,6 +1087,8 @@ BEGIN
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   DELETE FROM sound_events s WHERE s.tic < :tic - 40;
   DELETE FROM fx_events f WHERE f.tic < :tic - 40;
+  -- a muzzle flash lasts the frame it was sent in (SV_WriteEntitiesToClient clears EF_MUZZLEFLASH)
+  UPDATE ents e SET e.effects = BIN_AND(e.effects, -3) WHERE e.effects IN (2, 3, 6, 7, 10, 11, 14, 15);
   WHILE (i < tics) DO
   BEGIN
     UPDATE game g SET g.tic = g.tic + 1, g.time_ = g.time_ + 0.05e0 WHERE g.id = 1;
