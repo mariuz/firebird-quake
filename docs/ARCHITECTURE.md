@@ -499,6 +499,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `demo-test.mjs` | demos: a game recorded and played back bit for bit, fresh and after another level, in both modes (`QCJIT=all`: the playback compiled) |
 | `save-test.mjs` | save games: saved mid-play, loaded back exactly, also after an export and a reload of the map, in both modes |
 | `boss-test.mjs`, `registered-test.mjs`, `e1m2`…`e1m8-test.mjs` | scene tests: load a level, place the player with `teleport`, play tics with `run`, fire procedures directly, assert on tables (see the README's table) |
+| `compare-test.mjs` | the two renderers agree pixel for pixel: `FRAME_FACES` (SQL projects every vertex, and carries each brush model's origin for the dynamic lights) against `FRAME_FACES_FAST`, from E1M1's start and with an explosion before its first doors |
 | `paint-bench.mjs` | the painter alone: four scenes queried once, painted again and again at 320×200 and 640×400, with the surface cache warm and cold |
 | `bench.mjs` | times a tic and its parts, the traces, a monster think and the frame queries |
 | `perf.mjs` | runs `bench`, `qcvm-bench` (interpreted and compiled) and `paint-bench` with `BENCH_JSON`, compares each number with the median of the last five runs in the deployed `perf-history.json`, warns on one 50 % and 1 ms slower, and writes the history with the run added (CI's `perf` job; the build deploys it) |

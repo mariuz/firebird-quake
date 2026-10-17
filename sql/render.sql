@@ -212,7 +212,8 @@ END^
 -- FRAME_FACES: the same faces, projected vertex by vertex in SQL.
 CREATE OR ALTER PROCEDURE frame_faces
 RETURNS (face INTEGER, seq INTEGER, vf DOUBLE PRECISION, vr DOUBLE PRECISION, vu DOUBLE PRECISION,
-         sx DOUBLE PRECISION, sy DOUBLE PRECISION, s DOUBLE PRECISION, t DOUBLE PRECISION, ent_id INTEGER)
+         sx DOUBLE PRECISION, sy DOUBLE PRECISION, s DOUBLE PRECISION, t DOUBLE PRECISION, ent_id INTEGER,
+         ox DOUBLE PRECISION, oy DOUBLE PRECISION, oz DOUBLE PRECISION)   -- a brush model's origin (the dynamic lights move into its frame)
 AS
 DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
 DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
@@ -257,7 +258,7 @@ BEGIN
          <= ((v.cx + v.ox - :ex) * :fx + (v.cy + v.oy - :ey) * :fy + (v.cz + v.oz - :ez) * :fz) * :ky + v.radius * :qy;
 
   cur = -1; curent = -1;
-  FOR SELECT v.ent_id, f.id, fv.seq,
+  FOR SELECT v.ent_id, v.ox, v.oy, v.oz, f.id, fv.seq,
              (fv.x + v.ox - :ex) * :fx + (fv.y + v.oy - :ey) * :fy + (fv.z + v.oz - :ez) * :fz,
              (fv.x + v.ox - :ex) * :rx + (fv.y + v.oy - :ey) * :ry + (fv.z + v.oz - :ez) * :rz,
              (fv.x + v.ox - :ex) * :ux + (fv.y + v.oy - :ey) * :uy + (fv.z + v.oz - :ez) * :uz,
@@ -266,7 +267,7 @@ BEGIN
         FROM sel_faces v
         JOIN faces f ON f.id = v.face
         JOIN face_verts fv ON fv.face = f.id
-        INTO eid, fid, vseq, vf, vr, vu, s, t
+        INTO eid, ox, oy, oz, fid, vseq, vf, vr, vu, s, t
   DO
   BEGIN
     IF (fid <> cur OR eid <> curent OR vseq = 0) THEN

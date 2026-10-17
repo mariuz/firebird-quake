@@ -29,6 +29,7 @@
     "test:mod": "node scripts/mod-test.mjs",
     "test:console": "node scripts/console-test.mjs",
     "test:touch": "node scripts/touch-test.mjs",
+    "test:compare": "node scripts/compare-test.mjs",
     "test:image": "node scripts/image-test.mjs",
     "test:e1m8": "node scripts/e1m8-test.mjs",
     "test:e1m5": "node scripts/e1m5-test.mjs",

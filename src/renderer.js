@@ -13,6 +13,7 @@ const NO_OFFSET = [0, 0, 0];
 // R_TranslatePlayerSkin: a player skin in a client's colours (top * 16 + bottom). The palette's rows 1
 // (16..31, the shirt) and 6 (96..111, the pants) become the colours' rows; rows from 8 on run dark to light,
 // so they are taken backwards to keep the shading. Kept per skin and colours.
+const snap = (v) => Math.round(v * 1e6) / 1e6;
 const translated = new WeakMap();
 export function translateSkin(skin, colors) {
   let bySkin = translated.get(skin);
@@ -262,6 +263,12 @@ export class Renderer {
   drawFaces(rows, styles, time, entFrames) {
     let i = 0;
     const n = rows.length;
+    // FRAME_FACES' rows carry each brush model's origin after ent_id, for its faces' dynamic lights
+    // (drawFaceList fills entOrigin from FRAME_FACES_FAST's itself)
+    if (n && rows[0].length > 10) {
+      this.entOrigin.clear();
+      for (const r of rows) if (r[9] !== 0 && !this.entOrigin.has(r[9])) this.entOrigin.set(r[9], [r[10], r[11], r[12]]);
+    }
     const view = this.view;
     const near = 4;
     const poly = [];
@@ -277,20 +284,21 @@ export class Renderer {
       if (poly.length < 3) continue;
       const info = this.faceInfo.get(face);
       if (!info) continue;
-      // [sx, sy, z, s, t] per vertex
+      // [sx, sy, z, s, t] per vertex; the screen position rounded to a millionth of a pixel, so an edge that
+      // falls on a scanline's centre takes the same row whether SQL (a few 1e-7 off) or the painter projected it
       let verts;
-      if (!behind) verts = poly.map((p) => [p[5], p[6], p[2], p[7], p[8]]);
+      if (!behind) verts = poly.map((p) => [snap(p[5]), snap(p[6]), p[2], p[7], p[8]]);
       else {
         verts = [];
         const m = poly.length;
         for (let k = 0; k < m; k++) {
           const a = poly[k], b = poly[(k + 1) % m];
           const ain = a[2] >= near, bin = b[2] >= near;
-          if (ain) verts.push([a[5], a[6], a[2], a[7], a[8]]);
+          if (ain) verts.push([snap(a[5]), snap(a[6]), a[2], a[7], a[8]]);
           if (ain !== bin) {
             const f = (near - a[2]) / (b[2] - a[2]);
             const r = a[3] + (b[3] - a[3]) * f, u = a[4] + (b[4] - a[4]) * f;
-            verts.push([view.cx + (r * view.scale) / near, view.cy - (u * view.scale) / near, near, a[7] + (b[7] - a[7]) * f, a[8] + (b[8] - a[8]) * f]);
+            verts.push([snap(view.cx + (r * view.scale) / near), snap(view.cy - (u * view.scale) / near), near, a[7] + (b[7] - a[7]) * f, a[8] + (b[8] - a[8]) * f]);
           }
         }
         if (verts.length < 3) continue;
