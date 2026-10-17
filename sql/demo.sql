@@ -8,6 +8,11 @@
 -- seed (loadMap's seed option sets rng.next_seed) and feeds the rows back in; src/demos.js carries a
 -- demo to the browser's storage and back. A demo is one level: init_map stops a recording.
 --
+-- Recorded mid-level (Quake's record works at any moment, the server sending the whole state first), a
+-- demo starts from a save: demo_record saves the game into slot 13 (rng included, so the random choices
+-- go on as they would have) and from_save says so; the demo carries the save, and playback loads it
+-- onto the map before the first recorded call.
+--
 --   EXECUTE PROCEDURE demo_record;          -- right after the level is loaded, before its first tic
 --   ... SELECT * FROM quake_tic(...) ...
 --   EXECUTE PROCEDURE demo_stop;
@@ -21,14 +26,14 @@ DECLARE t INTEGER;
 BEGIN
   SELECT g.tic FROM game g WHERE g.id = 1 INTO t;
   IF (t IS NULL) THEN EXCEPTION save_error 'no level to record';
-  IF (t <> 0) THEN EXCEPTION save_error 'a demo starts with its level: record before the first tic';
   DELETE FROM demo_tics;
+  IF (t <> 0) THEN EXECUTE PROCEDURE save_game(13);         -- mid-level: from here (not dead, not in the intermission)
   UPDATE demo d SET d.map_name = (SELECT g.map_name FROM game g WHERE g.id = 1), d.skill = (SELECT g.skill FROM game g WHERE g.id = 1),
          d.qc_mode = (SELECT g.qc_mode FROM game g WHERE g.id = 1), d.seed = (SELECT r.level_seed FROM rng r WHERE r.id = 1),
          d.recording = 1, d.calls = 0,
          d.deathmatch = (SELECT g.deathmatch FROM game g WHERE g.id = 1), d.coop = (SELECT g.coop FROM game g WHERE g.id = 1),
          d.nbots = (SELECT g.maxclients - 1 FROM game g WHERE g.id = 1), d.fraglimit = (SELECT g.fraglimit FROM game g WHERE g.id = 1),
-         d.timelimit = (SELECT g.timelimit FROM game g WHERE g.id = 1)
+         d.timelimit = (SELECT g.timelimit FROM game g WHERE g.id = 1), d.from_save = IIF(:t <> 0, 1, 0)
    WHERE d.id = 1;
 END^
 

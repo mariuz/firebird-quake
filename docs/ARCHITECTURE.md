@@ -216,13 +216,15 @@ A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in Qu
   tics of fighting, in a fresh database and in one that has played other levels (row placement does
   not leak into the results), in the PSQL game and in QuakeC mode, interpreted or with every function
   compiled.
-- **Recording**: `demo_record` (only at tic 0) stores the level's map, skill, logic and `level_seed` in
-  the `demo` row and turns recording on; `quake_tic` and `qc_tic` first call `demo_note`, which then
+- **Recording**: `demo_record` stores the level's map, skill, logic and `level_seed` in the `demo` row
+  and turns recording on; after tic 0 it first saves the game into slot 13 and sets `from_save`, so a
+  demo can start at any moment, as Quake's `record` does (the save holds `rng`, so the random choices
+  go on as they would have; `exportDemo` adds the save to the demo, 55 KB in the PSQL game and 215 KB
+  in QuakeC mode for E1M1, and `importDemo` puts it back into slot 13); `quake_tic` and `qc_tic` first call `demo_note`, which then
   appends their nine arguments to `demo_tics`; `demo_stop`, or the next `init_map`, ends it.
 - **Playback** is the page's: `loadMap` with the demo's seed (and `qc_begin_map` for a QuakeC demo),
-  then `DemoPlayer.take(tics)` gives the loop the recorded calls that fill the frame's tics, in place
-  of the keyboard and mouse. The page's **Demo** buttons record (the current level again, as a new
-  game), stop, play, and save the demo as `<map>.dem.json`; the file picker plays one. The last demo is
+  or for a demo recorded mid-level the map and `load_game(13)` (after `qc_enter`), then `DemoPlayer.take(tics)` gives the loop the recorded calls that fill the frame's tics, in place
+  of the keyboard and mouse. The page's **Demo** buttons record (from this moment), stop, play, and save the demo as `<map>.dem.json`; the file picker plays one. The last demo is
   kept in IndexedDB beside the saves. `exportDemo`/`importDemo` write the doubles exactly, as the saves
   do.
 

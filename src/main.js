@@ -319,13 +319,16 @@ function flash(msg, isError = false) {
 // Record: the level again as a new game, then every quake_tic call's arguments; Play: the level with the
 // demo's seed, skill and logic, fed the recorded calls. The last demo is kept in the browser and can be
 // saved as a file.
+// cl_demo.c's record: from this moment (a demo recorded mid-level carries a save of it, sql/demo.sql)
 async function startRecording() {
   if (!map || demoPlayer) return;
-  await startMap(map.name, true);
-  await db.exec('EXECUTE PROCEDURE demo_record');
-  recording = true;
-  updateDemoButtons();
-  flash(`recording a demo of ${map.name}`);
+  await serial(async () => {
+    // (the engine runs calls in order: a tic sent before this is in the save, every one after is recorded)
+    try { await db.exec('EXECUTE PROCEDURE demo_record'); } catch (err) { flash(sqlMessage(err), true); return; }
+    recording = true;
+    updateDemoButtons();
+    flash(`recording a demo of ${map.name}`);
+  });
 }
 
 async function stopRecording() {
@@ -348,7 +351,7 @@ async function playDemo(d = demo) {
     if (d.nbots) { settings.bots = d.nbots; $('bots').value = String(d.nbots); }
     if (d.fraglimit) settings.fraglimit = d.fraglimit;
     settings.skill = d.skill; $('skill').value = String(d.skill); saveSettings();
-    await startMap(d.map, true, { seed: d.seed });
+    await startMap(d.map, true, d.save ? { save: d.save } : { seed: d.seed });   // recorded mid-level: from its save
     demoPlayer = new DemoPlayer(d);
     updateDemoButtons();
   } catch (err) {

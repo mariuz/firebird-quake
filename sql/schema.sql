@@ -539,7 +539,8 @@ CREATE TABLE demo (
   calls     INTEGER DEFAULT 0 NOT NULL,     -- demo_tics' rows
   -- the server's rules (qc_setup_server): the bots come from them
   deathmatch SMALLINT DEFAULT 0 NOT NULL, coop SMALLINT DEFAULT 0 NOT NULL, nbots SMALLINT DEFAULT 0 NOT NULL,
-  fraglimit INTEGER DEFAULT 0 NOT NULL, timelimit INTEGER DEFAULT 0 NOT NULL
+  fraglimit INTEGER DEFAULT 0 NOT NULL, timelimit INTEGER DEFAULT 0 NOT NULL,
+  from_save SMALLINT DEFAULT 0 NOT NULL     -- recorded mid-level: it starts from save slot 13, not the spawn
 );
 INSERT INTO demo (id) VALUES (1);
 CREATE TABLE demo_tics (

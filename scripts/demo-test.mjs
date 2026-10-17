@@ -1,7 +1,8 @@
 // demo-test.mjs – demos (sql/demo.sql, src/demos.js): a game of E1M1 recorded through quake_tic, with
 // monsters fighting and the player shooting, then played back from the demo in a fresh database and in
 // one that has played another level since; every tic of the playback must match the recording bit for
-// bit, and so must the entities at the end. Then the same in QuakeC mode.
+// bit, and so must the entities at the end. Then the same in QuakeC mode, and a demo recorded mid-level,
+// which starts from a save of that moment.
 //
 //   node scripts/demo-test.mjs
 //   QCJIT=all node scripts/demo-test.mjs     the QuakeC playback compiled, the recording interpreted
@@ -53,7 +54,11 @@ async function record(env, qc, calls) {
 async function play(env, demo) {
   await importDemo(env.db, demo);
   const d = JSON.parse(JSON.stringify(demo));           // as the page has it, through JSON
-  await startLevel(env, d.qc === 1, d.seed);
+  if (d.save) {                                         // recorded mid-level: the map, then the save it starts from
+    await loadMap(env.db, pak, env.res, d.map, { skill: d.skill });
+    if (d.qc === 1) await env.db.exec('EXECUTE PROCEDURE qc_enter');
+    await env.db.exec('EXECUTE PROCEDURE load_game(13)');
+  } else await startLevel(env, d.qc === 1, d.seed);
   const player = new DemoPlayer(d);
   const trace = [];
   for (let args; (args = player.next());) trace.push(line(await row(env.db, d.qc === 1, args)));
@@ -95,13 +100,31 @@ for (const [qc, calls] of [[false, 700], [true, 250]]) {
   await B.db.close();
 }
 
-// a demo starts with its level, and a new level stops a recording
+// recorded mid-level, a demo starts from a save of that moment (slot 13, the random generator in it) and
+// plays back from it the same, in both logics
+for (const qc of [false, true]) {
+  const mode = qc ? 'QuakeC mode' : 'the PSQL game';
+  const M = await fresh();
+  if (qc) { await loadMap(M.db, pak, M.res, 'e1m1'); await loadProgs(M.db, pak); }
+  await startLevel(M, qc, null);
+  for (let i = 0; i < 120; i++) await row(M.db, qc, input(i + 500));
+  await M.db.exec('EXECUTE PROCEDURE demo_record');
+  const trace = [];
+  for (let i = 0; i < 150; i++) trace.push(line(await row(M.db, qc, input(i))));
+  await M.db.exec('EXECUTE PROCEDURE demo_stop');
+  const demo = await exportDemo(M.db), ents = await entsOf(M.db);
+  await M.db.close();
+  assert(demo.save?.slot === 13 && demo.tics.length === 150 && JSON.stringify(demo).length < 3e6,
+    `${mode}: recorded 120 tics into the level, the demo carries the save it starts from (${(JSON.stringify(demo).length / 1024).toFixed(0)} KB)`);
+  const N = await fresh();
+  if (qc) { await loadMap(N.db, pak, N.res, 'e1m1'); await loadProgs(N.db, pak); }
+  const pn = await play(N, demo);
+  assert(first(trace, pn.trace) === -1 && pn.ents === ents, `${mode}: played back from that save in a fresh database, every tic and every entity match (diverged at ${first(trace, pn.trace)})`);
+  await N.db.close();
+}
+
+// a new level stops a recording
 const C = await fresh();
-await loadMap(C.db, pak, C.res, 'e1m1');
-await row(C.db, false, [1, 0, 0, 0, 0, 0, 0, 1, 0]);
-let refused = false;
-try { await C.db.exec('EXECUTE PROCEDURE demo_record'); } catch (e) { refused = e.message.includes('first tic'); }
-assert(refused, 'recording after the first tic is refused');
 await loadMap(C.db, pak, C.res, 'e1m1');
 await C.db.exec('EXECUTE PROCEDURE demo_record');
 await row(C.db, false, [1, 1, 0, 0, 0, 0, 0, 1, 0]);

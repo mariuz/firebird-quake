@@ -23,7 +23,8 @@ AS
 DECLARE qc SMALLINT; DECLARE dead SMALLINT; DECLARE inter SMALLINT; DECLARE ek SMALLINT;
 DECLARE kills INTEGER; DECLARE total INTEGER; DECLARE lvl VARCHAR(80); DECLARE mn VARCHAR(32);
 BEGIN
-  IF (slot IS NULL OR slot < 0 OR slot > 12) THEN EXCEPTION save_error 'a save slot is 0 to 11, or 12 (quick)';
+  -- (13 is the demo's: where a demo recorded mid-level starts, sql/demo.sql)
+  IF (slot IS NULL OR slot < 0 OR slot > 13) THEN EXCEPTION save_error 'a save slot is 0 to 11, or 12 (quick)';
   SELECT g.qc_mode, g.intermission, g.exit_kind, g.killed, g.total_monsters, COALESCE(g.level_msg, g.map_name), g.map_name
     FROM game g WHERE g.id = 1 INTO qc, inter, ek, kills, total, lvl, mn;
   IF (mn IS NULL) THEN EXCEPTION save_error 'no game to save';

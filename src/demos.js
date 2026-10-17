@@ -5,19 +5,21 @@
 // recorded arguments to the loop one quake_tic call at a time. Shared by the page and
 // scripts/demo-test.mjs.
 
-import { lit, execInserts } from './saves.js';
+import { lit, execInserts, exportSave, importSave } from './saves.js';
 
 export const DEMO_VERSION = 1;
 const COLS = ['tics', 'fwd', 'side', 'yaw_d', 'pitch_d', 'fire', 'jump', 'run', 'imp'];
 
 /** { version, map, skill, qc, seed, the server's rules (deathmatch, coop, nbots, fraglimit, timelimit),
- *    tics: [[tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp] …] }, or null. */
+ *    tics: [[tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp] …], and for a demo recorded mid-level
+ *    save: the game where it starts (src/saves.js's export of slot 13) }, or null. */
 export async function exportDemo(db) {
-  const d = (await db.query('SELECT map_name, skill, qc_mode, seed, deathmatch, coop, nbots, fraglimit, timelimit FROM demo WHERE id = 1', [], { rowMode: 'object' })).rows[0];
+  const d = (await db.query('SELECT map_name, skill, qc_mode, seed, deathmatch, coop, nbots, fraglimit, timelimit, from_save FROM demo WHERE id = 1', [], { rowMode: 'object' })).rows[0];
   if (!d?.MAP_NAME) return null;
   const { rows } = await db.query(`SELECT ${COLS.join(', ')} FROM demo_tics ORDER BY n`, [], { rowMode: 'array' });
   return { version: DEMO_VERSION, map: d.MAP_NAME, skill: d.SKILL, qc: d.QC_MODE, seed: Number(d.SEED),
-    deathmatch: d.DEATHMATCH, coop: d.COOP, nbots: d.NBOTS, fraglimit: d.FRAGLIMIT, timelimit: d.TIMELIMIT, tics: rows };
+    deathmatch: d.DEATHMATCH, coop: d.COOP, nbots: d.NBOTS, fraglimit: d.FRAGLIMIT, timelimit: d.TIMELIMIT, tics: rows,
+    ...(d.FROM_SAVE ? { save: await exportSave(db, 13) } : {}) };
 }
 
 /** A demo object back into the demo tables (not recording). */
@@ -26,6 +28,8 @@ export async function importDemo(db, demo) {
   await db.exec(`DELETE FROM demo_tics; UPDATE demo SET map_name = ${lit(demo.map)}, skill = ${lit(demo.skill)}, qc_mode = ${lit(demo.qc)}, seed = ${lit(demo.seed)}, recording = 0, calls = ${demo.tics.length},
     deathmatch = ${lit(demo.deathmatch ?? 0)}, coop = ${lit(demo.coop ?? 0)}, nbots = ${lit(demo.nbots ?? 0)}, fraglimit = ${lit(demo.fraglimit ?? 0)}, timelimit = ${lit(demo.timelimit ?? 0)} WHERE id = 1`);
   await execInserts(db, demo.tics.map((r, i) => `INSERT INTO demo_tics (n, ${COLS.join(', ')}) VALUES (${i + 1}, ${r.map(lit).join(', ')});`));
+  await db.exec(`UPDATE demo SET from_save = ${demo.save ? 1 : 0} WHERE id = 1`);
+  if (demo.save) await importSave(db, demo.save, 13);        // load_game(13) puts it back once the map is loaded
 }
 
 /** The recorded calls in order: next() gives a call's nine arguments, or null at the end. */
