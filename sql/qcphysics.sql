@@ -206,6 +206,8 @@ DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PREC
 DECLARE speed DOUBLE PRECISION; DECLARE newspeed DOUBLE PRECISION; DECLARE control DOUBLE PRECISION; DECLARE friction DOUBLE PRECISION;
 DECLARE cur DOUBLE PRECISION; DECLARE addspeed DOUBLE PRECISION; DECLARE accelspeed DOUBLE PRECISION; DECLARE wishspd DOUBLE PRECISION;
 DECLARE tf DOUBLE PRECISION; DECLARE va INTEGER;
+DECLARE broll DOUBLE PRECISION; DECLARE side DOUBLE PRECISION; DECLARE bp DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE br DOUBLE PRECISION;
+DECLARE ftt INTEGER; DECLARE fmd INTEGER;
 BEGIN
   IF (qc_client_active(c) = 0 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   -- SV_ReadClientMove: the buttons, the impulse, the view angles
@@ -214,7 +216,8 @@ BEGIN
   IF (impulse <> 0) THEN EXECUTE PROCEDURE qc_sf(c, qc_fdef('impulse'), impulse);
   va = (SELECT v.f_v_angle FROM qc_vm v WHERE v.id = 1);
   EXECUTE PROCEDURE qc_sf(c, va, pitch); EXECUTE PROCEDURE qc_sf(c, va + 1, yaw); EXECUTE PROCEDURE qc_sf(c, va + 2, 0);
-  SELECT d.movetype, d.flags, d.waterlevel, d.x, d.y, d.z, d.minz, d.vx, d.vy, d.vz FROM ents d WHERE d.id = :c INTO mt, fl, wl, px, py, pz, mnz, vx, vy, vz;
+  SELECT d.movetype, d.flags, d.waterlevel, d.x, d.y, d.z, d.minz, d.vx, d.vy, d.vz, d.pitch, d.yaw, d.roll FROM ents d WHERE d.id = :c
+    INTO mt, fl, wl, px, py, pz, mnz, vx, vy, vz, bp, by_, br;
   IF (mt = 0) THEN EXIT;
   onground = IIF(BIN_AND(fl, 512) <> 0, 1, 0);
   -- DropPunchAngle
@@ -224,12 +227,32 @@ BEGIN
   IF (len > 0) THEN
   BEGIN
     len2 = MAXVALUE(0, len - 10 * dt);
-    EXECUTE PROCEDURE qc_sf(c, fpa, a0 * len2 / len); EXECUTE PROCEDURE qc_sf(c, fpa + 1, a1 * len2 / len); EXECUTE PROCEDURE qc_sf(c, fpa + 2, a2 * len2 / len);
+    a0 = a0 * len2 / len; a1 = a1 * len2 / len; a2 = a2 * len2 / len;
+    EXECUTE PROCEDURE qc_sf(c, fpa, a0); EXECUTE PROCEDURE qc_sf(c, fpa + 1, a1); EXECUTE PROCEDURE qc_sf(c, fpa + 2, a2);
   END
   IF (qc_f(c, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) <= 0) THEN EXIT;
-  -- the body turns with the view; the model's pitch is a third of it
-  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0
-    WHERE d.id = :c AND (d.pitch IS DISTINCT FROM -:pitch / 3 OR d.yaw IS DISTINCT FROM :yaw OR d.roll IS DISTINCT FROM 0);
+  -- the body turns with the view and its punch (v_angle + punchangle), the model's pitch a third of it, and it
+  -- leans into a strafe: V_CalcRoll(angles, velocity) * 4, cl_rollangle 2 at cl_rollspeed 200 and over
+  side = vx * (-SIN(br * 0.0174532925e0) * SIN(bp * 0.0174532925e0) * COS(by_ * 0.0174532925e0) + COS(br * 0.0174532925e0) * SIN(by_ * 0.0174532925e0))
+       + vy * (-SIN(br * 0.0174532925e0) * SIN(bp * 0.0174532925e0) * SIN(by_ * 0.0174532925e0) - COS(br * 0.0174532925e0) * COS(by_ * 0.0174532925e0))
+       + vz * (-SIN(br * 0.0174532925e0) * COS(bp * 0.0174532925e0));
+  broll = IIF(side < 0, -1, 1) * IIF(ABS(side) < 200, ABS(side) * 2 / 200, 2) * 4;
+  bp = -(pitch + a0) / 3; by_ = yaw + a1;
+  UPDATE ents d SET d.pitch = :bp, d.yaw = :by_, d.roll = :broll
+    WHERE d.id = :c AND (d.pitch IS DISTINCT FROM :bp OR d.yaw IS DISTINCT FROM :by_ OR d.roll IS DISTINCT FROM :broll);
+  -- SV_WaterJump: out of the water over a ledge, the push the progs gave (movedir) holds until teleport_time
+  IF (BIN_AND(fl, 2048) <> 0) THEN
+  BEGIN
+    ftt = (SELECT v.f_teleport_time FROM qc_vm v WHERE v.id = 1); fmd = qc_fdef('movedir');
+    IF (t > qc_f(c, ftt) OR wl = 0) THEN
+    BEGIN
+      UPDATE ents d SET d.flags = BIN_AND(d.flags, BIN_NOT(2048)) WHERE d.id = :c;
+      EXECUTE PROCEDURE qc_sf(c, ftt, 0);
+    END
+    vx = qc_f(c, fmd); vy = qc_f(c, fmd + 1);
+    UPDATE ents d SET d.vx = :vx, d.vy = :vy WHERE d.id = :c AND (d.vx IS DISTINCT FROM :vx OR d.vy IS DISTINCT FROM :vy);
+    EXIT;
+  END
   IF (wl >= 2 AND mt <> 8) THEN
   BEGIN
     -- SV_WaterMove: the full view direction, drifting down without input

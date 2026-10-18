@@ -258,6 +258,31 @@ const faces = (await q1('SELECT COUNT(*) n FROM frame_faces_fast')).N;
 const ents = (await db.query('SELECT * FROM frame_ents', [], { rowMode: 'array' })).rows;
 const soldier = await modelId('progs/soldier.mdl');
 assert(faces > 20 && ents.some((r) => r[0] === seen && r[1] === soldier), `frame_faces_fast draws ${faces} faces from the QuakeC player's eye and frame_ents lists the grunt (edict ${seen}) with soldier.mdl among ${ents.length} models`);
+// ── SV_ClientThink's details ─────────────────────────────────────────────
+// the body leans into a strafe, V_CalcRoll * 4: the velocity along the body's right at the start of the think,
+// 8 degrees at 200 units/s and over, positive to the right (the velocity is set: this spot is too cramped to run)
+const rightOf = (yaw) => [Math.sin(yaw * Math.PI / 180), -Math.cos(yaw * Math.PI / 180)];
+const [rx, ry] = rightOf((await ent(1)).YAW);
+await db.exec(`UPDATE ents SET vx = ${rx * 300}, vy = ${ry * 300}, vz = 0, pitch = 0, roll = 0 WHERE id = 1`);
+await frame({ s: 350 });
+const lean = (await ent(1)).ROLL;
+await db.exec(`UPDATE ents SET vx = ${-rx * 100}, vy = ${-ry * 100}, vz = 0, pitch = 0, roll = 0 WHERE id = 1`);
+await frame({ s: -350 });
+const leanLeft = (await ent(1)).ROLL;
+await db.exec('UPDATE ents SET vx = 0, vy = 0, vz = 0 WHERE id = 1');
+await frame();
+const upright = (await ent(1)).ROLL;
+assert(Math.abs(lean - 8) < 1e-6 && Math.abs(leanLeft + 4) < 1e-6 && Math.abs(upright) < 1e-6,
+  `the body leans into a strafe as V_CalcRoll has it: 8° right at 300 units/s, -4° left at 100 (${lean.toFixed(2)}°, ${leanLeft.toFixed(2)}°), upright standing (${upright.toFixed(2)}°)`);
+// SV_WaterJump: while FL_WATERJUMP holds, the push the progs put in movedir is the velocity, until teleport_time
+// or out of the water; on dry land the flag goes at once, after that frame's push
+await db.exec('UPDATE ents SET flags = BIN_OR(flags, 2048), vx = 0, vy = 0 WHERE id = 1');
+await setf(1, 'movedir', 37, 0); await setf(1, 'movedir', -21, 1); await setf(1, 'teleport_time', t + 2);
+const wj0 = (await q1('SELECT vx, vy FROM ents WHERE id = 1'));
+await frame();
+const wj = await ent(1);
+assert((wj.FLAGS & 2048) === 0 && (await fld(1, 'teleport_time')) === 0 && Math.abs(wj.VX - 37) < 1e-6 && Math.abs(wj.VY + 21) < 1e-6 && wj0.VX === 0,
+  `a water jump on dry land: that frame's velocity is movedir (${wj.VX.toFixed(1)}, ${wj.VY.toFixed(1)}), then FL_WATERJUMP and teleport_time are cleared`);
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);
