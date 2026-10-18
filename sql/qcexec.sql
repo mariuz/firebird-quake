@@ -60,12 +60,13 @@ BEGIN
     ELSE IF (k = 6) THEN EXECUTE PROCEDURE qc_inv6(depth, fnum, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17) RETURNING_VALUES x, va, vb;
     ELSE IF (k = 7) THEN EXECUTE PROCEDURE qc_inv7(depth, fnum, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20) RETURNING_VALUES x, va, vb;
     ELSE EXECUTE PROCEDURE qc_inv8(depth, fnum, p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23) RETURNING_VALUES x, va, vb;
-    UPDATE qc_globals g SET g.v = COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0) WHERE g.ofs BETWEEN 1 AND 3;
+    UPDATE qc_globals g SET g.v = COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0) WHERE g.ofs BETWEEN 1 AND 3
+      AND g.v IS DISTINCT FROM COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0);   -- (only what changes)
     EXIT;
   END
   IF (first < 0) THEN                               -- a builtin
   BEGIN
-    IF (first IN (-32, -67)) THEN UPDATE qc_vm v SET v.depth = :depth WHERE v.id = 1;
+    IF (first IN (-32, -67)) THEN UPDATE qc_vm v SET v.depth = :depth WHERE v.id = 1 AND v.depth IS DISTINCT FROM :depth;
     EXECUTE PROCEDURE qc_builtin(-first, fnum);
     EXIT;
   END
@@ -108,7 +109,8 @@ BEGIN
     BEGIN
       SELECT MAX(IIF(r.ofs = :a, r.v, NULL)), MAX(IIF(r.ofs = :a + 1, r.v, NULL)), MAX(IIF(r.ofs = :a + 2, r.v, NULL))
         FROM qc_globals r WHERE r.ofs BETWEEN :a AND :a + 2 INTO x, va, vb;    -- read all three first: the source may overlap 1..3
-      UPDATE qc_globals g SET g.v = COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0) WHERE g.ofs BETWEEN 1 AND 3;
+      UPDATE qc_globals g SET g.v = COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0) WHERE g.ofs BETWEEN 1 AND 3
+      AND g.v IS DISTINCT FROM COALESCE(CASE g.ofs WHEN 1 THEN :x WHEN 2 THEN :va ELSE :vb END, 0);   -- (only what changes)
       LEAVE;
     END
     ELSE IF (op = 6) THEN UPDATE qc_globals g SET g.v = :va + :vb WHERE g.ofs = :c;                                            -- OP_ADD_F

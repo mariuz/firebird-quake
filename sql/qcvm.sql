@@ -157,7 +157,7 @@ END^
 CREATE OR ALTER PROCEDURE qc_depth (d INTEGER)
 AS
 BEGIN
-  UPDATE qc_vm v SET v.depth = :d WHERE v.id = 1;
+  UPDATE qc_vm v SET v.depth = :d WHERE v.id = 1 AND v.depth IS DISTINCT FROM :d;
 END^
 
 -- OP_STATE: self's nextthink to time + 0.1, its frame and think
