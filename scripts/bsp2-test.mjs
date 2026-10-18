@@ -115,7 +115,10 @@ async function play(name) {
     const r = (await db.query('SELECT * FROM quake_tic(?,?,?,?,?,?,?,?,?)', input(i))).rows[0];
     trace.push([r.PX, r.PY, r.PZ, r.HEALTH, r.KILLED, r.LEAF].join());
   }
-  return { tables, trace, faces: await qa('SELECT * FROM frame_faces_fast') };
+  // the faces as a set: the query has no ORDER BY, and the order follows where rows were stored (three
+  // maps loaded into one database), which the depth-buffered painter does not depend on
+  const faces = JSON.stringify(JSON.parse(await qa('SELECT * FROM frame_faces_fast')).map(String).sort());
+  return { tables, trace, faces };
 }
 const base = await play('e1m1');
 for (const k of ['bsp2', '2psb']) {

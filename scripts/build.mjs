@@ -4,6 +4,8 @@
 //   node scripts/build.mjs --serve    build, then serve dist/ on :8080 WITHOUT
 //                                     COOP/COEP headers – exactly like GitHub
 //                                     Pages – so the service worker is tested.
+//   FB_THREADS=1                      ship the threaded engine (needs cross-origin isolation)
+//   NOMIN=1                           unminified, to read a stack trace from the page
 //
 // Everything is referenced relatively: a project site lives under /<repo>/.
 
@@ -23,7 +25,12 @@ const PKG = path.join(root, 'node_modules/firebird-wasm/dist');
 
 // wasm-loader.js has a Node-only require() of the Emscripten glue; browsers
 // take the globalThis path, so keep the glue out of the bundle.
-const EXTERNAL = ['*firebird-embedded.js'];
+const EXTERNAL = ['*firebird-embedded.js', '*firebird-embedded-st.js'];
+// The engine build the page runs: the one without threads (firebird-embedded-st), which needs no
+// SharedArrayBuffer, so no cross-origin isolation and no service worker reload, and costs less a call;
+// FB_THREADS=1 ships the threaded one instead (it needs COOP/COEP, and has statement timeouts).
+const THREADS = process.env.FB_THREADS === '1';
+const GLUE = THREADS ? 'firebird-embedded' : 'firebird-embedded-st';
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
@@ -38,7 +45,7 @@ if (process.env.SCHEMA_IMAGE !== '0') {
   const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
   const engine = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/firebird-wasm/package.json'), 'utf8')).version;
   const hash = crypto.createHash('sha256').update(engine).update(loaderSql()).update(SQL_FILES.map((n) => sql[n].replace(/\r\n/g, '\n')).join('\n')).digest('hex').slice(0, 12);
-  const db = new FirebirdBrowser(`memory://schema-${hash}`, { transport: new DirectTransport() });
+  const db = new FirebirdBrowser(`memory://schema-${hash}`, { transport: new DirectTransport({ threads: THREADS }) });
   await createSchema(db, sql);
   const bytes = await db.dumpDataDir();
   await db.close();
@@ -54,10 +61,10 @@ await build({
   platform: 'browser',
   target: 'es2020',
   sourcemap: true,
-  minify: true,
+  minify: process.env.NOMIN !== "1",
   loader: { '.sql': 'text' },
   external: EXTERNAL,
-  define: { __SCHEMA_IMAGE__: JSON.stringify(schemaImage) },
+  define: { __SCHEMA_IMAGE__: JSON.stringify(schemaImage), __FB_THREADS__: JSON.stringify(THREADS) },
   logLevel: 'warning',
 });
 
@@ -76,17 +83,22 @@ const worker = await build({
 });
 fs.writeFileSync(
   path.join(OUT, 'firebird-engine-worker.js'),
-  "importScripts(new URL('./firebird-embedded.js', self.location.href).href);\n" +
+  `importScripts(new URL('./${GLUE}.js', self.location.href).href);\n` +
     'self.FIREBIRD_WORKER_OPTIONS = { locateFile: (f) => new URL(f, self.location.href).href };\n' +
     worker.outputFiles[0].text,
 );
 
-for (const f of ['firebird-embedded.js', 'firebird-embedded.wasm']) {
+for (const f of [`${GLUE}.js`, `${GLUE}.wasm`]) {
   fs.copyFileSync(path.join(PKG, 'wasm', f), path.join(OUT, f));
 }
 
 // public/ verbatim (index.html, css, service worker, pak/ if present)
 fs.cpSync(path.join(root, 'public'), OUT, { recursive: true });
+// the threaded engine needs cross-origin isolation: the service worker reloads once to give it
+if (THREADS) {
+  const index = path.join(OUT, 'index.html');
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace('<script src="./coi-serviceworker.js"></script>', '<script src="./coi-serviceworker.js" data-coi="1"></script>'));
+}
 // GitHub Pages runs Jekyll by default, which drops _underscored paths.
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
 

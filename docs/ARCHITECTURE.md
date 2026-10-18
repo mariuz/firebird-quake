@@ -29,9 +29,15 @@ console on the page can change anything while playing.
 
 `src/main.js` → `openDatabase()` creates a `FirebirdBrowser` (package `firebird-wasm`) backed by a
 Worker running the engine; the Node scripts use `DirectTransport` instead, same API, no Worker. The
-engine needs `SharedArrayBuffer`, so the page must be cross-origin isolated: the dev server sends the
-COOP/COEP headers with `--coi`, GitHub Pages cannot, so `public/coi-serviceworker.js` installs a
-service worker that re-issues every response with the headers after one reload.
+Worker loads `firebird-embedded-st`, the engine built without threads (firebird-wasm 0.7): it needs no
+`SharedArrayBuffer`, so no cross-origin isolation, and a call costs less (a trivial query 17 µs from
+Node against 45, the schema built in 2.3 s against 3.2 to 4.9, all of `progs.dat` compiled in 11.5 s
+against 15); it gives up statement timeouts, which the game does not use. The game's own work, a tic
+or the frame queries, takes the same in either build. `FB_THREADS=1` makes `scripts/build.mjs` ship the
+threaded build, which needs the isolation: the dev server sends the COOP/COEP headers with `--coi`,
+GitHub Pages cannot, so `public/coi-serviceworker.js` re-issues every response with them after one
+reload (the build marks its script tag `data-coi="1"`; without the mark the worker registers only to
+revalidate the site's files, and nothing reloads).
 
 `createSchema(db, sql)` in `src/loader.js` runs the SQL files in order, `SQL_FILES = schema,
 physics, game, movers, triggers, items, combat, spawn, weapons, monsters, render, qcvm, qcbuiltins, qcexec, qcserver, qcphysics, qcpage, bots, host, save, demo`, splitting each on `SET TERM`; the generated

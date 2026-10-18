@@ -41,7 +41,7 @@ npm run test:qclq              # LibreQuake's progs.dat in QuakeC mode (FTEQCC's
 npm run bench:qc               # the QuakeC VM: µs per statement, per call, ms per server frame asleep and awake
 NODE_USE_ENV_PROXY=1 npm run perf   # every bench against the deployed perf-history.json: a table, warnings, dist/perf-history.json
 QCJIT=all npm run test:qcai    # any QuakeC test, or the bench, with every function compiled first
-npm run serve                  # http://localhost:8080/ (add --coi for browsers without service workers; SCHEMA_IMAGE=0 skips the schema image)
+npm run serve                  # http://localhost:8080/ (SCHEMA_IMAGE=0 skips the schema image; FB_THREADS=1 the threaded engine, which needs --coi or the service worker's reload)
 node scripts/screenshot.mjs <map> <prefix> --at=x,y,z,yaw --sql="…" --tics=N --single --fast   # a posed frame
 node scripts/screenshot.mjs <map> <prefix> --gallery --fast                                     # a view per item spot
 ```

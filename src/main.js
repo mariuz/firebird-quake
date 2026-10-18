@@ -830,13 +830,15 @@ async function cachedBuffer(rel, validator) {
   }
   return buf;
 }
+const FB_THREADS = __FB_THREADS__;      // the engine build (scripts/build.mjs): threaded only with FB_THREADS=1
 async function openDatabase() {
-  if (!window.crossOriginIsolated && window.isSecureContext && 'serviceWorker' in navigator &&
+  // the build without threads needs no SharedArrayBuffer, so no cross-origin isolation; the threaded one does
+  if (FB_THREADS && !window.crossOriginIsolated && window.isSecureContext && 'serviceWorker' in navigator &&
       Number(sessionStorage.getItem('firebird-quake:coi-reloads') || '0') < 2) {
     setStatus('Enabling cross-origin isolation for Firebird WASM (one-time reload)…');
     return new Promise(() => {});
   }
-  if (!window.crossOriginIsolated) {
+  if (FB_THREADS && !window.crossOriginIsolated) {
     throw new Error('This page is not cross-origin isolated, so Firebird WASM cannot start. Reload once (the service worker enables it), and use HTTPS or localhost.');
   }
   setStatus('Starting Firebird 6 (WebAssembly)…');

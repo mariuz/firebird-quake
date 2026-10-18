@@ -1,11 +1,14 @@
 /*
  * coi-serviceworker.js – cross-origin isolation on a static host.
  *
- * Firebird WASM uses pthreads → SharedArrayBuffer → the page must be
- * cross-origin isolated (COOP + COEP headers). GitHub Pages cannot send
- * custom headers, so this service worker re-issues every response with them.
- * A service worker cannot control the load that registered it, so the first
- * visit reloads once.
+ * The threaded Firebird WASM build uses pthreads → SharedArrayBuffer → the
+ * page must be cross-origin isolated (COOP + COEP headers). GitHub Pages
+ * cannot send custom headers, so this service worker re-issues every response
+ * with them. A service worker cannot control the load that registered it, so
+ * with that build (the script tag marked data-coi="1" by scripts/build.mjs)
+ * the first visit reloads once. The build without threads, the default,
+ * needs no isolation: the worker is registered all the same, for the
+ * revalidation below, and nothing reloads.
  *
  * Same technique as electric-firebird's demo/public/coi-serviceworker.js
  * (Apache-2.0) and gzuidhof/coi-serviceworker (MIT).
@@ -38,6 +41,10 @@ if (typeof window === 'undefined') {
 } else {
   (() => {
     if (window.crossOriginIsolated || !window.isSecureContext || !('serviceWorker' in navigator)) return;
+    if (document.currentScript.dataset.coi !== '1') {
+      navigator.serviceWorker.register(document.currentScript.src).catch(() => {});
+      return;
+    }
     const KEY = 'firebird-quake:coi-reloads';
     const tries = Number(sessionStorage.getItem(KEY) || '0');
     if (tries >= 2) return; // give up rather than reload forever; the page explains

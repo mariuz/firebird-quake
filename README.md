@@ -83,9 +83,10 @@ npm run fetch-mods   # FrikBot X into public/pak/mods/ (the site serves it); two
 npm run test:mod     # the three mods' progs.dat files in QuakeC mode, FrikBot X's bots in a deathmatch
 ```
 
-Firebird WASM uses pthreads, so the page must be cross-origin isolated. The dev server sends the
-COOP/COEP headers with `--coi`; a static host like GitHub Pages cannot, so `coi-serviceworker.js`
-re-issues responses with the headers after a one-time reload. The build runs the schema once and ships the database as an image (`schema-<hash>.fdb.gz`, 0.7 MB) that the page opens instead of compiling the PSQL, and the page keeps the paks in the browser's cache after the first visit, so a revisit is playing in about three seconds. Node 20 or later is required for the
+The page runs Firebird WASM's build without threads, which needs no `SharedArrayBuffer`, so no
+cross-origin isolation and no reload on the first visit. `FB_THREADS=1 npm run build` ships the threaded
+build instead, which does: the dev server sends the COOP/COEP headers with `--coi`, and on a static host
+like GitHub Pages `coi-serviceworker.js` re-issues responses with them after a one-time reload. The build runs the schema once and ships the database as an image (`schema-<hash>.fdb.gz`, 0.7 MB) that the page opens instead of compiling the PSQL, and the page keeps the paks in the browser's cache after the first visit, so a revisit is playing in about three seconds. Node 20 or later is required for the
 scripts.
 
 ### Playing
