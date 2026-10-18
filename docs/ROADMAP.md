@@ -140,6 +140,13 @@ difference fixed with a test that fails without it:
   The body's roll was always 0 where Quake leans the model into a strafe (`V_CalcRoll(angles, velocity) * 4`:
   8° at 200 units/s and over), so the bots now lean as players did; and its pitch and yaw take the punch
   (`v_angle + punchangle`).
+- ~~**`SV_Physics_Client`**~~ done (`npm run test:qcplay`): there was no `SV_CheckStuck`, so a walking client left
+  inside something solid (a `setorigin`, a spawn) stayed there; now it goes back to its last free place
+  (`oldorigin`) or to the first free spot within a unit sideways and 17 up. The check is skipped while the
+  client is where its last move left it (`oldorigin` is stored after `walk_move`, whose traces only end in
+  room), which is what kept it from costing 2 ms a frame. And a noclipping client touched no triggers, where
+  `SV_LinkEdict(ent, true)` touches them for every movetype (only `SOLID_NOT` skips): noclip now picks up
+  items and walks into teleporters and level exits as in Quake.
 
 ## Performance
 

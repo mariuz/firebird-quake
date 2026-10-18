@@ -333,10 +333,62 @@ END^
 
 -- SV_Physics_Client: PlayerPreThink, the think, gravity unless swimming or water-jumping, the walk with
 -- its step, the triggers touched, PlayerPostThink
+-- SV_CheckStuck: a walking client not in anything solid has its place kept in oldorigin; one that is goes
+-- back there, or else to the first free spot within a unit sideways and 17 up, or stays where it is.
+-- free = 1 when it was found free (or put somewhere free). A client still where its last move left it
+-- (oldorigin, stored after walk_move) is not tested again: a move only ends where its traces found room,
+-- and that test was most of the client's physics (250 µs of a box trace)
+CREATE OR ALTER PROCEDURE qc_check_stuck (c INTEGER) RETURNS (free SMALLINT)
+AS
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION; DECLARE fo INTEGER;
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
+DECLARE i INTEGER; DECLARE j INTEGER; DECLARE k INTEGER;
+BEGIN
+  free = 1;
+  SELECT d.x, d.y, d.z FROM ents d WHERE d.id = :c INTO ox, oy, oz;
+  fo = qc_fdef('oldorigin');
+  px = qc_f(c, fo); py = qc_f(c, fo + 1); pz = qc_f(c, fo + 2);
+  IF (px = ox AND py = oy AND pz = oz) THEN EXIT;
+  IF (test_position(c, ox, oy, oz) = 0) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_sf(c, fo, ox); EXECUTE PROCEDURE qc_sf(c, fo + 1, oy); EXECUTE PROCEDURE qc_sf(c, fo + 2, oz);
+    EXIT;
+  END
+  IF (test_position(c, px, py, pz) = 0) THEN
+  BEGIN
+    UPDATE ents d SET d.x = :px, d.y = :py, d.z = :pz WHERE d.id = :c;
+    EXECUTE PROCEDURE link_ent(c);
+    EXIT;
+  END
+  k = 0;
+  WHILE (k < 18) DO
+  BEGIN
+    i = -1;
+    WHILE (i <= 1) DO
+    BEGIN
+      j = -1;
+      WHILE (j <= 1) DO
+      BEGIN
+        IF (test_position(c, ox + i, oy + j, oz + k) = 0) THEN
+        BEGIN
+          UPDATE ents d SET d.x = :ox + :i, d.y = :oy + :j, d.z = :oz + :k WHERE d.id = :c;
+          EXECUTE PROCEDURE link_ent(c);
+          EXIT;
+        END
+        j = j + 1;
+      END
+      i = i + 1;
+    END
+    k = k + 1;
+  END
+  free = 0;                                        -- player is stuck
+END^
+
 CREATE OR ALTER PROCEDURE qc_physics_client (c INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
 AS
 DECLARE f INTEGER; DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE alive SMALLINT; DECLARE wl SMALLINT; DECLARE wt INTEGER;
 DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
+DECLARE free SMALLINT; DECLARE fo INTEGER; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
 BEGIN
   IF (qc_client_active(c) = 0 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
@@ -351,7 +403,15 @@ BEGIN
     EXECUTE PROCEDURE check_water(c) RETURNING_VALUES wl, wt;            -- (which stores them in ents)
     SELECT d.flags FROM ents d WHERE d.id = :c INTO fl;
     IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(c, dt);
+    EXECUTE PROCEDURE qc_check_stuck(c) RETURNING_VALUES free;
     EXECUTE PROCEDURE walk_move(c, dt);
+    -- where a move from a free place ends is free: kept, so the next frame's check need not test it
+    IF (free = 1 AND EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN
+    BEGIN
+      fo = qc_fdef('oldorigin');
+      SELECT d.x, d.y, d.z FROM ents d WHERE d.id = :c INTO ox, oy, oz;
+      EXECUTE PROCEDURE qc_sf(c, fo, ox); EXECUTE PROCEDURE qc_sf(c, fo + 1, oy); EXECUTE PROCEDURE qc_sf(c, fo + 2, oz);
+    END
   END
   ELSE IF (mt IN (6, 10)) THEN
   BEGIN
@@ -371,7 +431,7 @@ BEGIN
   ELSE EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
   IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   EXECUTE PROCEDURE link_ent(c);
-  IF (mt <> 8) THEN EXECUTE PROCEDURE qc_touch_triggers(c);
+  EXECUTE PROCEDURE qc_touch_triggers(c);          -- SV_LinkEdict(ent, true): noclip too (not SOLID_NOT: it checks)
   EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, c); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('PlayerPostThink'); IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
 END^

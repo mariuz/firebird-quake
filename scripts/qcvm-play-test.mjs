@@ -283,6 +283,27 @@ await frame();
 const wj = await ent(1);
 assert((wj.FLAGS & 2048) === 0 && (await fld(1, 'teleport_time')) === 0 && Math.abs(wj.VX - 37) < 1e-6 && Math.abs(wj.VY + 21) < 1e-6 && wj0.VX === 0,
   `a water jump on dry land: that frame's velocity is movedir (${wj.VX.toFixed(1)}, ${wj.VY.toFixed(1)}), then FL_WATERJUMP and teleport_time are cleared`);
+// SV_CheckStuck: a walking client inside something solid goes back to its last free place (oldorigin)
+await db.exec('UPDATE ents SET vx = 0, vy = 0, vz = 0 WHERE id = 1');
+await frame();
+const free = await ent(1);
+const kept = [await fld(1, 'oldorigin', 0), await fld(1, 'oldorigin', 1), await fld(1, 'oldorigin', 2)];
+let wall = null;
+for (const [dx, dy] of [[64, 0], [-64, 0], [0, 64], [0, -64], [128, 0], [-128, 0], [0, 128], [0, -128]]) {
+  if ((await q1(`SELECT test_position(1, ${free.X + dx}, ${free.Y + dy}, ${free.Z}) s FROM rdb$database`)).S === 1) { wall = [free.X + dx, free.Y + dy, free.Z]; break; }
+}
+await db.exec(`UPDATE ents SET x = ${wall[0]}, y = ${wall[1]}, z = ${wall[2]}, vx = 0, vy = 0, vz = 0 WHERE id = 1`);
+await frame();
+const back = await ent(1);
+assert(kept.every((v, k) => Math.abs(v - [free.X, free.Y, free.Z][k]) < 1e-6) && Math.hypot(back.X - free.X, back.Y - free.Y) < 1 && Math.abs(back.Z - free.Z) < 2,
+  `SV_CheckStuck: oldorigin keeps the free place, and a client put inside a wall is back there the next frame (${back.X.toFixed(0)}, ${back.Y.toFixed(0)})`);
+// noclip still touches triggers (SV_LinkEdict(ent, true) for every movetype): an item is picked up
+const item = (await qa("SELECT e.id, e.x, e.y, e.z FROM ents e WHERE e.solid = 1 AND BIN_AND(e.flags, 256) <> 0 ORDER BY e.id")).at(-1);
+await db.exec(`UPDATE ents SET movetype = 8, x = ${item.X}, y = ${item.Y}, z = ${item.Z + 24}, vx = 0, vy = 0, vz = 0 WHERE id = 1`);
+await frame();
+const picked = await q1(`SELECT solid, model_id FROM ents WHERE id = ${item.ID}`);
+await db.exec('UPDATE ents SET movetype = 3 WHERE id = 1');
+assert(!picked || picked.SOLID === 0 || picked.MODEL_ID === null, `noclip touches triggers too: the item under the client (edict ${item.ID}) is picked up`);
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);
