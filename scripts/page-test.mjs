@@ -45,19 +45,24 @@ page.on('console', (m) => {
   if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errors.push(m.text().split('\n')[0]);
 });
 
-// the stats line (src/main.js): "<fps> fps, <tics> tics/s · <quake_tic|qc_tic (…)> …", until tics run
+// the stats line (src/main.js): "<fps> fps, <tics> tics/s · <quake_tic|qc_tic (…)> …", until tics run, or
+// until the status line shows an error (boot() and loadLevel catch theirs and show them there, so a failed
+// load is no page error and would otherwise only show as the timeout)
 async function running(label, logic) {
   try {
     await page.waitForFunction((re) => {
+      if (document.getElementById('status')?.classList.contains('error')) return true;
       const m = (document.getElementById('stats')?.textContent ?? '').match(/([\d.]+) tics\/s · (\S+)/);
       return m && Number(m[1]) >= 5 && new RegExp(re).test(m[2]);
     }, logic, { timeout: 180000, polling: 250 });
   } catch { /* reported below */ }
   const stats = (await page.textContent('#stats').catch(() => '')).trim();
   const status = (await page.textContent('#status').catch(() => '')).trim();
+  const statusError = await page.evaluate(() => document.getElementById('status')?.classList.contains('error')).catch(() => false);
   const m = stats.match(/([\d.]+) tics\/s · (\S+)/);
-  assert(m && Number(m[1]) >= 5 && new RegExp(logic).test(m[2]) && errors.length === 0,
-    `${label}: the game runs (${stats.split(' · ').slice(0, 2).join(' · ') || `status: ${status || 'nothing'}`})${errors.length ? `; errors: ${errors.join(' | ')}` : ''}`);
+  assert(!statusError && m && Number(m[1]) >= 5 && new RegExp(logic).test(m[2]) && errors.length === 0,
+    `${label}: the game runs (${statusError ? `the page shows an error: ${status}` : stats.split(' · ').slice(0, 2).join(' · ') || `status: ${status || 'nothing'}`})${errors.length ? `; errors: ${errors.join(' | ')}` : ''}`);
+  return !statusError && m;
 }
 
 await page.goto(base);
@@ -68,7 +73,11 @@ assert(!(await page.evaluate(() => crossOriginIsolated)), 'without cross-origin 
 // QuakeC mode: a deathmatch on E1M1 with three bots, from the page's own settings
 await page.evaluate(() => localStorage.setItem('firebird-quake:settings', JSON.stringify({ logic: 'qc', mode: 'deathmatch', bots: 3, map: 'e1m1' })));
 await page.reload();
-await running('QuakeC mode, a deathmatch with three bots on E1M1', '^qc_tic');
+if (await running('QuakeC mode, a deathmatch with three bots on E1M1', '^qc_tic')) {
+  // the player and the three bots are in the game (qc_scores lists the clients connected)
+  const players = await page.evaluate(() => window.quake.sql('SELECT COUNT(*) FROM qc_scores').then((r) => Number(Object.values(r[0])[0]))).catch((e) => e.message);
+  assert(players === 4, `QuakeC mode: four players in qc_scores, the player and three bots (${players})`);
+}
 
 if (missing.size) console.log(`(not found, as expected without them: ${[...missing].join(', ')})`);
 await browser.close();
