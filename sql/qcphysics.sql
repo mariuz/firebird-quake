@@ -61,7 +61,8 @@ BEGIN
     IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :tr AND d.solid = 1)) THEN CONTINUE;
     f = CAST(qc_f(tr, f_touch) AS INTEGER);
     IF (f = 0) THEN CONTINUE;
-    UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END WHERE g.ofs IN (:g_time, :g_self, :g_other);
+    UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END WHERE g.ofs IN (:g_time, :g_self, :g_other)
+      AND g.v IS DISTINCT FROM CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END;
     EXECUTE PROCEDURE qc_call(f);
   END
 END^
@@ -82,7 +83,8 @@ BEGIN
   IF (nt < t) THEN nt = t;
   UPDATE qc_fields q SET q.v = 0 WHERE q.ent = :e AND q.ofs = :f_nt;
   -- time, self and other in one statement
-  UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :nt WHEN :g_self THEN :e ELSE 0 END WHERE g.ofs IN (:g_time, :g_self, :g_other);
+  UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :nt WHEN :g_self THEN :e ELSE 0 END WHERE g.ofs IN (:g_time, :g_self, :g_other)
+    AND g.v IS DISTINCT FROM CASE g.ofs WHEN :g_time THEN :nt WHEN :g_self THEN :e ELSE 0 END;
   IF (f <> 0) THEN EXECUTE PROCEDURE qc_call(f);
   alive = IIF(EXISTS (SELECT 1 FROM qc_edicts d WHERE d.id = :e AND d.free = 0), 1, 0);
 END^

@@ -361,7 +361,7 @@ export class QcJit {
       const c = column(fo);
       if (c) {
         const val = c.cast ? (c.nullif ? `NULLIF(CAST(${dml(v)} AS ${c.cast}), 0)` : `CAST(${dml(v)} AS ${c.cast})`) : dml(v);
-        return `IF (${ent} > 0) THEN UPDATE ents e SET e.${c.col} = ${val} WHERE e.id = CAST(${dml(ent)} AS INTEGER); ELSE EXECUTE PROCEDURE qc_sfq(0, ${fo}, ${v});`;
+        return `IF (${ent} > 0) THEN UPDATE ents e SET e.${c.col} = ${val} WHERE e.id = CAST(${dml(ent)} AS INTEGER) AND e.${c.col} IS DISTINCT FROM ${val}; ELSE EXECUTE PROCEDURE qc_sfq(0, ${fo}, ${v});`;   // the same value: no write
       }
       return `EXECUTE PROCEDURE qc_sf(${ent}, ${fo ?? fexpr}, ${v});`;
     };
