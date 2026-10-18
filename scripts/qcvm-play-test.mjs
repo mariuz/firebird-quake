@@ -346,6 +346,32 @@ await frame();
 const fr0 = await q1("SELECT qc_g(qc_gdef('force_retouch')) v FROM rdb$database");
 assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X - mid[0], sent.Y - mid[1]) > 64 && fr1.V === 1 && fr0.V === 0,
   `force_retouch: a grunt standing in the teleporter stays put until it is set, then is sent on (${Math.hypot(sent.X - mid[0], sent.Y - mid[1]).toFixed(0)} units), and it counts down a frame at a time`);
+// SV_PushEntity's MOVE_MISSILE: a flying missile hits a monster with a box 15 each way, so one passing 10 units beside
+// a grunt hits it, where a plain box trace on the same clear line misses it; a trigger-solid thing passes (MOVE_NOMONSTERS)
+{
+  // the middle of a big open leaf: room all round for the lines past it
+  const open = await q1(`SELECT FIRST 1 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+    WHERE l.contents = -1 AND l.maxx - l.minx > 200 AND l.maxy - l.miny > 200 AND l.maxz - l.minz > 100 ORDER BY (l.maxx - l.minx) * (l.maxy - l.miny) DESC`);
+  await db.exec(`UPDATE ents SET x = ${open.X}, y = ${open.Y}, z = ${open.Z} WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  await db.exec(`UPDATE ents SET solid = 0 WHERE BIN_AND(flags, 32) <> 0 AND id <> ${grunt}`);   // the bystanders out of the way
+  const g = await ent(grunt);
+  const shot = async (mt, solid, line) => {
+    await db.exec(`INSERT INTO ents (id, classname, x, y, z, minx, miny, minz, maxx, maxy, maxz, solid, movetype, watertype)
+      VALUES (900001, 'qc', ${line.x}, ${line.y}, ${g.Z}, 0, 0, 0, 0, 0, 0, ${solid}, ${mt}, 0)`);
+    const r = await q1(`SELECT hit_ent h, fraction f FROM push_entity(900001, ${line.dx}, ${line.dy}, 0)`);
+    await db.exec('DELETE FROM ents WHERE id = 900001');
+    return r;
+  };
+  // past its side, 10 units out, along x or along y, whichever line the walls leave clear
+  const lines = [{ x: g.X - 40, y: g.Y + g.MAXY + 10, dx: 80, dy: 0 }, { x: g.X - 40, y: g.Y + g.MINY - 10, dx: 80, dy: 0 },
+    { x: g.X + g.MAXX + 10, y: g.Y - 40, dx: 0, dy: 80 }, { x: g.X + g.MINX - 10, y: g.Y - 40, dx: 0, dy: 80 }];
+  let line = null, plain = null;
+  for (const l of lines) { plain = await shot(10, 2, l); if (plain.F === 1) { line = l; break; } }
+  const missile = line && await shot(9, 2, line), trigger = line && await shot(6, 1, line);   // (a fly-missile is MOVE_MISSILE whatever its solid)
+  assert(line && missile.H === grunt && missile.F < 1 && trigger.F === 1,
+    `MOVE_MISSILE: a missile passing 10 units beside the grunt hits it (fraction ${missile?.F.toFixed(2)}), a bouncing thing on the same line misses, and a tossed trigger-solid one passes through`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

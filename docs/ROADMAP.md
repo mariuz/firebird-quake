@@ -156,6 +156,12 @@ difference fixed with a test that fails without it:
   stood in a trigger when it came to life (a teleporter switched on by its targetname sets `force_retouch = 2`
   for this) was never touched. Now, while it is set, every edict is linked again with its touches before its
   physics, and it counts down by one at each frame's end, as Quake does.
+- ~~**`SV_PushEntity`'s clip**~~ done (`npm run test:qcplay`): every pushed thing clipped as `MOVE_NORMAL`. Now a flying
+  missile clips as `MOVE_MISSILE` (a monster is hit by a box 15 units each way, so a rocket or a nail that grazes
+  a grunt hits it) and a trigger or non-solid thing as `MOVE_NOMONSTERS` (a backpack falls through monsters and
+  players). `trace_move`'s `nomonsters` = 2 is the missile clip. The PSQL game's missiles share `push_entity`
+  and clip the same way. Left as it is: Quake links the mover with its trigger touches before the impact;
+  here the impact comes first (it matters only when both happen in one frame).
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
 

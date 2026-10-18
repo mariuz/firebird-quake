@@ -379,7 +379,8 @@ END^
 
 -- SV_Move: trace an entity's box (its mins/maxs) from p1 to p2 through the
 -- world, the brush models and the box entities. `nomonsters` = 1 clips only
--- against BSP models (hitscan weapons use 0; sight checks use 1).
+-- against BSP models (hitscan weapons use 0; sight checks use 1); 2 is MOVE_MISSILE, monsters hit by a
+-- box 15 each way (push_entity, for a flying missile).
 -- `mover` may be NULL for a point trace with no owner.
 CREATE OR ALTER PROCEDURE trace_move (
   mover INTEGER,
@@ -407,7 +408,7 @@ DECLARE eminx DOUBLE PRECISION; DECLARE eminy DOUBLE PRECISION; DECLARE eminz DO
 DECLARE emaxx DOUBLE PRECISION; DECLARE emaxy DOUBLE PRECISION; DECLARE emaxz DOUBLE PRECISION;
 DECLARE bminx DOUBLE PRECISION; DECLARE bminy DOUBLE PRECISION; DECLARE bminz DOUBLE PRECISION;
 DECLARE bmaxx DOUBLE PRECISION; DECLARE bmaxy DOUBLE PRECISION; DECLARE bmaxz DOUBLE PRECISION;
-DECLARE mower INTEGER;
+DECLARE mower INTEGER; DECLARE eflags INTEGER;
 DECLARE world_mid INTEGER;
 DECLARE hminx DOUBLE PRECISION; DECLARE hminy DOUBLE PRECISION; DECLARE hminz DOUBLE PRECISION;
 BEGIN
@@ -446,14 +447,18 @@ BEGIN
   -- brush models (doors, plats, …) and box entities
   bminx = MINVALUE(x1, x2) + mnx - 1; bminy = MINVALUE(y1, y2) + mny - 1; bminz = MINVALUE(z1, z2) + mnz - 1;
   bmaxx = MAXVALUE(x1, x2) + mxx + 1; bmaxy = MAXVALUE(y1, y2) + mxy + 1; bmaxz = MAXVALUE(z1, z2) + mxz + 1;
-  FOR SELECT e.id, e.model_id, e.solid, e.owner_id, e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz
+  IF (nomonsters = 2) THEN                         -- MOVE_MISSILE: monsters are hit by a box 15 each way
+  BEGIN
+    bminx = bminx - 15; bminy = bminy - 15; bminz = bminz - 15; bmaxx = bmaxx + 15; bmaxy = bmaxy + 15; bmaxz = bmaxz + 15;
+  END
+  FOR SELECT e.id, e.model_id, e.solid, e.owner_id, e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, e.flags
         FROM ents e
        WHERE e.solid IN (2, 3, 4)
          AND (:mover IS NULL OR e.id <> :mover)
          AND e.x + e.maxx >= :bminx AND e.x + e.minx <= :bmaxx
          AND e.y + e.maxy >= :bminy AND e.y + e.miny <= :bmaxy
          AND e.z + e.maxz >= :bminz AND e.z + e.minz <= :bmaxz
-        INTO eid, emid, esolid, eowner, eox, eoy, eoz, eminx, eminy, eminz, emaxx, emaxy, emaxz
+        INTO eid, emid, esolid, eowner, eox, eoy, eoz, eminx, eminy, eminz, emaxx, emaxy, emaxz, eflags
   DO
   BEGIN
     IF (mover IS NOT NULL AND (eowner = mover OR mower = eid)) THEN CONTINUE;   -- don't clip against own missiles / owner
@@ -467,7 +472,12 @@ BEGIN
     ELSE
     BEGIN
       IF (nomonsters = 1) THEN CONTINUE;
-      -- Minkowski box: the entity's box grown by the mover's
+      -- Minkowski box: the entity's box grown by the mover's (by 15 each way for a missile against a monster)
+      IF (nomonsters = 2 AND BIN_AND(eflags, 32) <> 0) THEN
+        EXECUTE PROCEDURE trace_box(eox + eminx - 15, eoy + eminy - 15, eoz + eminz - 15,
+                                    eox + emaxx + 15, eoy + emaxy + 15, eoz + emaxz + 15, x1, y1, z1, x2, y2, z2)
+          RETURNING_VALUES f, tx, ty, tz, tnx, tny, tnz, tss;
+      ELSE
       EXECUTE PROCEDURE trace_box(eox + eminx - mxx, eoy + eminy - mxy, eoz + eminz - mxz,
                                   eox + emaxx - mnx, eoy + emaxy - mny, eoz + emaxz - mnz,
                                   x1, y1, z1, x2, y2, z2)
@@ -756,11 +766,13 @@ DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PREC
 DECLARE mnx DOUBLE PRECISION; DECLARE mny DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
 DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE PRECISION;
 DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
-DECLARE inopen SMALLINT; DECLARE inwater SMALLINT; DECLARE mt SMALLINT;
+DECLARE inopen SMALLINT; DECLARE inwater SMALLINT; DECLARE mt SMALLINT; DECLARE sol SMALLINT;
 BEGIN
-  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, e.movetype
-    FROM ents e WHERE e.id = :eid INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, mt;
-  EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, px, py, pz, px + dx, py + dy, pz + dz, 0)
+  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, e.movetype, e.solid
+    FROM ents e WHERE e.id = :eid INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, mt, sol;
+  -- SV_PushEntity's clip: MOVE_MISSILE for a flying missile, MOVE_NOMONSTERS for a trigger or a non-solid
+  EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, px, py, pz, px + dx, py + dy, pz + dz,
+                               IIF(mt = 9, 2, IIF(sol IN (0, 1), 1, 0)))
     RETURNING_VALUES fraction, ex, ey, ez, nx, ny, nz, allsolid, startsolid, inopen, inwater, hit_ent;
   UPDATE ents e SET e.x = :ex, e.y = :ey, e.z = :ez WHERE e.id = :eid;
   IF (fraction < 1) THEN EXECUTE PROCEDURE impact(eid, hit_ent);
