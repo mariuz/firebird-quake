@@ -584,7 +584,8 @@ BEGIN
       IF (c <= -3) THEN waterlevel = 3;
     END
   END
-  UPDATE ents e SET e.waterlevel = :waterlevel, e.watertype = :watertype WHERE e.id = :eid;
+  UPDATE ents e SET e.waterlevel = :waterlevel, e.watertype = :watertype
+    WHERE e.id = :eid AND (e.waterlevel IS DISTINCT FROM :waterlevel OR e.watertype IS DISTINCT FROM :watertype);
   SUSPEND;
 END^
 
@@ -782,7 +783,7 @@ BEGIN
   SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz, e.flags, e.waterlevel FROM ents e WHERE e.id = :eid
     INTO ox, oy, oz, ovx, ovy, ovz, flags, wl;
   oldonground = IIF(BIN_AND(flags, 512) <> 0, 1, 0);
-  UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
+  IF (oldonground = 1) THEN UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
   EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES clip, hit;
   IF (BIN_AND(clip, 2) = 0) THEN EXIT;                   -- move looks good
   IF (oldonground = 0 AND wl = 0) THEN EXIT;             -- don't stair up while jumping

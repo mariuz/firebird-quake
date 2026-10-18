@@ -228,7 +228,8 @@ BEGIN
   END
   IF (qc_f(c, (SELECT v.f_health FROM qc_vm v WHERE v.id = 1)) <= 0) THEN EXIT;
   -- the body turns with the view; the model's pitch is a third of it
-  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0 WHERE d.id = :c;
+  UPDATE ents d SET d.pitch = -:pitch / 3, d.yaw = :yaw, d.roll = 0
+    WHERE d.id = :c AND (d.pitch IS DISTINCT FROM -:pitch / 3 OR d.yaw IS DISTINCT FROM :yaw OR d.roll IS DISTINCT FROM 0);
   IF (wl >= 2 AND mt <> 8) THEN
   BEGIN
     -- SV_WaterMove: the full view direction, drifting down without input
@@ -303,7 +304,8 @@ BEGIN
       END
     END
   END
-  UPDATE ents d SET d.vx = :vx, d.vy = :vy, d.vz = :vz WHERE d.id = :c;
+  UPDATE ents d SET d.vx = :vx, d.vy = :vy, d.vz = :vz
+    WHERE d.id = :c AND (d.vx IS DISTINCT FROM :vx OR d.vy IS DISTINCT FROM :vy OR d.vz IS DISTINCT FROM :vz);
 END^
 
 -- SV_Physics_Client: PlayerPreThink, the think, gravity unless swimming or water-jumping, the walk with
@@ -323,8 +325,7 @@ BEGIN
   BEGIN
     EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
     IF (alive = 0) THEN EXIT;
-    EXECUTE PROCEDURE check_water(c) RETURNING_VALUES wl, wt;
-    UPDATE ents d SET d.waterlevel = :wl, d.watertype = :wt WHERE d.id = :c;
+    EXECUTE PROCEDURE check_water(c) RETURNING_VALUES wl, wt;            -- (which stores them in ents)
     SELECT d.flags FROM ents d WHERE d.id = :c INTO fl;
     IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(c, dt);
     EXECUTE PROCEDURE walk_move(c, dt);
