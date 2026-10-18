@@ -113,6 +113,27 @@ BEGIN
   RETURN IIF(BIN_AND(POSITION(c, '0123456789abcdef') - 1, BIN_SHL(1, BIN_AND(j, 3))) <> 0, 1, 0);
 END^
 
+-- Is any of an entity's leaves (link_ent's ",a,b,…," list) in the PVS string? 1 when it may be seen
+-- from there: also for no PVS, no list, a list link_ent cut short, or the solid leaf. Not in the PVS is
+-- never in sight, so a sight trace can be skipped.
+CREATE OR ALTER FUNCTION pvs_leafs (pvs d_pvs, leafs VARCHAR(200) CHARACTER SET ASCII)
+RETURNS SMALLINT
+AS
+DECLARE p INTEGER; DECLARE q INTEGER; DECLARE lf INTEGER;
+BEGIN
+  IF (pvs IS NULL OR pvs = '' OR leafs IS NULL OR CHAR_LENGTH(leafs) >= 175) THEN RETURN 1;
+  p = 2;
+  WHILE (p <= CHAR_LENGTH(leafs)) DO
+  BEGIN
+    q = POSITION(',', leafs, p);
+    IF (q = 0) THEN LEAVE;
+    lf = CAST(SUBSTRING(leafs FROM p FOR q - p) AS INTEGER);
+    IF (pvs_visible(pvs, lf) = 1) THEN RETURN 1;
+    p = q + 1;
+  END
+  RETURN 0;
+END^
+
 -- ── the hull walk ─────────────────────────────────────────────────────────
 -- SV_RecursiveHullCheck. Returns res = 1 to keep going, 0 when the trace is
 -- finished (hit, or never left solid). State in: allsolid/startsolid/inopen/

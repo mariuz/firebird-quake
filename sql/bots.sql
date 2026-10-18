@@ -66,13 +66,16 @@ BEGIN
   RETURN d - 360 * FLOOR((d + 180) / 360);
 END^
 
--- a clear line from a point to an entity's middle, through the world only
-CREATE OR ALTER FUNCTION bot_sees (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION, e INTEGER) RETURNS SMALLINT
+-- a clear line from a point to an entity's middle, through the world only. pvs is the point's leaf's: an
+-- entity none of whose leaves is in it cannot be in sight, and costs no trace (a long one is 1 ms)
+CREATE OR ALTER FUNCTION bot_sees (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION, e INTEGER, pvs d_pvs) RETURNS SMALLINT
 AS
 DECLARE tx DOUBLE PRECISION; DECLARE ty DOUBLE PRECISION; DECLARE tz DOUBLE PRECISION; DECLARE f DOUBLE PRECISION;
+DECLARE leafs VARCHAR(200) CHARACTER SET ASCII;
 BEGIN
-  SELECT d.x, d.y, d.z + (d.minz + d.maxz) / 2 FROM ents d WHERE d.id = :e INTO tx, ty, tz;
+  SELECT d.x, d.y, d.z + (d.minz + d.maxz) / 2, d.leafs FROM ents d WHERE d.id = :e INTO tx, ty, tz, leafs;
   IF (tx IS NULL) THEN RETURN 0;
+  IF (pvs_leafs(pvs, leafs) = 0) THEN RETURN 0;
   SELECT r.fraction FROM trace_move(NULL, 0, 0, 0, 0, 0, 0, :x, :y, :z, :tx, :ty, :tz, 1) r INTO f;
   RETURN IIF(f >= 1, 1, 0);
 END^
@@ -221,6 +224,7 @@ DECLARE tx DOUBLE PRECISION; DECLARE ty DOUBLE PRECISION; DECLARE tz DOUBLE PREC
 DECLARE dyaw DOUBLE PRECISION; DECLARE dpitch DOUBLE PRECISION; DECLARE f DOUBLE PRECISION; DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION;
 DECLARE mc INTEGER; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ct INTEGER;
 DECLARE goal_until DOUBLE PRECISION; DECLARE shun INTEGER; DECLARE shun_until DOUBLE PRECISION; DECLARE oldgoal INTEGER;
+DECLARE epvs d_pvs;
 DECLARE route_goal INTEGER; DECLARE route_step INTEGER; DECLARE route_at DOUBLE PRECISION; DECLARE rn INTEGER; DECLARE ok SMALLINT; DECLARE k INTEGER;
 BEGIN
   fmove = 0; smove = 0; upmove = 0; fire = 0; jump = 0; impulse = 0;
@@ -256,20 +260,21 @@ BEGIN
   IF (t >= look_at) THEN
   BEGIN
     enemy = NULL; best = NULL;
+    SELECT l.pvs FROM leaves l WHERE l.id = point_leaf(:x, :y, :ez) INTO epvs;   -- the eye's, for every sight test below
     IF (dmatch <> 0) THEN
       FOR SELECT d.id, SQRT((d.x - :x) * (d.x - :x) + (d.y - :y) * (d.y - :y) + (d.z - :z) * (d.z - :z)) FROM ents d
            JOIN qc_edicts q ON q.id = d.id AND q.free = 0
           WHERE d.id >= 1 AND d.id <= :mc AND d.id <> :c ORDER BY 2 INTO e, dist DO
       BEGIN
         -- (not one with FL_NOTARGET: the console's notarget hides the player from the bots as from the monsters)
-        IF (qc_f(e, fh) > 0 AND BIN_AND((SELECT n.flags FROM ents n WHERE n.id = :e), 128) = 0 AND bot_sees(x, y, ez, e) = 1) THEN BEGIN enemy = e; LEAVE; END
+        IF (qc_f(e, fh) > 0 AND BIN_AND((SELECT n.flags FROM ents n WHERE n.id = :e), 128) = 0 AND bot_sees(x, y, ez, e, epvs) = 1) THEN BEGIN enemy = e; LEAVE; END
       END
     ELSE
       FOR SELECT FIRST 6 d.id FROM ents d WHERE BIN_AND(d.flags, 32) <> 0 AND d.solid <> 0
             AND ABS(d.x - :x) < 1200 AND ABS(d.y - :y) < 1200 AND ABS(d.z - :z) < 600
           ORDER BY (d.x - :x) * (d.x - :x) + (d.y - :y) * (d.y - :y) INTO e DO
       BEGIN
-        IF (qc_f(e, fh) > 0 AND bot_sees(x, y, ez, e) = 1) THEN BEGIN enemy = e; LEAVE; END
+        IF (qc_f(e, fh) > 0 AND bot_sees(x, y, ez, e, epvs) = 1) THEN BEGIN enemy = e; LEAVE; END
       END
     -- a new sighting: a new aim error
     aim_ofs = (rnd() * 2 - 1) * aim_error;
@@ -284,7 +289,7 @@ BEGIN
           ORDER BY (d.x - :x) * (d.x - :x) + (d.y - :y) * (d.y - :y) INTO e DO
       BEGIN
         cls = qc_str(CAST(qc_f(e, fcl) AS INTEGER));
-        IF ((cls STARTING WITH 'item_' OR cls STARTING WITH 'weapon_') AND bot_sees(x, y, ez, e) = 1) THEN BEGIN goal = e; LEAVE; END
+        IF ((cls STARTING WITH 'item_' OR cls STARTING WITH 'weapon_') AND bot_sees(x, y, ez, e, epvs) = 1) THEN BEGIN goal = e; LEAVE; END
       END
     IF (goal IS DISTINCT FROM oldgoal) THEN goal_until = t + 4;
     look_at = t + 0.3e0;

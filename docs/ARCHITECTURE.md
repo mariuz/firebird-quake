@@ -362,6 +362,8 @@ monsters that remove themselves in deathmatch. The engine's share is more than o
   longer than a run (a teleporter, linked one way however far). A client still within 32 units of its
   last node, or within 4 units on each axis of where it was last marked (`nav_track`'s `mx`, `my`, `mz`:
   a client stuck against a wall far from any node), costs one query and no trace. The graph is emptied by `qc_begin_map` (2000 nodes at most).
+  A bot's sight test (`bot_sees`) traces only when the target may be in sight: when one of the leaves
+  `link_ent` listed for it is in the PVS of the bot's eye (`pvs_leafs`), looked up once per look.
   With nothing in sight a bot asks `bot_plan` for a way: `nav_bfs` searches the links breadth first from
   its nearest node into `nav_search`, a node beside a pickup at least three links off is picked at
   random, and the way back from it becomes `bot_route`'s steps. The bot turns towards each step's node
