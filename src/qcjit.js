@@ -469,10 +469,16 @@ END`);
     }
   }
 
-  // a fresh progs.dat: nothing compiled for it yet
+  // a fresh progs.dat: nothing compiled for it yet. Only the dispatchers that still branch to an earlier
+  // progs.dat's procedures are rewritten: the others are already what sql/qcexec.sql defines, and
+  // rewriting them in a database opened from the schema image, before any QuakeC has run, left the
+  // engine's callers of qc_exec with an outdated format (the first spawn failed with "Statement format
+  // outdated, need to be reprepared")
   async init() {
     this.compiled.clear();
-    await this.dispatchers();
+    const r = await this.db.query("SELECT TRIM(rdb$procedure_name) p FROM rdb$procedures WHERE rdb$procedure_name STARTING WITH 'QC_INV' AND rdb$procedure_source CONTAINING 'QCF_'");
+    const stale = r.rows.map((x) => Number(x.P.slice(6))).filter((k) => k >= 0 && k <= 8);
+    if (stale.length) await this.dispatchers(stale);
   }
 
   // compile these functions (those that cannot be are flagged -1 and left to the interpreter)
