@@ -1031,12 +1031,15 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // M_Menu_Options and the rest of the menu's actions: New Game is Quake's "map start"
 // r_wateralpha and its kin: alone, the value; with one, set and kept (the map's own keys still come first)
-const alphaCmd = (k) => ([v]) => {
-  if (v === undefined) return `"r_${k}alpha" is "${settings.alphas?.[k] ?? (k === 'water' ? 0.5 : 0)}"`;
-  settings.alphas = { water: 0.5, lava: 0, slime: 0, tele: 0, ...settings.alphas, [k]: Math.max(0, Math.min(1, Number(v) || 0)) };
-  saveSettings(); applyLiquids();
-  return settings.liquids === 'translucent' ? null : 'Liquids is set to opaque: set it to translucent to see through them';
-};
+// (a declaration, hoisted: consoleCommands() runs at start-up, above this line)
+function alphaCmd(k) {
+  return ([v]) => {
+    if (v === undefined) return `"r_${k}alpha" is "${settings.alphas?.[k] ?? (k === 'water' ? 0.5 : 0)}"`;
+    settings.alphas = { water: 0.5, lava: 0, slime: 0, tele: 0, ...settings.alphas, [k]: Math.max(0, Math.min(1, Number(v) || 0)) };
+    saveSettings(); applyLiquids();
+    return settings.liquids === 'translucent' ? null : 'Liquids is set to opaque: set it to translucent to see through them';
+  };
+}
 
 // the console's commands (cmd.c, host_cmd.c, keys.c): the game's become host_cmd's SQL (sql/host.sql)
 function consoleCommands() {
