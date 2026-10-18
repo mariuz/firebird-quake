@@ -29,6 +29,12 @@ const D = 'DOUBLE PRECISION';
 const ARITH = new Set([1, 5, 6, 8, 10, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 62, 63, 64, 65]);
 // qc_bi_group's numbers: the procedure a builtin of that group runs in (sql/qcbuiltins.sql)
 const BUILTIN_GROUPS = [null, 'qc_bi_math', 'qc_bi_move', 'qc_bi_trace', 'qc_bi_ent', 'qc_bi_io'];
+// the globals a builtin call may write (QcJit.callWrites), or null for any
+const BUILTIN_WRITES = (jit, fn) => {
+  const f = jit.progs.functions[fn];
+  if (!f || f.first_statement >= 0) return null;
+  return jit.builtinWrites?.[jit.biGroups?.get(-f.first_statement)] ?? null;
+};
 function operands(op, a, b, c) {
   const r = [], w = [];
   const R = (x, n = 1) => { for (let i = 0; i < n; i++) r.push(x + i); };
@@ -136,6 +142,61 @@ export class QcJit {
         if (c) this.column.set(o + i, typeof c === 'string' ? { col: c } : { col: c[0], cast: c[1], nullif: c[2] === 'NULLIF' });
       }
     }
+  }
+
+  // the globals a call of each function may write, itself and through what it calls (null: any, for a call
+  // through a function value or a builtin that runs QuakeC or writes globals of its own choosing). Builtins:
+  // math writes the return and makevectors' v_forward, v_up, v_right; trace the return and the trace_
+  // globals; io and ent the return only; move runs touch functions, so it is any. After a call the compiled code keeps
+  // the globals it had read that the callee cannot write (self above all) instead of reading them again.
+  callWrites() {
+    const p = this.progs, ret = [1, 2, 3];
+    const vec = (n) => { const o = p.globalByName(n); return o === undefined ? [] : [o, o + 1, o + 2]; };
+    const one = (n) => { const o = p.globalByName(n); return o === undefined ? [] : [o]; };
+    const BUILTIN = {
+      1: [...ret, ...vec('v_forward'), ...vec('v_up'), ...vec('v_right')],
+      3: [...ret, ...['trace_allsolid', 'trace_startsolid', 'trace_fraction', 'trace_plane_dist', 'trace_ent', 'trace_inopen', 'trace_inwater'].flatMap(one),
+        ...vec('trace_endpos'), ...vec('trace_plane_normal')],
+      4: ret, 5: ret,
+    };
+    this.builtinWrites = BUILTIN;
+    const own = new Map(), callees = new Map();
+    for (const [fid, [first, last]] of this.body) {
+      const w = new Set(), c = new Set();
+      let any = false;
+      for (let i = first; i <= last; i++) {
+        const [, op, a, b, cc] = p.statements[i];
+        for (const g of operands(op, a, b, cc).w) w.add(g);
+        if (op >= 51 && op <= 59) {
+          const fn = a >= this.endSys && !this.written[a] ? Math.round(this.image[a]) : null;   // a constant: a known function
+          const callee = fn !== null ? p.functions[fn] : null;
+          if (!callee || fn === 0) any = true;
+          else if (callee.first_statement < 0) {
+            const set = BUILTIN[this.biGroups?.get(-callee.first_statement)];
+            if (!set) any = true; else for (const g of set) w.add(g);
+          } else c.add(fn);
+        }
+      }
+      own.set(fid, any ? null : w);
+      callees.set(fid, c);
+    }
+    // to a fixed point: a function writes what it writes and what its callees write
+    const may = new Map(own);
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const [fid, c] of callees) {
+        let w = may.get(fid);
+        if (w === null) continue;
+        for (const f of c) {
+          const cw = may.has(f) ? may.get(f) : null;          // a function without a body: any
+          if (cw === null) { w = null; break; }
+          for (const g of cw) if (!w.has(g)) { if (w === own.get(fid)) w = new Set(w); w.add(g); changed = true; }
+        }
+        if (w === null) changed = true;
+        may.set(fid, w);
+      }
+    }
+    this.mayWrite = may;
   }
 
   // the globals (from end_sys_globals on) live before each statement of function f: read later
@@ -304,7 +365,15 @@ export class QcJit {
       }
       return `EXECUTE PROCEDURE qc_sf(${ent}, ${fo ?? fexpr}, ${v});`;
     };
-    const jump = (s, t) => (machine ? `BEGIN pc_ = ${t}; CONTINUE M; END` : t > s ? `LEAVE B${t};` : `CONTINUE L${t};`);
+    // the globals read on every way into a forward jump's target (the structured code only: a loop's head, a
+    // backward target, and every block of the loop over blocks start with nothing read)
+    const pending = new Map();
+    const reach = (s, t) => {
+      if (machine || t <= s) return;
+      const was = pending.get(t);
+      pending.set(t, was ? new Set([...was].filter((g) => cache.has(g))) : new Set(cache));
+    };
+    const jump = (s, t) => { reach(s, t); return machine ? `BEGIN pc_ = ${t}; CONTINUE M; END` : t > s ? `LEAVE B${t};` : `CONTINUE L${t};`; };
     // is OFS_RETURN read after statement s before the next call overwrites it?
     const returnUsed = (s) => {
       for (let i = s + 1; i <= last; i++) {
@@ -322,7 +391,14 @@ export class QcJit {
 
     const stack = [];
     for (let s = first; s <= last; s++) {
-      if (target.has(s) || (machine && leaders.has(s))) { cache = new Set(); addr = new Map(); }
+      if (machine && leaders.has(s)) { cache = new Set(); addr = new Map(); }
+      else if (target.has(s)) {
+        // a join: what was read on the way in from above (if it falls through) and on every jump to here
+        const falls = s > first && succ(s - 1).includes(s);
+        const into = back.has(s) ? null : pending.get(s);
+        cache = !into ? new Set() : falls ? new Set([...cache].filter((g) => into.has(g))) : new Set(into);
+        addr = new Map();
+      }
       if (machine && leaders.has(s)) {
         if (s === first) { emit('M: WHILE (1 = 1) DO BEGIN'); emit(`n_ = n_ + 1; IF (n_ > 5000000) THEN EXCEPTION qc_error 'runaway loop in ${f.name}';`); }
         else emit(`pc_ = ${s}; END`);
@@ -413,7 +489,10 @@ export class QcJit {
           const fx = int(rd(a));
           emit(`EXECUTE PROCEDURE qc_inv${nargs}(d + 1, ${fx}${args(nargs)}) RETURNING_VALUES r1, r2, r3;`);
         }
-        cache = new Set(); addr = new Map();
+        // what the callee may write is read again; the rest stays as read (everything, for a call through a value)
+        const writes = kind(a) === 'const' ? this.mayWrite?.get(Math.round(this.image[a])) ?? BUILTIN_WRITES(this, Math.round(this.image[a])) : null;
+        if (writes) { for (const g of writes) cache.delete(g); } else cache = new Set();
+        addr = new Map();
       }
       else throw new Error(`opcode ${op} at ${s}`);
       while (stack.length && stack[stack.length - 1].end === s) {
@@ -488,6 +567,7 @@ END`);
       const r = await this.db.query('EXECUTE BLOCK RETURNS (n INTEGER, g SMALLINT) AS BEGIN n = 1; WHILE (n < 256) DO BEGIN g = qc_bi_group(n); IF (g > 0) THEN SUSPEND; n = n + 1; END END');
       this.biGroups = new Map(r.rows.map((x) => [x.N, x.G]));
     }
+    if (!this.mayWrite) this.callWrites();
     const done = [], bad = [];
     for (const f of ids) {
       if (this.compiled.has(f) || this.failed.has(f) || !this.body.has(f)) continue;

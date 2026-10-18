@@ -50,6 +50,14 @@ check(jit.failed.size === 0 && jit.compiled.size === jit.body.size, `progs.dat: 
 const kinds = { loops: 0, machine: 0 };
 for (const f of jit.body.keys()) { const s = jit.source(f); if (/ L\d+: WHILE|^L\d+: WHILE/m.test(s)) kinds.loops++; if (/^M: WHILE/m.test(s)) kinds.machine++; }
 check(kinds.machine === 0, `structured: ${kinds.loops} with loops, ${kinds.machine} as a loop over blocks`);
+// globals read once stay read: past a call that cannot write them (QcJit.callWrites) and through a join that
+// every way into has them; PlayerPreThink reads self twice (at the start, and after WaterMove, whose T_Damage
+// runs a pain function that changes self), where it read it again after every call and every if
+{
+  const pre = progs.functions.find((f) => f.name === 'PlayerPreThink');
+  const reads = (jit.source(pre.id).match(/qc_g\(28\)/g) ?? []).length;
+  check(reads <= 3, `PlayerPreThink reads self ${reads} times (it was 9: after every call and every join)`);
+}
 
 // ── the self-contained functions: interpreted and compiled agree ────────
 // (no field store, no OP_STATE, calls only of deterministic builtins or of other such functions: what
