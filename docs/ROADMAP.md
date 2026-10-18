@@ -152,6 +152,12 @@ difference fixed with a test that fails without it:
   (`misc/h2ohit1.wav`) going in or out, and `watertype`/`waterlevel` stayed as spawned. Now they splash and keep
   both as Quake does (out of the water `waterlevel` is the contents, -1), and QuakeC edicts start with
   `watertype` 0 as id's fresh edicts do, so one spawned in water takes it silently.
+- ~~**`SV_Physics`' `force_retouch`**~~ done (`npm run test:qcplay`): the frame loop ignored it, so what already
+  stood in a trigger when it came to life (a teleporter switched on by its targetname sets `force_retouch = 2`
+  for this) was never touched. Now, while it is set, every edict is linked again with its touches before its
+  physics, and it counts down by one at each frame's end, as Quake does.
+- Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
+  pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
 
 ## Performance
 

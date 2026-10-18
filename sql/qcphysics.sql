@@ -514,6 +514,7 @@ DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE
 DECLARE e INTEGER; DECLARE last INTEGER; DECLARE fpa INTEGER;
 DECLARE mc INTEGER; DECLARE c INTEGER; DECLARE bf DOUBLE PRECISION; DECLARE bs DOUBLE PRECISION; DECLARE bu DOUBLE PRECISION;
 DECLARE bp DOUBLE PRECISION; DECLARE byw DOUBLE PRECISION; DECLARE bfi SMALLINT; DECLARE bj SMALLINT; DECLARE bi SMALLINT;
+DECLARE g_fr INTEGER; DECLARE fr DOUBLE PRECISION;
 BEGIN
   ran = 0; failed = 0;
   IF (qc_on() = 0) THEN EXCEPTION qc_error 'qc_server_frame needs QuakeC mode (qc_enter)';
@@ -544,6 +545,10 @@ BEGIN
   EXECUTE PROCEDURE qc_sg(g_time, t); EXECUTE PROCEDURE qc_sg(g_self, 0); EXECUTE PROCEDURE qc_sg(g_other, 0);
   f = qc_fn('StartFrame');
   IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_call(f);
+  -- force_retouch (a teleporter switched on sets it): while it lasts every edict is linked again with its
+  -- touches before its physics, the still ones too, so what already stands in a trigger is touched
+  g_fr = qc_gdef('force_retouch');
+  fr = IIF(g_fr IS NULL, 0, qc_g(g_fr));
   -- the edicts that may have something to do: the world and the client, a pending think, a moving
   -- pusher, anything flying, anything falling
   last = -1;
@@ -555,6 +560,7 @@ BEGIN
     SELECT FIRST 1 d.id FROM qc_edicts d LEFT JOIN ents x ON x.id = d.id + 0 LEFT JOIN qc_fields n ON n.ent = d.id + 0 AND n.ofs = :f_nt
       WHERE d.free = 0 AND d.id > :last AND (
         d.id <= :mc
+        OR :fr > 0
         OR (n.v > 0 AND n.v <= :t + :dt + 1e-6)
         OR (x.movetype = 7 AND n.v > 0)
         OR (x.movetype IN (7, 5, 9, 8) AND (x.vx <> 0 OR x.vy <> 0 OR x.vz <> 0))
@@ -564,6 +570,11 @@ BEGIN
     IF (e IS NULL) THEN LEAVE;
     last = e;
     BEGIN
+      IF (fr > 0 AND e > 0 AND EXISTS (SELECT 1 FROM ents x WHERE x.id = :e)) THEN
+      BEGIN
+        EXECUTE PROCEDURE link_ent(e);
+        EXECUTE PROCEDURE qc_touch_triggers(e);
+      END
       EXECUTE PROCEDURE qc_physics_ent(e, t, dt);
       ran = ran + 1;
     WHEN ANY DO
@@ -575,6 +586,7 @@ BEGIN
     END
     END
   END
+  IF (g_fr IS NOT NULL AND qc_g(g_fr) <> 0) THEN EXECUTE PROCEDURE qc_sg(g_fr, qc_g(g_fr) - 1);   -- as Quake: whatever it is by now
   -- with bots in the game, every client's place goes into their map of the level (FrikBot's waypoints)
   IF (EXISTS (SELECT 1 FROM bots)) THEN
   BEGIN

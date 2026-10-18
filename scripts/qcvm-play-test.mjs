@@ -327,6 +327,25 @@ const fresh = await ent(grunt), s3 = await splashes();
 assert(wet.WATERTYPE === -3 && wet.WATERLEVEL === 1 && s1 === s0 + 1 && out.WATERTYPE === -1 && out.WATERLEVEL === -1 && s2 === s1 + 1 && fresh.WATERTYPE === -3 && s3 === s2,
   `SV_CheckWaterTransition: a grunt put into E1M1's water splashes and is in water (type ${wet.WATERTYPE}), out again splashes (level ${out.WATERLEVEL}), and a fresh edict takes the water silently`);
 await db.exec(`UPDATE ents SET x = ${dry.X}, y = ${dry.Y}, z = ${dry.Z} WHERE id = ${grunt}`);
+// force_retouch (SV_Physics): while it is set every edict is linked again with its touches, still ones too. A grunt
+// standing still in E1M1's teleporter is not touched by it until then, and then it is sent to the destination
+const tele = (await byClass('trigger_teleport'))[0];
+const tb = await ent(tele);
+const mid = [tb.X + (tb.MINX + tb.MAXX) / 2, tb.Y + (tb.MINY + tb.MAXY) / 2, tb.Z + tb.MINZ + 25];
+await setf(grunt, 'health', 30);
+await db.exec(`UPDATE ents SET x = ${mid[0]}, y = ${mid[1]}, z = ${mid[2]}, vx = 0, vy = 0, vz = 0, flags = BIN_OR(flags, 512), solid = 3 WHERE id = ${grunt}`);
+await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+await setf(grunt, 'nextthink', 0);
+await frame();
+const stayed = await ent(grunt);
+await db.exec("EXECUTE PROCEDURE qc_sg(qc_gdef('force_retouch'), 2)");
+await frame();
+const sent = await ent(grunt);
+const fr1 = await q1("SELECT qc_g(qc_gdef('force_retouch')) v FROM rdb$database");
+await frame();
+const fr0 = await q1("SELECT qc_g(qc_gdef('force_retouch')) v FROM rdb$database");
+assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X - mid[0], sent.Y - mid[1]) > 64 && fr1.V === 1 && fr0.V === 0,
+  `force_retouch: a grunt standing in the teleporter stays put until it is set, then is sent on (${Math.hypot(sent.X - mid[0], sent.Y - mid[1]).toFixed(0)} units), and it counts down a frame at a time`);
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);
