@@ -304,6 +304,29 @@ await frame();
 const picked = await q1(`SELECT solid, model_id FROM ents WHERE id = ${item.ID}`);
 await db.exec('UPDATE ents SET movetype = 3 WHERE id = 1');
 assert(!picked || picked.SOLID === 0 || picked.MODEL_ID === null, `noclip touches triggers too: the item under the client (edict ${item.ID}) is picked up`);
+// SV_CheckWaterTransition after a monster's step: into the water and out again splashes (misc/h2ohit1.wav), and out of
+// it waterlevel is the contents, -1, as Quake leaves it; a fresh edict (watertype 0) takes the water silently
+const pool = await q1(`SELECT FIRST 1 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+  WHERE l.contents = -3 AND point_contents((l.minx + l.maxx) / 2, (l.miny + l.maxy) / 2, (l.minz + l.maxz) / 2) = -3 ORDER BY l.id`);
+// (a think due each frame, SUB_Null, so the frame visits the grunt: the loop runs the edicts that have work)
+const nullFn = (await q1("SELECT qc_fn('SUB_Null') f FROM rdb$database")).F;
+const thinkNow = async () => { await setf(grunt, 'think', nullFn); await setf(grunt, 'nextthink', t); };
+const splashes = async () => (await q1(`SELECT COUNT(*) n FROM sound_events WHERE ent_id = ${grunt} AND snd = 'misc/h2ohit1.wav'`)).N;
+const dry = await ent(grunt);
+await db.exec(`UPDATE ents SET watertype = -1, waterlevel = 0 WHERE id = ${grunt}`);
+const s0 = await splashes();
+await db.exec(`UPDATE ents SET x = ${pool.X}, y = ${pool.Y}, z = ${pool.Z}, flags = BIN_OR(flags, 512) WHERE id = ${grunt}`);
+await thinkNow(); await frame();
+const wet = await ent(grunt), s1 = await splashes();
+await db.exec(`UPDATE ents SET x = ${dry.X}, y = ${dry.Y}, z = ${dry.Z} WHERE id = ${grunt}`);
+await thinkNow(); await frame();
+const out = await ent(grunt), s2 = await splashes();
+await db.exec(`UPDATE ents SET x = ${pool.X}, y = ${pool.Y}, z = ${pool.Z}, watertype = 0 WHERE id = ${grunt}`);
+await thinkNow(); await frame();
+const fresh = await ent(grunt), s3 = await splashes();
+assert(wet.WATERTYPE === -3 && wet.WATERLEVEL === 1 && s1 === s0 + 1 && out.WATERTYPE === -1 && out.WATERLEVEL === -1 && s2 === s1 + 1 && fresh.WATERTYPE === -3 && s3 === s2,
+  `SV_CheckWaterTransition: a grunt put into E1M1's water splashes and is in water (type ${wet.WATERTYPE}), out again splashes (level ${out.WATERLEVEL}), and a fresh edict takes the water silently`);
+await db.exec(`UPDATE ents SET x = ${dry.X}, y = ${dry.Y}, z = ${dry.Z} WHERE id = ${grunt}`);
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

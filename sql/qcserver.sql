@@ -183,7 +183,7 @@ BEGIN
   IF (qc_on() = 1) THEN
   BEGIN
     DELETE FROM ents x WHERE x.id = :c;
-    INSERT INTO ents (id, classname) VALUES (:c, 'player');
+    INSERT INTO ents (id, classname, watertype) VALUES (:c, 'player', 0);
   END
   -- Host_Spawn_f: the edict's colormap is its client number (the painter dresses the skin in that client's
   -- colours, and mods find a client's slot by it: FrikBot's rankings), its team its bottom colour + 1

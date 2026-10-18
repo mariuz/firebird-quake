@@ -147,6 +147,11 @@ difference fixed with a test that fails without it:
   room), which is what kept it from costing 2 ms a frame. And a noclipping client touched no triggers, where
   `SV_LinkEdict(ent, true)` touches them for every movetype (only `SOLID_NOT` skips): noclip now picks up
   items and walks into teleporters and level exits as in Quake.
+- ~~**`SV_CheckWaterTransition`**~~ done (`npm run test:qcplay`): monsters (after their step and think) and tossed
+  things (after a move that hit something, where Quake's toss reaches it) never noticed water: no splash
+  (`misc/h2ohit1.wav`) going in or out, and `watertype`/`waterlevel` stayed as spawned. Now they splash and keep
+  both as Quake does (out of the water `waterlevel` is the contents, -1), and QuakeC edicts start with
+  `watertype` 0 as id's fresh edicts do, so one spawned in water takes it silently.
 
 ## Performance
 

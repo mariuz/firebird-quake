@@ -356,7 +356,7 @@ BEGIN
   IF (qc_on() = 1) THEN
   BEGIN
     DELETE FROM ents x WHERE x.id = :e;
-    INSERT INTO ents (id, classname) VALUES (:e, 'qc');
+    INSERT INTO ents (id, classname, watertype) VALUES (:e, 'qc', 0);          -- a fresh edict's watertype is 0 ("just spawned")
   END
   RETURN e;
 END^
@@ -393,8 +393,8 @@ BEGIN
   IF (qc_on() = 1) THEN
   BEGIN
     DELETE FROM ents;
-    INSERT INTO ents (id, classname) VALUES (1, 'player');
-    INSERT INTO ents (id, classname) SELECT d.id, '' FROM qc_edicts d WHERE d.id >= 2;
+    INSERT INTO ents (id, classname, watertype) VALUES (1, 'player', 0);
+    INSERT INTO ents (id, classname, watertype) SELECT d.id, '', 0 FROM qc_edicts d WHERE d.id >= 2;
   END
   DELETE FROM qc_vm;
   INSERT INTO qc_vm (id, g_self, g_other, g_world, g_time, g_frametime, g_vfwd, g_vup, g_vright,

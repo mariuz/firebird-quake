@@ -3,6 +3,8 @@
 
 SET TERM ^ ;
 
+CREATE OR ALTER PROCEDURE qc_water_transition (e INTEGER) AS BEGIN END^   -- defined after qc_toss, which calls it
+
 -- ── the server's physics on QuakeC edicts (sv_phys.c, sv_user.c), in QuakeC mode ──
 
 -- SV_Impact: both sides' touch, when they are solid. Called by the physics through impact().
@@ -165,6 +167,31 @@ BEGIN
     EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_groundentity FROM qc_vm v WHERE v.id = 1), hit);
   END
   ELSE UPDATE ents d SET d.vx = :ox, d.vy = :oy, d.vz = :oz WHERE d.id = :e;
+  -- (only after a move that hit something: Quake's toss returns before it when the trace was clear)
+  EXECUTE PROCEDURE qc_water_transition(e);
+END^
+
+-- SV_CheckWaterTransition: after a step or a toss, the water at the origin; crossing into or out of it
+-- splashes (misc/h2ohit1.wav). A fresh edict (watertype 0) takes what is there silently. Out of the water
+-- waterlevel is the contents (-1), as Quake leaves it.
+CREATE OR ALTER PROCEDURE qc_water_transition (e INTEGER)
+AS
+DECLARE cont INTEGER; DECLARE wt INTEGER;
+BEGIN
+  SELECT point_contents(d.x, d.y, d.z), d.watertype FROM ents d WHERE d.id = :e INTO cont, wt;
+  IF (cont IS NULL) THEN EXIT;
+  IF (wt = 0) THEN
+    UPDATE ents d SET d.watertype = :cont, d.waterlevel = 1 WHERE d.id = :e;
+  ELSE IF (cont <= -3) THEN
+  BEGIN
+    IF (wt = -1) THEN EXECUTE PROCEDURE snd(e, 0, 'misc/h2ohit1.wav', 1, 1);
+    UPDATE ents d SET d.watertype = :cont, d.waterlevel = 1 WHERE d.id = :e AND (d.watertype <> :cont OR d.waterlevel <> 1);
+  END
+  ELSE
+  BEGIN
+    IF (wt <> -1) THEN EXECUTE PROCEDURE snd(e, 0, 'misc/h2ohit1.wav', 1, 1);
+    UPDATE ents d SET d.watertype = -1, d.waterlevel = :cont WHERE d.id = :e AND (d.watertype <> -1 OR d.waterlevel <> :cont);
+  END
 END^
 
 -- SV_Physics_Step: monsters fall when nothing holds them, then think
@@ -188,6 +215,7 @@ BEGIN
     END
   END
   EXECUTE PROCEDURE qc_run_think(e, t, dt) RETURNING_VALUES alive;
+  IF (alive = 1) THEN EXECUTE PROCEDURE qc_water_transition(e);
 END^
 
 -- SV_ClientThink (sv_user.c): the input into the client's fields, its view angles, and its movement
