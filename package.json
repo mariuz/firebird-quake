@@ -29,6 +29,7 @@
     "test:mod": "node scripts/mod-test.mjs",
     "test:console": "node scripts/console-test.mjs",
     "test:touch": "node scripts/touch-test.mjs",
+    "test:page": "node scripts/page-test.mjs",
     "test:compare": "node scripts/compare-test.mjs",
     "test:image": "node scripts/image-test.mjs",
     "test:e1m8": "node scripts/e1m8-test.mjs",
@@ -55,7 +56,8 @@
     "firebird-wasm": "^0.7.0"
   },
   "devDependencies": {
-    "esbuild-wasm": "^0.25.0"
+    "esbuild-wasm": "^0.25.0",
+    "playwright-core": "^1.56.1"
   },
   "engines": {
     "node": ">=20"

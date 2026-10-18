@@ -141,6 +141,7 @@ in order of what they would change.
 
 ## Tooling and tests
 
+- ~~**Nothing opened the page**~~ done (`npm run test:page`, in the build job before the deploy): every test ran the SQL under Node, so the page stopping at start-up (a `const` used above its line) and QuakeC failing to spawn on the schema image both went out with CI green. The test serves `dist/` without COOP/COEP, opens it in headless Chromium and waits for tics in the PSQL game and in a QuakeC deathmatch with three bots, failing on any page error; put back, each of the two bugs fails it.
 - ~~**CI takes about three minutes**~~ (it had grown to eight in one job) done: the tests run as a matrix of five groups side by side after one job caches the paks, and the site is built when they all pass.
 - ~~**Flakiness**~~ done: every scene test loads its levels with `seed: 1` (only the demo test records from a random seed, on purpose), so random first thinks and AI choices are the same every run; the last flake (the QuakeC dog's `movetogoal` detours in `test:qcai`, which failed once in CI) is gone with it. Event expiry (look each tic) is still the tests' own care.
 - ~~`bench.mjs` should also time the painter~~ done: `scripts/paint-bench.mjs` (`npm run bench:paint`) paints four scenes at both resolutions, warm and cold.
