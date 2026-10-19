@@ -310,8 +310,11 @@ BEGIN
     mid = (SELECT FIRST 1 m.id FROM models m WHERE m.name = :s);
     EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_modelindex FROM qc_vm v WHERE v.id = 1), COALESCE(mid, IIF(s = '', 0, 1)));
     x = NULL;
-    IF (mid IS NOT NULL) THEN SELECT m.minx, m.miny, m.minz, m.maxx, m.maxy, m.maxz FROM models m WHERE m.id = :mid INTO x, y, z, ex, ey, ez;
-    IF (x IS NOT NULL) THEN                        -- brush models carry their bounds; alias models get theirs from setsize
+    -- brush models carry their bounds; an alias model has Mod_LoadAliasModel's fixed box, 16 each way, until setsize
+    IF (mid IS NOT NULL) THEN
+      SELECT IIF(m.kind = 'M', -16, m.minx), IIF(m.kind = 'M', -16, m.miny), IIF(m.kind = 'M', -16, m.minz),
+             IIF(m.kind = 'M', 16, m.maxx), IIF(m.kind = 'M', 16, m.maxy), IIF(m.kind = 'M', 16, m.maxz) FROM models m WHERE m.id = :mid INTO x, y, z, ex, ey, ez;
+    IF (x IS NOT NULL) THEN
     BEGIN
       EXECUTE PROCEDURE qc_sf(e, vm_mi, x); EXECUTE PROCEDURE qc_sf(e, vm_mi + 1, y); EXECUTE PROCEDURE qc_sf(e, vm_mi + 2, z);
       EXECUTE PROCEDURE qc_sf(e, vm_ma, ex); EXECUTE PROCEDURE qc_sf(e, vm_ma + 1, ey); EXECUTE PROCEDURE qc_sf(e, vm_ma + 2, ez);

@@ -600,6 +600,20 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(Math.hypot(sent.X - mid[0], sent.Y - mid[1]) > 64 && afterTouch.join() === '1,7' && afterImpact.join() === '1,7',
     `self and other are put back after a trigger's touch (the teleporter sent the grunt on: self ${afterTouch[0]}, other ${afterTouch[1]}) and after an impact's (an item's touch: ${afterImpact.join(', ')})`);
 }
+// PF_setmodel sizes an alias model to its fixed box, 16 each way (Mod_LoadAliasModel), until a setsize
+{
+  const box = async (e) => Promise.all(['mins', 'maxs'].flatMap((f) => [0, 1, 2].map((k) => fld(e, f, k))));
+  const before = await box(grunt);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(7, ${await fld(grunt, 'model')})`);
+  await db.exec('EXECUTE PROCEDURE qc_builtin(3, 0)');
+  const after = await box(grunt), row = await ent(grunt);
+  for (const [k, v] of before.entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${7 + k}, ${v})`);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`);
+  await db.exec('EXECUTE PROCEDURE qc_builtin(4, 0)');
+  assert(after.join() === '-16,-16,-16,16,16,16' && row.MINZ === -16 && (await box(grunt)).join() === before.join(),
+    `setmodel on soldier.mdl gives the box Quake's alias models have, ${after.slice(0, 3).join(' ')} to ${after.slice(3).join(' ')} (in ents too), until setsize (${before.join(' ')} again)`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

@@ -194,10 +194,15 @@ difference fixed with a test that fails without it:
   touch they ran, where Quake puts them back; a monster's `walkmove` into a trigger came back with `other` changed
   (`PF_walkmove` restores only `self`, relying on the touch to restore `other`). `aim` now looks through the edicts in
   order, as `PF_aim` does, so a tie goes to the later one.
+- ~~**`PF_setmodel`**~~ done (`npm run test:qcplay`): an alias model left the edict's size as it was, where Quake gives it
+  the fixed box `Mod_LoadAliasModel` sets, 16 units each way, until a `setsize`. (A sprite's box, its frame size in
+  Quake, is still left at nothing: no progs makes a sprite solid.)
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world), `droptofloor`, `walkmove`,
   `makevectors`, `rint`, `normalize`, `setorigin`, `setsize`, `checkclient` (`PF_newcheckclient`'s turn every
-  0.1 s and the PVS of the client's eye; `FL_NOTARGET` is the progs' own test).
+  0.1 s and the PVS of the client's eye; `FL_NOTARGET` is the progs' own test), `SV_Physics_Toss` (gravity but
+  for fly and missiles, the touch's velocity and movetype used for the bounce, 60 units/s to stop a bounce),
+  `SV_Physics_Step` (the fall, `demon/dland2.wav` on landing, then the think).
 
 ## Performance
 
