@@ -469,7 +469,8 @@ BEGIN
     UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
     EXECUTE PROCEDURE fly_move(pe, dt) RETURNING_VALUES tst, tid, fwx, fwy;
   END
-  ELSE EXECUTE PROCEDURE walk_move(pe, dt, NULL, NULL);
+  -- SV_WalkMove with the view's forward vector (AngleVectors): SV_TryUnstick and SV_WallFriction as in QuakeC mode
+  ELSE EXECUTE PROCEDURE walk_move(pe, dt, COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0), COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0));
   EXECUTE PROCEDURE link_ent(pe);
   -- smooth the view over steps
   SELECT e.z FROM ents e WHERE e.id = :pe INTO pz;

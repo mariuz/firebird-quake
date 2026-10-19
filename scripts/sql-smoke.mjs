@@ -59,6 +59,35 @@ const moved = Math.hypot(s.PX - start.x, s.PY - start.y);
 assert(moved > 50, `player walked forward (${moved.toFixed(1)} units)`);
 assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - start.z).toFixed(1)})`);
 
+// SV_WallFriction in the PSQL game (walk_move given the view's forward vector): the player at a tall wall, moving
+// into it at a slant, the same tic with no input run twice, facing along the wall and facing it; facing it keeps half
+// the speed along the wall (1 + d, d = normal · forward + 0.5 = -0.5), facing along it all of it
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  const box = (await db.query(`SELECT minx, miny, minz, maxx, maxy, maxz, x, y, z, yaw FROM ents WHERE id = ${pe}`)).rows[0];
+  const tr = (x, y, z, dx, dy) => db.query(`SELECT fraction f, ex, ey, ez, nx, ny FROM trace_move(${pe}, ${box.MINX}, ${box.MINY}, ${box.MINZ}, ${box.MAXX}, ${box.MAXY}, ${box.MAXZ}, ${x}, ${y}, ${z}, ${x + dx}, ${y + dy}, ${z}, 0)`).then((r) => r.rows[0]);
+  let w = null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const r = await tr(start.x, start.y, start.z, dx * 256, dy * 256), hi = await tr(start.x, start.y, start.z + 18, dx * 256, dy * 256);
+    if (r.F < 1 && Math.abs(r.NX + dx) < 1e-6 && Math.abs(r.NY + dy) < 1e-6 && hi.F < 1 && Math.abs(hi.F - r.F) * 256 < 1) { w = { dx, dy, x: r.EX - dx * 4, y: r.EY - dy * 4, z: r.EZ }; break; }
+  }
+  const tx = -w.dy, ty = w.dx;
+  const along = async (yaw) => {
+    await db.exec(`UPDATE ents SET x = ${w.x}, y = ${w.y}, z = ${w.z}, vx = ${w.dx * 300 + tx * 100}, vy = ${w.dy * 300 + ty * 100}, vz = 0, yaw = ${yaw}, flags = BIN_OR(flags, 512) WHERE id = ${pe}`);
+    await db.exec(`UPDATE player SET pitch = 0 WHERE id = 1`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+    await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+    const e = (await db.query(`SELECT vx, vy FROM ents WHERE id = ${pe}`)).rows[0];
+    return e.VX * tx + e.VY * ty;
+  };
+  const deg = (x, y) => Math.atan2(y, x) * 180 / Math.PI;
+  const slide = await along(deg(tx, ty)), into = await along(deg(w.dx, w.dy));
+  assert(w && slide > 10 && Math.abs(into / slide - 0.5) < 0.01,
+    `SV_WallFriction in the PSQL game: moving into a wall, facing it keeps half the speed along it (${into.toFixed(1)} of ${slide.toFixed(1)} facing along it)`);
+  await db.exec(`UPDATE ents SET x = ${box.X}, y = ${box.Y}, z = ${box.Z}, yaw = ${box.YAW}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+}
+
 t0 = t();
 s = await tic([1, 0, 0, 0, 0, 1, 0, 1, 0]);
 console.log(`fire            ${(t() - t0).toFixed(0)} ms; shells ${s.SHELLS}`);

@@ -801,10 +801,10 @@ END^
 
 -- SV_WalkMove for the player: fly, and if a wall stopped us try again from
 -- one step (18 units) up, keeping that only if it lands on ground. fwx, fwy:
--- the view's forward vector, given in QuakeC mode, which then also runs
--- SV_TryUnstick (a step-up that went nowhere is nudged 2 units each way in
--- turn) and SV_WallFriction (running into a wall nearly head-on keeps only
--- part of the speed along it); the PSQL game passes NULLs and does neither.
+-- the view's forward vector (both games give it; NULLs skip what needs it),
+-- for SV_TryUnstick (a step-up that went nowhere is nudged 2 units each way
+-- in turn) and SV_WallFriction (running into a wall nearly head-on keeps only
+-- part of the speed along it).
 CREATE OR ALTER PROCEDURE walk_move (eid INTEGER, dt DOUBLE PRECISION, fwx DOUBLE PRECISION, fwy DOUBLE PRECISION)
 AS
 DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;

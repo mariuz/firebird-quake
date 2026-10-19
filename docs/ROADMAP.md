@@ -168,8 +168,8 @@ difference fixed with a test that fails without it:
   half is kept). There was no `SV_TryUnstick` either, so a run caught on a jamb's edge by a unit stopped dead; now a
   step-up that made no headway is nudged 2 units each way in turn and the move tried again. The step-up is also
   skipped for a water jump and for a client whose touch changed its movetype, and `fly_move` returns 7 when it is
-  stopped in a corner, as `SV_FlyMove` does. These run in QuakeC mode (`walk_move` given the view's forward
-  vector); the PSQL game's movement is left as it was.
+  stopped in a corner, as `SV_FlyMove` does. Both games give `walk_move` the view's forward vector, so the PSQL
+  game's player has the wall friction and the unsticking too (`npm test` checks the friction through `quake_tic`).
 - ~~**`SV_movestep`**~~ done (`npm run test:qcplay`): there was no `SV_CheckBottom` after the step, so a monster
   walked on towards a drop for as long as any part of its box's trace down found floor, until a corner was all
   that stood on the edge; now the step is refused when the floor under its middle or a corner is more than a step
