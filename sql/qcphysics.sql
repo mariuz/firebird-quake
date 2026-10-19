@@ -160,10 +160,8 @@ BEGIN
   fav = (SELECT v.f_avelocity FROM qc_vm v WHERE v.id = 1);
   UPDATE ents d SET d.pitch = d.pitch + qc_f(:e, :fav) * :dt, d.yaw = d.yaw + d.avel_yaw * :dt, d.roll = d.roll + qc_f(:e, :fav + 2) * :dt WHERE d.id = :e;
   SELECT d.vx, d.vy, d.vz FROM ents d WHERE d.id = :e INTO vx, vy, vz;
-  EXECUTE PROCEDURE push_entity(e, vx * dt, vy * dt, vz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;   -- impact() runs the touches
-  IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;
-  EXECUTE PROCEDURE link_ent(e);
-  EXECUTE PROCEDURE qc_touch_triggers(e);
+  -- (SV_PushEntity: linked with its trigger touches, then the impact's touches)
+  EXECUTE PROCEDURE push_entity(e, vx * dt, vy * dt, vz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
   IF (f = 1 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;
   -- the touch may have changed the velocity and the movetype: use them as they are now
   SELECT d.movetype, d.vx, d.vy, d.vz FROM ents d WHERE d.id = :e INTO mt, vx, vy, vz;

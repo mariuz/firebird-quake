@@ -160,8 +160,9 @@ difference fixed with a test that fails without it:
   missile clips as `MOVE_MISSILE` (a monster is hit by a box 15 units each way, so a rocket or a nail that grazes
   a grunt hits it) and a trigger or non-solid thing as `MOVE_NOMONSTERS` (a backpack falls through monsters and
   players). `trace_move`'s `nomonsters` = 2 is the missile clip. The PSQL game's missiles share `push_entity`
-  and clip the same way. Left as it is: Quake links the mover with its trigger touches before the impact;
-  here the impact comes first (it matters only when both happen in one frame).
+  and clip the same way. And in QuakeC mode the mover is now linked with its trigger touches before the
+  impact, as `SV_LinkEdict(ent, true)` comes before `SV_Impact` there: a rocket stopped by a wall inside a
+  trigger touches the trigger, then explodes (with the impact first it was gone before the trigger saw it).
 - ~~**`SV_WalkMove`**~~ done (`npm run test:qcplay`): there was no `SV_WallFriction`, so running into a wall nearly
   head-on slid along it at full speed; now the speed along it is cut by how squarely the view faces it (facing it,
   half is kept). There was no `SV_TryUnstick` either, so a run caught on a jamb's edge by a unit stopped dead; now a

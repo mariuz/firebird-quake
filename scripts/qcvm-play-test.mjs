@@ -614,6 +614,40 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(after.join() === '-16,-16,-16,16,16,16' && row.MINZ === -16 && (await box(grunt)).join() === before.join(),
     `setmodel on soldier.mdl gives the box Quake's alias models have, ${after.slice(0, 3).join(' ')} to ${after.slice(3).join(' ')} (in ents too), until setsize (${before.join(' ')} again)`);
 }
+// SV_PushEntity links the mover with its trigger touches before the impact: a missile that ends its move in a trigger
+// against a wall touches the trigger, then the wall (triggers are touched where a move ends, not along it). Both touches are SUB_Remove (each removes its self), so
+// in Quake's order both are gone; with the impact first the missile went and the trigger was never touched
+{
+  const remove = (await q1("SELECT qc_fn('SUB_Remove') f FROM rdb$database")).F;
+  const spawn = async () => { await db.exec('EXECUTE PROCEDURE qc_builtin(14, 0)'); return (await q1('SELECT qc_g(1) v FROM rdb$database')).V; };
+  const place = async (e, o, mn, mx) => {
+    for (const [k, v] of [e, 0, 0, ...o].entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${4 + k}, ${v})`);
+    await db.exec('EXECUTE PROCEDURE qc_builtin(2, 0)');
+    for (const [k, v] of [e, 0, 0, ...mn, ...mx].entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${4 + k}, ${v})`);
+    await db.exec('EXECUTE PROCEDURE qc_builtin(4, 0)');
+  };
+  // a wall at least 100 units off the player's free spot from above, at its height
+  const z = free.Z;
+  let wall = null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const t = await q1(`SELECT fraction f, ex, ey, startsolid s FROM trace_move(NULL, 0, 0, 0, 0, 0, 0, ${free.X}, ${free.Y}, ${z}, ${free.X + dx * 600}, ${free.Y + dy * 600}, ${z}, 1)`);
+    if (t.S === 0 && t.F < 1 && t.F * 600 > 100) { wall = { dx, dy, x: t.EX, y: t.EY }; break; }
+  }
+  const missile = await spawn(), trig = await spawn();
+  const start = [wall.x - wall.dx * 80, wall.y - wall.dy * 80, z];
+  await place(missile, start, [0, 0, 0], [0, 0, 0]);
+  await place(trig, [wall.x - wall.dx * 4, wall.y - wall.dy * 4, z], [-8, -8, -8], [8, 8, 8]);   // where the move ends
+  await db.exec(`UPDATE ents SET solid = 2, movetype = 9 WHERE id = ${missile}`);
+  await db.exec(`UPDATE ents SET solid = 1, movetype = 0 WHERE id = ${trig}`);
+  await setf(missile, 'touch', remove); await setf(trig, 'touch', remove);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${trig})`);
+  const r = await q1(`SELECT fraction f, hit_ent h FROM push_entity(${missile}, ${wall.dx * 160}, ${wall.dy * 160}, 0)`);
+  const gone = async (e) => (await q1(`SELECT COUNT(*) n FROM ents WHERE id = ${e}`)).N === 0;
+  const [mg, tg] = [await gone(missile), await gone(trig)];
+  for (const e of [missile, trig]) if (!(await gone(e))) await db.exec(`EXECUTE PROCEDURE qc_free(${e})`);
+  assert(wall && mg && tg,
+    `SV_PushEntity: a missile stopped by a wall inside a trigger touches the trigger first (trigger removed: ${tg}), then hits the wall (missile removed: ${mg})`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

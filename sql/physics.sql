@@ -762,6 +762,9 @@ BEGIN
   SUSPEND;
 END^
 
+-- forward declaration (body in qcphysics.sql): the triggers a QuakeC edict touches
+CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER) AS BEGIN END^
+
 -- SV_PushEntity: move by a vector, stopping at the first thing hit.
 CREATE OR ALTER PROCEDURE push_entity (eid INTEGER, dx DOUBLE PRECISION, dy DOUBLE PRECISION, dz DOUBLE PRECISION)
 RETURNS (fraction DOUBLE PRECISION, nx DOUBLE PRECISION, ny DOUBLE PRECISION, nz DOUBLE PRECISION,
@@ -780,6 +783,14 @@ BEGIN
                                IIF(mt = 9, 2, IIF(sol IN (0, 1), 1, 0)))
     RETURNING_VALUES fraction, ex, ey, ez, nx, ny, nz, allsolid, startsolid, inopen, inwater, hit_ent;
   UPDATE ents e SET e.x = :ex, e.y = :ey, e.z = :ez WHERE e.id = :eid;
+  -- QuakeC mode: SV_LinkEdict(ent, true) before SV_Impact, so what a move passes through is touched before what
+  -- stops it (a rocket through a teleporter into a wall)
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN
+  BEGIN
+    EXECUTE PROCEDURE link_ent(eid);
+    EXECUTE PROCEDURE qc_touch_triggers(eid);
+    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN BEGIN SUSPEND; EXIT; END
+  END
   IF (fraction < 1) THEN EXECUTE PROCEDURE impact(eid, hit_ent);
   SUSPEND;
 END^
