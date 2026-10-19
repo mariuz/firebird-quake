@@ -533,6 +533,52 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(hang && (fixed.FLAGS & 1024) !== 0 && fixed.X === hang.x && fixed.Y === hang.y,
     `SV_FixCheckBottom: a grunt hanging over a ledge with nowhere to step is marked FL_PARTIALGROUND`);
 }
+// PF_vectoyaw and PF_vectoangles give whole degrees (they cast to int), 90 for straight along y and not 89
+{
+  const call = async (n, args) => {
+    for (const [k, v] of args.entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${4 + k}, ${v})`);
+    await db.exec(`EXECUTE PROCEDURE qc_builtin(${n}, 0)`);
+    return [await q1('SELECT qc_g(1) v FROM rdb$database'), await q1('SELECT qc_g(2) v FROM rdb$database'), await q1('SELECT qc_g(3) v FROM rdb$database')].map((r) => r.V);
+  };
+  const yaws = [(await call(13, [1, 2, 0]))[0], (await call(13, [0, 1, 0]))[0], (await call(13, [-1, -1, 0]))[0]];
+  const up = await call(51, [1, 0, 1]), down = await call(51, [1, 2, -1]);
+  assert(yaws.join() === '63,90,225' && up.join() === '45,0,0' && down.join() === '336,63,0',
+    `vectoyaw and vectoangles in whole degrees as Quake casts them: ${yaws.join(', ')}; (1 0 1) ${up.join(' ')}, (1 2 -1) ${down.join(' ')}`);
+}
+// PF_traceline's trace_inopen is the line having gone through open air (not its hitting something): visible() takes
+// a line through air and water both for a crossed surface. From E1M1's water up into the air above it: both set
+{
+  const pools = await qa(`SELECT FIRST 20 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+    WHERE l.contents = -3 AND point_contents((l.minx + l.maxx) / 2, (l.miny + l.maxy) / 2, (l.minz + l.maxz) / 2) = -3 ORDER BY l.id`);
+  const g = (name) => q1(`SELECT qc_g(qc_gdef('${name}')) v FROM rdb$database`).then((r) => r.V);
+  const traceline = async (a, b) => {
+    for (const [k, v] of [...a, ...b, 1, 0, 0, 0].entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${4 + k}, ${v})`);
+    await db.exec('EXECUTE PROCEDURE qc_builtin(16, 0)');
+    return { f: await g('trace_fraction'), open: await g('trace_inopen'), water: await g('trace_inwater') };
+  };
+  let wet = null, dry = null;
+  for (const p of pools) {
+    const sky = await q1(`SELECT ez FROM trace_move(NULL, 0, 0, 0, 0, 0, 0, ${p.X}, ${p.Y}, ${p.Z}, ${p.X}, ${p.Y}, ${p.Z + 512}, 1)`);
+    const top = [p.X, p.Y, p.Z + (sky.EZ - p.Z) * 0.9];
+    if ((await q1(`SELECT point_contents(${top.join(', ')}) c FROM rdb$database`)).C !== -1) continue;
+    wet = await traceline([p.X, p.Y, p.Z], top);
+    dry = await traceline([p.X, p.Y, top[2] - 8], top);
+    if ((await q1(`SELECT point_contents(${p.X}, ${p.Y}, ${top[2] - 8}) c FROM rdb$database`)).C === -1) break;
+  }
+  assert(wet && wet.f === 1 && wet.open === 1 && wet.water === 1 && dry.f === 1 && dry.open === 1 && dry.water === 0,
+    `traceline from the water up into the air is clear and goes through both (inopen ${wet?.open}, inwater ${wet?.water}); one in the air only, inopen ${dry?.open}, inwater ${dry?.water}`);
+}
+// PF_findradius chains from the highest edict down (it walks up and puts each in front of the chain)
+{
+  const p = await ent(1);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${p.X})`); await db.exec(`EXECUTE PROCEDURE qc_sg(5, ${p.Y})`); await db.exec(`EXECUTE PROCEDURE qc_sg(6, ${p.Z})`);
+  await db.exec('EXECUTE PROCEDURE qc_sg(7, 1000)');
+  await db.exec('EXECUTE PROCEDURE qc_builtin(22, 0)');
+  const chain = [];
+  for (let e = (await q1('SELECT qc_g(1) v FROM rdb$database')).V; e && chain.length < 500; e = await fld(e, 'chain')) chain.push(e);
+  assert(chain.length > 2 && chain.every((e, k) => k === 0 || e < chain[k - 1]),
+    `findradius: ${chain.length} edicts within 1000 units, chained from the highest down (${chain.slice(0, 4).join(', ')}, …)`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

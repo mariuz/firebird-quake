@@ -183,8 +183,16 @@ difference fixed with a test that fails without it:
   turns; ours wrapped it and neither stepped. `SV_NewChaseDir`'s search round all eight directions now skips the
   turnaround, and a monster that can step nowhere while hanging over a drop is marked `FL_PARTIALGROUND`
   (`SV_FixCheckBottom`), which lets its next step take it off the edge.
+- ~~**The builtins (`pr_cmds.c`)**~~ done (`npm run test:qcplay`): `traceline` set `trace_inopen` to "hit something",
+  where Quake sets it when the line went through open air; id's `visible()` takes a line through air and water both
+  for a crossed surface, so monsters saw across the top of water that hides the player from them in Quake. Now it is
+  the trace's own `inopen`. `vectoyaw` and `vectoangles` kept fractions of a degree where Quake casts them to whole
+  degrees (with the exact `180 / π`, so straight along y is 90 and not 89). `findradius`'s chain ran from the lowest
+  edict up, where Quake's runs from the highest down (it walks up and puts each in front): a blast's
+  `T_RadiusDamage` now hurts things in Quake's order.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
-  pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
+  pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world), `droptofloor`, `walkmove`,
+  `makevectors`, `rint`, `normalize`, `setorigin`, `setsize`.
 
 ## Performance
 

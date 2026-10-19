@@ -53,7 +53,8 @@ BEGIN
   ELSE IF (n = 13) THEN                             -- vectoyaw(v)
   BEGIN
     IF (qc_g(4) = 0 AND qc_g(5) = 0) THEN a = 0;
-    ELSE BEGIN a = ATAN2(qc_g(5), qc_g(4)) * 57.2957795e0; IF (a < 0) THEN a = a + 360; END
+    -- whole degrees, as PF_vectoyaw casts them to int (atan2 * 180 / M_PI, in that order)
+    ELSE BEGIN a = TRUNC(ATAN2(qc_g(5), qc_g(4)) * 180 / PI()); IF (a < 0) THEN a = a + 360; END
     EXECUTE PROCEDURE qc_sg(1, a);
   END
   ELSE IF (n = 26) THEN EXECUTE PROCEDURE qc_sg(1, qc_newstr(qc_ftos(qc_g(4))));                     -- ftos
@@ -68,8 +69,9 @@ BEGIN
     IF (qc_g(5) = 0 AND qc_g(4) = 0) THEN BEGIN b = 0; a = IIF(qc_g(6) > 0, 90, 270); END
     ELSE
     BEGIN
-      b = ATAN2(qc_g(5), qc_g(4)) * 57.2957795e0; IF (b < 0) THEN b = b + 360;
-      a = ATAN2(qc_g(6), SQRT(qc_g(4) * qc_g(4) + qc_g(5) * qc_g(5))) * 57.2957795e0; IF (a < 0) THEN a = a + 360;
+      -- whole degrees, as PF_vectoangles casts them to int
+      b = TRUNC(ATAN2(qc_g(5), qc_g(4)) * 180 / PI()); IF (b < 0) THEN b = b + 360;
+      a = TRUNC(ATAN2(qc_g(6), SQRT(qc_g(4) * qc_g(4) + qc_g(5) * qc_g(5))) * 180 / PI()); IF (a < 0) THEN a = a + 360;
     END
     EXECUTE PROCEDURE qc_sg(1, a); EXECUTE PROCEDURE qc_sg(2, b); EXECUTE PROCEDURE qc_sg(3, 0);
   END
@@ -152,7 +154,7 @@ DECLARE i INTEGER; DECLARE s VARCHAR(2048) CHARACTER SET ASCII; DECLARE sp DOUBL
 DECLARE vm_fwd INTEGER; DECLARE frac DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION;
 DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION; DECLARE nx DOUBLE PRECISION;
 DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE hit INTEGER; DECLARE alls SMALLINT;
-DECLARE starts SMALLINT; DECLARE inw SMALLINT; DECLARE head INTEGER; DECLARE wm INTEGER; DECLARE mid INTEGER;
+DECLARE starts SMALLINT; DECLARE inw SMALLINT; DECLARE ino SMALLINT; DECLARE head INTEGER; DECLARE wm INTEGER; DECLARE mid INTEGER;
 DECLARE cur DOUBLE PRECISION; DECLARE ideal DOUBLE PRECISION; DECLARE mv DOUBLE PRECISION;
 DECLARE gself INTEGER; DECLARE ok SMALLINT; DECLARE pv d_pvs; DECLARE bx DOUBLE PRECISION;
 DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE best DOUBLE PRECISION;
@@ -162,18 +164,18 @@ BEGIN
     FROM qc_vm v WHERE v.id = 1 INTO gself, vm_fwd;
   IF (n = 16) THEN                             -- traceline(v1, v2, nomonsters, forent): the world, and in QuakeC mode the entities too
   BEGIN
-    frac = 1; ex = qc_g(7); ey = qc_g(8); ez = qc_g(9); nx = 0; ny = 0; nz = 0; hit = 0; alls = 0; starts = 0; inw = 0;
+    frac = 1; ex = qc_g(7); ey = qc_g(8); ez = qc_g(9); nx = 0; ny = 0; nz = 0; hit = 0; alls = 0; starts = 0; inw = 0; ino = 0;
     wm = (SELECT g.world_model FROM game g WHERE g.id = 1);
     IF (qc_on() = 1) THEN
-      SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inwater, t.hit_ent
+      SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inopen, t.inwater, t.hit_ent
         FROM trace_move(CAST(qc_g(13) AS INTEGER), 0, 0, 0, 0, 0, 0, qc_g(4), qc_g(5), qc_g(6), qc_g(7), qc_g(8), qc_g(9), CAST(qc_g(10) AS SMALLINT)) t
-        INTO frac, ex, ey, ez, nx, ny, nz, alls, starts, inw, hit;
+        INTO frac, ex, ey, ez, nx, ny, nz, alls, starts, ino, inw, hit;
     ELSE IF (wm IS NOT NULL) THEN
     BEGIN
       SELECT m.hull0 FROM models m WHERE m.id = :wm INTO head;
-      SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inwater
+      SELECT t.fraction, t.ex, t.ey, t.ez, t.nx, t.ny, t.nz, t.allsolid, t.startsolid, t.inopen, t.inwater
         FROM trace_hull(0, :head, 0, 0, 0, qc_g(4), qc_g(5), qc_g(6), qc_g(7), qc_g(8), qc_g(9)) t
-        INTO frac, ex, ey, ez, nx, ny, nz, alls, starts, inw;
+        INTO frac, ex, ey, ez, nx, ny, nz, alls, starts, ino, inw;
     END
     SELECT v.g_trace_allsolid, v.g_trace_startsolid, v.g_trace_fraction, v.g_trace_endpos, v.g_trace_plane_normal, v.g_trace_plane_dist, v.g_trace_ent, v.g_trace_inopen, v.g_trace_inwater
       FROM qc_vm v WHERE v.id = 1 INTO a, b, c, x, y, z, e, i, sp;
@@ -181,7 +183,8 @@ BEGIN
     EXECUTE PROCEDURE qc_sg(CAST(x AS INTEGER), ex); EXECUTE PROCEDURE qc_sg(CAST(x AS INTEGER) + 1, ey); EXECUTE PROCEDURE qc_sg(CAST(x AS INTEGER) + 2, ez);
     EXECUTE PROCEDURE qc_sg(CAST(y AS INTEGER), nx); EXECUTE PROCEDURE qc_sg(CAST(y AS INTEGER) + 1, ny); EXECUTE PROCEDURE qc_sg(CAST(y AS INTEGER) + 2, nz);
     EXECUTE PROCEDURE qc_sg(CAST(z AS INTEGER), nx * ex + ny * ey + nz * ez);
-    EXECUTE PROCEDURE qc_sg(e, hit); EXECUTE PROCEDURE qc_sg(i, IIF(frac < 1, 1, 0)); EXECUTE PROCEDURE qc_sg(CAST(sp AS INTEGER), inw);
+    -- trace_inopen: the line went through open air (visible() refuses a line through air and water both)
+    EXECUTE PROCEDURE qc_sg(e, hit); EXECUTE PROCEDURE qc_sg(i, ino); EXECUTE PROCEDURE qc_sg(CAST(sp AS INTEGER), inw);
   END
   ELSE IF (n = 17) THEN                             -- checkclient(): the client, if the caller's eye is in the PVS of the client's eye
   BEGIN
@@ -338,9 +341,10 @@ BEGIN
   ELSE IF (n = 22) THEN                             -- findradius(org, rad): a chain through .chain
   BEGIN
     -- PF_findradius: every edict after the world that is not SOLID_NOT (the world, last in the walk, would
-    -- otherwise end the chain as soon as a radius reached the map's centre: FrikBot's 13000 does)
+    -- otherwise end the chain as soon as a radius reached the map's centre: FrikBot's 13000 does), walked up from
+    -- the first and each put in front, so the chain runs from the highest edict down as Quake's does
     a = qc_g(7); c = 0; hit = 0; i = qc_fdef('solid');
-    FOR SELECT d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > 0 ORDER BY d.id DESC INTO e DO
+    FOR SELECT d.id FROM qc_edicts d WHERE d.free = 0 AND d.id > 0 ORDER BY d.id INTO e DO
     IF (qc_f(e, i) <> 0) THEN
     BEGIN
       x = qc_f(e, vm_fo) + (qc_f(e, vm_mi) + qc_f(e, vm_ma)) * 0.5e0 - qc_g(4);
