@@ -210,6 +210,21 @@ difference fixed with a test that fails without it:
   for fly and missiles, the touch's velocity and movetype used for the bounce, 60 units/s to stop a bounce),
   `SV_Physics_Step` (the fall, `demon/dland2.wav` on landing, then the think).
 
+## The PSQL game against QuakeC mode
+
+The fidelity audit above fixed QuakeC mode; where the PSQL game has its own copy of the same rule, it is brought
+to the same behaviour, with a test of its own:
+
+- ~~**`SV_WalkMove`**~~ done (`npm test`): the PSQL player's walk is given the view's forward vector, so it has
+  `SV_WallFriction` and `SV_TryUnstick` as QuakeC mode does.
+- ~~**`T_RadiusDamage`**~~ done (`npm run test:infight`): the blast reached a box of `damage + 40` around it (a
+  grunt 200 units off a rocket took 20), where `findradius` takes the middles within a sphere of that radius and
+  skips `SOLID_NOT`; `CanDamage` traced once to the middle (and let a trace that started in a wall through), where
+  Quake tries the origin and four points 15 units off it across, or the middle of a brush model's bounds; the
+  shambler takes half of every blast; and the blast goes from the highest edict down, as the chain does.
+- Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
+  (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
+
 ## Performance
 
 - **The physics write only what changes, too**: of a deathmatch frame's 46 `ents` updates, 11 changed nothing (found with a trigger recording the columns each update changed): the client's angles and velocity set again unchanged while standing or not turning, the water level stored by `check_water` and then again by `qc_physics_client`, and `walk_move` clearing an on-ground flag that was already clear. Those are now conditional or gone (2 a frame left), and the frame went from 23.3 to 22.0 ms (four alternating rounds). The last unchanged global writes (34 a frame, all `OFS_RETURN` written by `qc_exec` after a think or touch it ran compiled) and the VM's depth are conditional as well, about 0.2 ms more. What remains are real changes: `flags` (`walk_move` clears the on-ground flag and `fly_move` sets it again, 6.7 a frame), gravity's `vz`, positions and frames.

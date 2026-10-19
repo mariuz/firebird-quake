@@ -127,6 +127,35 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `a grunt firing at the player flashes (tic ${lit}) for that frame only, and the flash is a light in the PSQL game too`);
 }
 
+// T_RadiusDamage: the blast reaches what findradius finds, the middles within damage + 40 (a sphere, not a box), and
+// a shambler takes half of it; a grunt off diagonally 200 units from a 120 blast (inside the old box, outside the
+// sphere) is not hurt, a shambler 80 units off takes half of 120 - 40
+{
+  const pe2 = await spot();
+  const p = await q1(`SELECT x, y, z FROM ents WHERE id = ${pe2}`);
+  await db.exec(`INSERT INTO ents (id, classname, x, y, z) VALUES (900002, 'blast', ${p.X}, ${p.Y}, ${p.Z})`);
+  const g = await spawn('army', 100);
+  const gc = await q1(`SELECT minz, maxz FROM ents WHERE id = ${g}`);
+  // its middle 141 units off on each axis across: 200 units away (at the height of the blast)
+  let placed = false;
+  for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const x = p.X + sx * 141.5, y = p.Y + sy * 141.5, z = p.Z - (gc.MINZ + gc.MAXZ) / 2;
+    if ((await q1(`SELECT test_position(${g}, ${x}, ${y}, ${z}) t FROM rdb$database`)).T === 0) {
+      await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, health = 500 WHERE id = ${g}`); placed = true; break;
+    }
+  }
+  const sh = await spawn('shambler', 80);
+  const sc = await q1(`SELECT x + (minx + maxx) / 2 x, y + (miny + maxy) / 2 y, z + (minz + maxz) / 2 z FROM ents WHERE id = ${sh}`);
+  await db.exec(`UPDATE ents SET health = 1000 WHERE id = ${sh}`);
+  await db.exec(`EXECUTE PROCEDURE t_radius_damage(900002, 900002, 120, ${pe2})`);
+  const gh = (await q1(`SELECT health h FROM ents WHERE id = ${g}`)).H, shh = (await q1(`SELECT health h FROM ents WHERE id = ${sh}`)).H;
+  const sd = Math.hypot(sc.X - p.X, sc.Y - p.Y, sc.Z - p.Z);
+  await db.exec('DELETE FROM ents WHERE id = 900002');
+  await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, takedamage = 0, nextthink = NULL WHERE id IN (${g}, ${sh})`);
+  assert(placed && gh === 500 && Math.abs((1000 - shh) - (120 - 0.5 * sd) * 0.5) <= 1,
+    `T_RadiusDamage: a grunt 200 units off a 120 blast is out of its reach (health ${gh}), a shambler ${sd.toFixed(0)} off takes half (${1000 - shh})`);
+}
+
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);
 assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");

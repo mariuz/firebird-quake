@@ -171,22 +171,50 @@ DECLARE f DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECI
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE cz DOUBLE PRECISION;
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE mt SMALLINT; DECLARE cls VARCHAR(40); DECLARE k INTEGER; DECLARE ok SMALLINT;
 BEGIN
   SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :inflictor INTO ix, iy, iz;
-  FOR SELECT e.id, e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + (e.minz + e.maxz) / 2
+  -- T_RadiusDamage: findradius(inflictor.origin, damage + 40) (the middles within that sphere, the chain from the
+  -- highest edict down), the points less half the distance, half on the attacker, and only where CanDamage
+  FOR SELECT e.id, e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + (e.minz + e.maxz) / 2, e.x, e.y, e.z, e.movetype, e.mtype
         FROM ents e
-       WHERE e.takedamage > 0 AND (:ignore IS NULL OR e.id <> :ignore)
-         AND ABS(e.x - :ix) < :damage + 40 AND ABS(e.y - :iy) < :damage + 40 AND ABS(e.z - :iz) < :damage + 40
-        INTO eid, cx, cy, cz
+       WHERE e.takedamage > 0 AND e.solid <> 0 AND (:ignore IS NULL OR e.id <> :ignore)
+         AND ABS(e.x + (e.minx + e.maxx) / 2 - :ix) <= :damage + 40 AND ABS(e.y + (e.miny + e.maxy) / 2 - :iy) <= :damage + 40
+         AND ABS(e.z + (e.minz + e.maxz) / 2 - :iz) <= :damage + 40
+       ORDER BY e.id DESC
+        INTO eid, cx, cy, cz, ox, oy, oz, mt, cls
   DO
   BEGIN
     d = vlen(cx - ix, cy - iy, cz - iz);
+    IF (d > damage + 40) THEN CONTINUE;
     pts = damage - 0.5e0 * d;
     IF (eid = attacker) THEN pts = pts * 0.5e0;
     IF (pts <= 0) THEN CONTINUE;
-    EXECUTE PROCEDURE trace_move(NULL, 0, 0, 0, 0, 0, 0, ix, iy, iz, cx, cy, cz, 1)
-      RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
-    IF (f = 1 OR als = 1) THEN EXECUTE PROCEDURE t_damage(eid, inflictor, attacker, CAST(pts AS INTEGER));
+    -- CanDamage: a brush model by the middle of its bounds (or the line ending on it), anything else by its origin or
+    -- one of four points 15 units off it across
+    ok = 0;
+    IF (mt = 7) THEN
+    BEGIN
+      EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz, cx, cy, cz, 1)
+        RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
+      IF (f = 1 OR hit = eid) THEN ok = 1;
+    END
+    ELSE
+    BEGIN
+      k = 0;
+      WHILE (k < 5 AND ok = 0) DO
+      BEGIN
+        EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz,
+            ox + DECODE(k, 1, 15, 2, -15, 3, -15, 4, 15, 0), oy + DECODE(k, 1, 15, 2, -15, 3, 15, 4, -15, 0), oz, 1)
+          RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
+        IF (f = 1) THEN ok = 1;
+        k = k + 1;
+      END
+    END
+    IF (ok = 0) THEN CONTINUE;
+    IF (cls = 'shambler') THEN pts = pts * 0.5e0;     -- shambler takes half damage from all explosions
+    EXECUTE PROCEDURE t_damage(eid, inflictor, attacker, CAST(pts AS INTEGER));
   END
 END^
 
