@@ -1002,6 +1002,9 @@ BEGIN
   RETURN 1;
 END^
 
+-- forward declaration (body in game.sql): SV_CheckWaterTransition
+CREATE OR ALTER PROCEDURE water_transition (e INTEGER) AS BEGIN END^
+
 -- SV_Physics_Toss: gravity, fly, bounce or stop. Missiles fly straight.
 CREATE OR ALTER PROCEDURE toss_move (eid INTEGER, dt DOUBLE PRECISION)
 AS
@@ -1028,10 +1031,12 @@ BEGIN
     IF (oz < 60 OR mt <> 10) THEN
     BEGIN
       UPDATE ents e SET e.flags = BIN_OR(e.flags, 512), e.vx = 0, e.vy = 0, e.vz = 0, e.avel_yaw = 0 WHERE e.id = :eid;
+      EXECUTE PROCEDURE water_transition(eid);
       EXIT;
     END
   END
   UPDATE ents e SET e.vx = :ox, e.vy = :oy, e.vz = :oz WHERE e.id = :eid;
+  EXECUTE PROCEDURE water_transition(eid);                   -- SV_CheckWaterTransition, after a move that hit something
 END^
 
 SET TERM ; ^

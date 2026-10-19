@@ -43,6 +43,29 @@ BEGIN
     VALUES (NEXT VALUE FOR sound_seq, :tic, :eid, :chan, :name, :vol, :attn, :x, :y, :z);
 END^
 
+-- SV_CheckWaterTransition: after a step or a toss, the water at the origin; crossing into or out of it
+-- splashes (misc/h2ohit1.wav). A fresh edict (watertype 0) takes what is there silently. Out of the water
+-- waterlevel is the contents (-1), as Quake leaves it.
+CREATE OR ALTER PROCEDURE water_transition (e INTEGER)
+AS
+DECLARE cont INTEGER; DECLARE wt INTEGER;
+BEGIN
+  SELECT point_contents(d.x, d.y, d.z), d.watertype FROM ents d WHERE d.id = :e INTO cont, wt;
+  IF (cont IS NULL) THEN EXIT;
+  IF (wt = 0) THEN
+    UPDATE ents d SET d.watertype = :cont, d.waterlevel = 1 WHERE d.id = :e;
+  ELSE IF (cont <= -3) THEN
+  BEGIN
+    IF (wt = -1) THEN EXECUTE PROCEDURE snd(e, 0, 'misc/h2ohit1.wav', 1, 1);
+    UPDATE ents d SET d.watertype = :cont, d.waterlevel = 1 WHERE d.id = :e AND (d.watertype <> :cont OR d.waterlevel <> 1);
+  END
+  ELSE
+  BEGIN
+    IF (wt <> -1) THEN EXECUTE PROCEDURE snd(e, 0, 'misc/h2ohit1.wav', 1, 1);
+    UPDATE ents d SET d.watertype = -1, d.waterlevel = :cont WHERE d.id = :e AND (d.watertype <> -1 OR d.waterlevel <> :cont);
+  END
+END^
+
 CREATE OR ALTER PROCEDURE snd_at (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION, name VARCHAR(64), vol DOUBLE PRECISION, attn DOUBLE PRECISION)
 AS
 DECLARE tic INTEGER;

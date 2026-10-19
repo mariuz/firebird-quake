@@ -1011,7 +1011,7 @@ DECLARE eid INTEGER; DECLARE mt SMALLINT; DECLARE think VARCHAR(24); DECLARE nt 
 DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE pe INTEGER;
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
 DECLARE tdm INTEGER;
-DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE hitsound SMALLINT;
 BEGIN
   t = now_();
   pe = player_ent();
@@ -1021,6 +1021,9 @@ BEGIN
   BEGIN
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
     EXECUTE PROCEDURE run_think(eid, think);
+    -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
+    IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.movetype IN (4, 5) AND e.health > 0)) THEN
+      EXECUTE PROCEDURE water_transition(eid);
   END
   -- toss, bounce, fly, flymissile, and monsters in the air
   FOR SELECT e.id, e.movetype, e.flags, e.classname FROM ents e WHERE e.movetype IN (6, 9, 10) OR (e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 AND e.st <> 'dead')
@@ -1028,13 +1031,15 @@ BEGIN
   BEGIN
     IF (mt IN (4, 5)) THEN
     BEGIN
-      -- SV_Physics_Step: a monster that is not on the ground falls
+      -- SV_Physics_Step: a monster that is not on the ground falls; landing from a real fall (faster than a tenth
+      -- of gravity) thuds
+      hitsound = IIF((SELECT e.vz FROM ents e WHERE e.id = :eid) < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
       UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;
       EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid, fwx, fwy;
       IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) <> 0)) THEN
       BEGIN
         UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0 WHERE e.id = :eid;
-        EXECUTE PROCEDURE snd(eid, 2, 'demon/dland2.wav', 1, 1);
+        IF (hitsound = 1) THEN EXECUTE PROCEDURE snd(eid, 2, 'demon/dland2.wav', 1, 1);
       END
       EXECUTE PROCEDURE link_ent(eid);
       CONTINUE;

@@ -156,6 +156,28 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `T_RadiusDamage: a grunt 200 units off a 120 blast is out of its reach (health ${gh}), a shambler ${sd.toFixed(0)} off takes half (${1000 - shh})`);
 }
 
+// SV_CheckWaterTransition after a monster's think: a grunt put into E1M1's water splashes (misc/h2ohit1.wav) and
+// takes the water's type, and put back on dry land splashes again
+{
+  const g = await spawn('army', 120);
+  const pool = await q1(`SELECT FIRST 1 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+    WHERE l.contents = -3 AND point_contents((l.minx + l.maxx) / 2, (l.miny + l.maxy) / 2, (l.minz + l.maxz) / 2) = -3 ORDER BY l.id`);
+  const dry = await q1(`SELECT x, y, z FROM ents WHERE id = ${g}`);
+  const splashes = async () => (await q1(`SELECT COUNT(*) n FROM sound_events WHERE ent_id = ${g} AND snd = 'misc/h2ohit1.wav'`)).N;
+  const thinkNow = () => db.exec(`UPDATE ents SET nextthink = (SELECT g.time_ FROM game g WHERE g.id = 1) WHERE id = ${g}`);
+  await tic(); await tic();
+  const s0 = await splashes();
+  await db.exec(`UPDATE ents SET x = ${pool.X}, y = ${pool.Y}, z = ${pool.Z}, flags = BIN_OR(flags, 512) WHERE id = ${g}`);
+  await thinkNow(); await tic();
+  const wet = await q1(`SELECT watertype wt FROM ents WHERE id = ${g}`), s1 = await splashes();
+  await db.exec(`UPDATE ents SET x = ${dry.X}, y = ${dry.Y}, z = ${dry.Z} WHERE id = ${g}`);
+  await thinkNow(); await tic();
+  const s2 = await splashes();
+  await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, takedamage = 0, nextthink = NULL WHERE id = ${g}`);
+  assert(wet.WT === -3 && s1 === s0 + 1 && s2 === s1 + 1,
+    `SV_CheckWaterTransition in the PSQL game: a grunt into the water splashes and is in it (type ${wet.WT}), out again splashes (${s0} → ${s1} → ${s2})`);
+}
+
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);
 assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");

@@ -225,6 +225,10 @@ to the same behaviour, with a test of its own:
 - ~~**Noclip touches triggers**~~ done (`npm run test:console`): the PSQL game's noclip linked the player without
   its touches; now `player_touch_triggers` (the triggers, items and door and plat fields the player is in) runs for
   noclip as for walking, so noclip picks up items and goes through teleporters and exits as in Quake.
+- ~~**`SV_CheckWaterTransition` and the landing thud**~~ done (`npm run test:infight`): the PSQL game's monsters and
+  tossed things never splashed going into or out of water; now `water_transition` (one procedure for both games, in
+  `game.sql`) runs after a monster's think and after a toss that hit something. And a monster landing thudded
+  (`demon/dland2.wav`) after any fall, where Quake thuds only after one faster than a tenth of gravity.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 
