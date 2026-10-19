@@ -71,13 +71,15 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
     const r = await tr(start.x, start.y, start.z, dx * 256, dy * 256), hi = await tr(start.x, start.y, start.z + 18, dx * 256, dy * 256);
     if (r.F < 1 && Math.abs(r.NX + dx) < 1e-6 && Math.abs(r.NY + dy) < 1e-6 && hi.F < 1 && Math.abs(hi.F - r.F) * 256 < 1) { w = { dx, dy, x: r.EX - dx * 4, y: r.EY - dy * 4, z: r.EZ }; break; }
   }
+  // standing on the floor there (the start may still be falling)
+  w.z = (await db.query(`SELECT ez FROM trace_move(${pe}, ${box.MINX}, ${box.MINY}, ${box.MINZ}, ${box.MAXX}, ${box.MAXY}, ${box.MAXZ}, ${w.x}, ${w.y}, ${w.z}, ${w.x}, ${w.y}, ${w.z - 256}, 0)`)).rows[0].EZ;
   const tx = -w.dy, ty = w.dx;
   const along = async (yaw) => {
     await db.exec(`UPDATE ents SET x = ${w.x}, y = ${w.y}, z = ${w.z}, vx = ${w.dx * 300 + tx * 100}, vy = ${w.dy * 300 + ty * 100}, vz = 0, yaw = ${yaw}, flags = BIN_OR(flags, 512) WHERE id = ${pe}`);
     await db.exec(`UPDATE player SET pitch = 0 WHERE id = 1`);
     await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
     await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
-    const e = (await db.query(`SELECT vx, vy FROM ents WHERE id = ${pe}`)).rows[0];
+    const e = (await db.query(`SELECT vx, vy, x, y, z, flags FROM ents WHERE id = ${pe}`)).rows[0];
     return e.VX * tx + e.VY * ty;
   };
   const deg = (x, y) => Math.atan2(y, x) * 180 / Math.PI;
@@ -96,7 +98,7 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
   const here = (await db.query(`SELECT x, y, z FROM ents WHERE id = ${pe}`)).rows[0];
   const kept = (await db.query('SELECT free_x x, free_y y, free_z z FROM player')).rows[0];
   let wall = null;
-  for (const [dx, dy] of [[64, 0], [-64, 0], [0, 64], [0, -64], [128, 0], [-128, 0], [0, 128], [0, -128]]) {
+  for (let d = 64; d <= 1024 && !wall; d += 64) for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]]) {
     if ((await db.query(`SELECT test_position(${pe}, ${here.X + dx}, ${here.Y + dy}, ${here.Z}) s FROM rdb$database`)).rows[0].S === 1) { wall = [here.X + dx, here.Y + dy]; break; }
   }
   await db.exec(`UPDATE ents SET x = ${wall[0]}, y = ${wall[1]}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
@@ -124,6 +126,8 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
       }
     }
   }
+  if (!ledge) console.log('(no waist-deep water against a step-high ledge in this map: the swimming step is not checked)');
+  else {
   await db.exec(`UPDATE ents SET x = ${ledge.x}, y = ${ledge.y}, z = ${ledge.z}, vx = ${ledge.dx * 200}, vy = ${ledge.dy * 200}, vz = 0, yaw = ${Math.atan2(ledge.dy, ledge.dx) * 180 / Math.PI} WHERE id = ${pe}`);
   await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
   await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
@@ -131,6 +135,7 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
   const on = (e.X - ledge.x) * ledge.dx + (e.Y - ledge.y) * ledge.dy;
   assert(ledge && e.Z - ledge.z > 4 && on > 0,
     `SV_WalkMove while swimming: waist deep against a ledge, the player stairs up onto it (${(e.Z - ledge.z).toFixed(1)} up, ${on.toFixed(1)} on)`);
+  }
 }
 
 t0 = t();
