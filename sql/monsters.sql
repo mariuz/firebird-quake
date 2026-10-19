@@ -51,7 +51,8 @@ BEGIN
   SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :eid INTO ox, oy, oz;
   IF (move_step(eid, COS(yaw * 0.0174532925e0) * dist, SIN(yaw * 0.0174532925e0) * dist, 0) = 1) THEN
   BEGIN
-    SELECT anglemod(e.yaw - e.ideal_yaw) FROM ents e WHERE e.id = :eid INTO d;
+    -- (the difference as it comes, not wrapped, as Quake has it: turning anticlockwise, the step is taken)
+    SELECT e.yaw - e.ideal_yaw FROM ents e WHERE e.id = :eid INTO d;
     IF (d > 45 AND d < 315) THEN
     BEGIN
       -- not turned far enough, so don't take the step
@@ -70,7 +71,7 @@ DECLARE olddir DOUBLE PRECISION; DECLARE turnaround DOUBLE PRECISION;
 DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE d1 DOUBLE PRECISION; DECLARE d2 DOUBLE PRECISION; DECLARE tdir DOUBLE PRECISION;
 DECLARE nodir DOUBLE PRECISION = -1;
 BEGIN
-  SELECT anglemod(FLOOR(e.ideal_yaw / 45) * 45) FROM ents e WHERE e.id = :eid INTO olddir;
+  SELECT anglemod(TRUNC(e.ideal_yaw / 45) * 45) FROM ents e WHERE e.id = :eid INTO olddir;
   turnaround = anglemod(olddir - 180);
   SELECT g.x - e.x, g.y - e.y FROM ents e CROSS JOIN ents g WHERE e.id = :eid AND g.id = :goal INTO dx, dy;
   IF (dx IS NULL) THEN EXIT;
@@ -83,7 +84,7 @@ BEGIN
     IF (tdir <> turnaround AND step_direction(eid, tdir, dist) = 1) THEN EXIT;
   END
   -- try other directions
-  IF (rnd() < 0.5e0 OR ABS(dy) > ABS(dx)) THEN BEGIN tdir = d1; d1 = d2; d2 = tdir; END
+  IF (rnd() < 0.5e0 OR ABS(TRUNC(dy)) > ABS(TRUNC(dx))) THEN BEGIN tdir = d1; d1 = d2; d2 = tdir; END
   IF (d1 <> nodir AND d1 <> turnaround AND step_direction(eid, d1, dist) = 1) THEN EXIT;
   IF (d2 <> nodir AND d2 <> turnaround AND step_direction(eid, d2, dist) = 1) THEN EXIT;
   -- there is no direct path to the player, so pick another direction
@@ -92,27 +93,34 @@ BEGIN
   d1 = 0;
   WHILE (d1 < 8) DO
   BEGIN
-    IF (step_direction(eid, anglemod(tdir + IIF(tdir = 0, 45, -45) * d1), dist) = 1) THEN EXIT;
+    d2 = anglemod(tdir + IIF(tdir = 0, 45, -45) * d1);
+    IF (d2 <> turnaround AND step_direction(eid, d2, dist) = 1) THEN EXIT;
     d1 = d1 + 1;
   END
   IF (turnaround <> nodir AND step_direction(eid, turnaround, dist) = 1) THEN EXIT;
   UPDATE ents e SET e.ideal_yaw = :olddir WHERE e.id = :eid;     -- can't move
+  -- SV_FixCheckBottom: with a bridge pulled out from under it, it may have no standing place at all
+  IF (check_bottom(eid) = 0) THEN UPDATE ents e SET e.flags = BIN_OR(e.flags, 1024) WHERE e.id = :eid;
 END^
 
 -- SV_MoveToGoal
 CREATE OR ALTER PROCEDURE move_to_goal (eid INTEGER, dist DOUBLE PRECISION)
 AS
-DECLARE goal INTEGER; DECLARE flags INTEGER; DECLARE iy DOUBLE PRECISION; DECLARE close_ SMALLINT = 0;
+DECLARE goal INTEGER; DECLARE flags INTEGER; DECLARE iy DOUBLE PRECISION; DECLARE close_ SMALLINT = 0; DECLARE enemy INTEGER;
+DECLARE m DOUBLE PRECISION;
 BEGIN
-  SELECT COALESCE(e.goal_id, e.enemy_id), e.flags, e.ideal_yaw FROM ents e WHERE e.id = :eid INTO goal, flags, iy;
+  SELECT COALESCE(e.goal_id, e.enemy_id), e.flags, e.ideal_yaw, e.enemy_id FROM ents e WHERE e.id = :eid INTO goal, flags, iy, enemy;
   IF (BIN_AND(flags, 512 + 1 + 2) = 0) THEN EXIT;              -- in the air
   IF (goal IS NULL) THEN EXIT;
-  -- SV_CloseEnough: the boxes are within dist
+  -- SV_CloseEnough: the boxes within dist, each as SV_LinkEdict pads it (absmin/absmax: a unit, an item 15); with an
+  -- enemy, any enemy, a goal that close ends the move
+  SELECT IIF(BIN_AND(e.flags, 256) <> 0, 15, 1) + IIF(BIN_AND(g.flags, 256) <> 0, 15, 1) + :dist FROM ents e CROSS JOIN ents g
+    WHERE e.id = :eid AND g.id = :goal INTO m;
   SELECT 1 FROM ents e CROSS JOIN ents g WHERE e.id = :eid AND g.id = :goal
-     AND g.x + g.minx <= e.x + e.maxx + :dist AND g.x + g.maxx >= e.x + e.minx - :dist
-     AND g.y + g.miny <= e.y + e.maxy + :dist AND g.y + g.maxy >= e.y + e.minx - :dist
-     AND g.z + g.minz <= e.z + e.maxz + :dist AND g.z + g.maxz >= e.z + e.minz - :dist INTO close_;
-  IF (close_ = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.enemy_id = :goal)) THEN EXIT;
+     AND g.x + g.minx <= e.x + e.maxx + :m AND g.x + g.maxx >= e.x + e.minx - :m
+     AND g.y + g.miny <= e.y + e.maxy + :m AND g.y + g.maxy >= e.y + e.miny - :m
+     AND g.z + g.minz <= e.z + e.maxz + :m AND g.z + g.maxz >= e.z + e.minz - :m INTO close_;
+  IF (close_ = 1 AND COALESCE(enemy, 0) > 0) THEN EXIT;
   IF (FLOOR(rnd() * 4) = 1 OR step_direction(eid, iy, dist) = 0) THEN
     EXECUTE PROCEDURE new_chase_dir(eid, goal, dist);
 END^

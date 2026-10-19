@@ -474,6 +474,65 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(edge && edge.again === 0 && edge.moved === 0,
     `SV_CheckBottom in SV_movestep: a grunt walking to a ledge stops after ${edge?.k} steps with its middle over the floor, refusing the step the box's trace alone allows (a corner would hang over the drop)`);
 }
+// SV_MoveToGoal and its helpers, on the grunt in the big open leaf
+{
+  const g0 = await ent(grunt);
+  // a floor with room round it: the middle of one of the biggest open leaves, dropped onto what is below
+  let open = null, fl = null;
+  for (const l of await qa(`SELECT FIRST 30 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+      WHERE l.contents = -1 AND l.maxx - l.minx > 128 AND l.maxy - l.miny > 128 ORDER BY (l.maxx - l.minx) * (l.maxy - l.miny) DESC`)) {
+    const d = await q1(`SELECT ez, fraction f, allsolid a, startsolid s FROM trace_move(${grunt}, ${g0.MINX}, ${g0.MINY}, ${g0.MINZ}, ${g0.MAXX}, ${g0.MAXY}, ${g0.MAXZ}, ${l.X}, ${l.Y}, ${l.Z}, ${l.X}, ${l.Y}, ${l.Z - 1000}, 0)`);
+    if (d.S === 1 || d.F === 1) continue;
+    await db.exec(`UPDATE ents SET x = ${l.X}, y = ${l.Y}, z = ${d.EZ} WHERE id = ${grunt}`);
+    if ((await q1(`SELECT check_bottom(${grunt}) b FROM rdb$database`)).B !== 1) continue;
+    const room = await q1(`SELECT MIN(t.fraction) f FROM (SELECT 1 k FROM rdb$database) r CROSS JOIN trace_move(${grunt}, ${g0.MINX}, ${g0.MINY}, ${g0.MINZ}, ${g0.MAXX}, ${g0.MAXY}, ${g0.MAXZ}, ${l.X - 24}, ${l.Y}, ${d.EZ + 1}, ${l.X + 24}, ${l.Y}, ${d.EZ + 1}, 0) t`);
+    if (room.F === 1) { open = l; fl = d; break; }
+  }
+  const stand = async (yaw) => {
+    await db.exec(`UPDATE ents SET x = ${open.X}, y = ${open.Y}, z = ${fl.EZ}, yaw = ${yaw}, ideal_yaw = ${yaw}, yaw_speed = 20, flags = BIN_AND(BIN_OR(flags, 512), BIN_NOT(1024)) WHERE id = ${grunt}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  };
+  const movedBy = async () => { const e = await ent(grunt); return Math.hypot(e.X - open.X, e.Y - open.Y); };
+  // SV_StepDirection takes the step unless yaw - ideal_yaw, as it comes, is between 45 and 315: facing 0 and told 90
+  // (turned to 20, -70) it steps while turning; told 270 (turned to 340, 70) it only turns
+  await stand(0);
+  const ccw = (await q1(`SELECT step_direction(${grunt}, 90, 8) r FROM rdb$database`)).R, ccwMoved = await movedBy();
+  await stand(0);
+  const cw = (await q1(`SELECT step_direction(${grunt}, 270, 8) r FROM rdb$database`)).R, cwMoved = await movedBy();
+  assert(ccw === 1 && Math.abs(ccwMoved - 8) < 1e-6 && cw === 1 && cwMoved === 0,
+    `SV_StepDirection: turning anticlockwise (0 to 90) the grunt steps while still turning (${ccwMoved.toFixed(1)} units), clockwise (0 to 270) it only turns (${cwMoved.toFixed(1)})`);
+  // SV_CloseEnough: with an enemy (any: here the player), a goal within reach ends the move, though it is not the enemy
+  const goal = shells;
+  const sb = await ent(goal);
+  await stand(0);
+  await db.exec(`UPDATE ents SET x = ${open.X + g0.MAXX - sb.MINX + 10}, y = ${open.Y}, z = ${fl.EZ} WHERE id = ${goal}`);
+  await db.exec(`UPDATE ents SET goal_id = ${goal}, enemy_id = 1 WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE move_to_goal(${grunt}, 8)`);
+  const held = await movedBy();
+  await db.exec(`UPDATE ents SET x = ${sb.X}, y = ${sb.Y}, z = ${sb.Z} WHERE id = ${goal}`);
+  // SV_FixCheckBottom: a grunt that can go nowhere (every step of 4000 units leaves the world) while its middle hangs
+  // over a drop is marked FL_PARTIALGROUND
+  await stand(0);
+  let hang = null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (let k = 8; k < 400 && !hang; k += 8) {
+      const x = open.X + dx * k, y = open.Y + dy * k;
+      const d = await q1(`SELECT fraction f, ez, startsolid s FROM trace_move(${grunt}, ${g0.MINX}, ${g0.MINY}, ${g0.MINZ}, ${g0.MAXX}, ${g0.MAXY}, ${g0.MAXZ}, ${x}, ${y}, ${fl.EZ + 18}, ${x}, ${y}, ${fl.EZ - 18}, 0)`);
+      if (d.S === 1) break;
+      if (d.F === 1) continue;
+      await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${d.EZ} WHERE id = ${grunt}`);
+      if ((await q1(`SELECT check_bottom(${grunt}) b FROM rdb$database`)).B === 0) hang = { x, y };
+    }
+    if (hang) break;
+  }
+  if (hang) await db.exec(`EXECUTE PROCEDURE new_chase_dir(${grunt}, 1, 4000)`);
+  const fixed = await ent(grunt);
+  await db.exec(`UPDATE ents SET x = ${g0.X}, y = ${g0.Y}, z = ${g0.Z}, flags = ${g0.FLAGS}, goal_id = ${g0.GOAL_ID ?? 'NULL'}, enemy_id = ${g0.ENEMY_ID ?? 'NULL'} WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  assert(held === 0, `SV_CloseEnough: with the player for its enemy, a grunt whose goal (an item) is 10 units off stays put (${held.toFixed(1)} units)`);
+  assert(hang && (fixed.FLAGS & 1024) !== 0 && fixed.X === hang.x && fixed.Y === hang.y,
+    `SV_FixCheckBottom: a grunt hanging over a ledge with nowhere to step is marked FL_PARTIALGROUND`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

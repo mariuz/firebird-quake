@@ -175,6 +175,14 @@ difference fixed with a test that fails without it:
   down (one whose floor was pulled out, `FL_PARTIALGROUND`, may still take it to correct). The retry from the
   wished height after a start in something solid traced 36 units down instead of to the same end, 18. The check is
   `check_bottom`, which the `checkbottom` builtin uses too; the PSQL game's monsters walk by the same `move_step`.
+- ~~**`SV_MoveToGoal`**~~ done (`npm run test:qcplay`): `SV_CloseEnough` stopped the move only when the goal was the
+  enemy itself, where Quake stops it for any enemy once the goal is in reach (a grunt with the player for its enemy
+  and a path corner or item for its goal), and its y test used the x bound; the boxes are now padded as
+  `SV_LinkEdict`'s `absmin`/`absmax` are (a unit, an item 15). `SV_StepDirection` compares `yaw - ideal_yaw` as it
+  comes, unwrapped, so a monster turning anticlockwise steps while still turning and one turning clockwise first
+  turns; ours wrapped it and neither stepped. `SV_NewChaseDir`'s search round all eight directions now skips the
+  turnaround, and a monster that can step nowhere while hanging over a drop is marked `FL_PARTIALGROUND`
+  (`SV_FixCheckBottom`), which lets its next step take it off the edge.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
 

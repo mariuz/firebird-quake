@@ -104,12 +104,16 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
 // the room as the player's does
 {
   const grunt = await spawn('army', 200);
-  // on the player's floor, in its sight
+  // on the player's floor, in its sight, all of it on the floor
   const p = await q1(`SELECT x, y, z FROM ents WHERE id = ${pe}`);
   for (const [dx, dy] of [[160, 0], [-160, 0], [0, 160], [0, -160], [110, 110], [-110, -110]]) {
     const ok = await q1(`SELECT test_position(${grunt}, ${p.X + dx}, ${p.Y + dy}, ${p.Z}) t,
       (SELECT fraction FROM trace_move(NULL, 0,0,0,0,0,0, ${p.X + dx}, ${p.Y + dy}, ${p.Z + 25}, ${p.X}, ${p.Y}, ${p.Z + 22}, 1)) f FROM rdb$database`);
-    if (ok.T === 0 && ok.F >= 1) { await db.exec(`UPDATE ents SET x = ${p.X + dx}, y = ${p.Y + dy}, z = ${p.Z}, attack_finished = 0 WHERE id = ${grunt}`); await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`); break; }
+    if (ok.T !== 0 || ok.F < 1) continue;
+    await db.exec(`UPDATE ents SET x = ${p.X + dx}, y = ${p.Y + dy}, z = ${p.Z}, attack_finished = 0 WHERE id = ${grunt}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+    // standing squarely (SV_CheckBottom): one left hanging over a drop that cannot step is let fall, as Quake does
+    if ((await q1(`SELECT check_bottom(${grunt}) b FROM rdb$database`)).B === 1) break;
   }
   await hunt(grunt, pe);
   let lit = null, after = null;
