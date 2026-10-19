@@ -222,6 +222,9 @@ to the same behaviour, with a test of its own:
   skips `SOLID_NOT`; `CanDamage` traced once to the middle (and let a trace that started in a wall through), where
   Quake tries the origin and four points 15 units off it across, or the middle of a brush model's bounds; the
   shambler takes half of every blast; and the blast goes from the highest edict down, as the chain does.
+- ~~**Noclip touches triggers**~~ done (`npm run test:console`): the PSQL game's noclip linked the player without
+  its touches; now `player_touch_triggers` (the triggers, items and door and plat fields the player is in) runs for
+  noclip as for walking, so noclip picks up items and goes through teleporters and exits as in Quake.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

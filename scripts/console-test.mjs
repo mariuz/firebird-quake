@@ -144,6 +144,17 @@ for (const mode of ['psql', 'qc']) {
   const went = (q.X - p.X) * Math.cos(yaw * Math.PI / 180) + (q.Y - p.Y) * Math.sin(yaw * Math.PI / 180);
   assert(q.MT === 8 && went > dist + 64, `${label}: noclip walks ${went.toFixed(0)} units on, through the wall ${dist.toFixed(0)} away`);
   assert(await host('noclip') === 'noclip OFF' && (await q1(`SELECT movetype mt FROM ents WHERE id = ${pe}`)).MT === 3, `${label}: noclip again: MOVETYPE_WALK`);
+  // and noclip still touches what it ends up in (SV_LinkEdict(ent, true) for every movetype): an item is picked up
+  const item = await q1(`SELECT FIRST 1 e.id, e.x + (e.minx + e.maxx) / 2 x, e.y + (e.miny + e.maxy) / 2 y, e.z + e.minz z FROM ents e
+    WHERE e.solid = 1 AND e.model_id IS NOT NULL AND (e.classname LIKE 'item_%' OR e.classname LIKE 'weapon_%' OR BIN_AND(e.flags, 256) <> 0) ORDER BY e.id`);
+  if (!qc) await db.exec('UPDATE player SET armorvalue = 0, armortype = 0');   // (impulse 9 above gave red armor, which green does not replace)
+  await host('noclip');
+  await db.exec(`UPDATE ents SET x = ${item.X}, y = ${item.Y}, z = ${item.Z + 24}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await tic();
+  const got = await q1(`SELECT solid, model_id FROM ents WHERE id = ${item.ID}`);
+  await host('noclip');
+  await db.exec(`UPDATE ents SET x = ${p.X}, y = ${p.Y}, z = ${p.Z}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  assert(!got || got.SOLID === 0 || got.MODEL_ID === null, `${label}: a noclipping player put in an item (edict ${item.ID}) picks it up`);
 
   // give
   await host('give', 'c', '77'); await host('give', 'h', '250'); await host('give', '8');

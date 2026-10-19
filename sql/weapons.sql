@@ -250,6 +250,98 @@ BEGIN
   UPDATE player p SET p.weapon = :w WHERE p.id = 1;
 END^
 
+-- SV_TouchLinks for the player (SV_LinkEdict(ent, true), every movetype): the triggers and items whose box it is
+-- in, and the door and plat trigger fields
+CREATE OR ALTER PROCEDURE player_touch_triggers (pe INTEGER, t DOUBLE PRECISION)
+AS
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
+DECLARE mnx DOUBLE PRECISION; DECLARE mny DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
+DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE PRECISION;
+DECLARE tid INTEGER; DECLARE tcls VARCHAR(40); DECLARE tst SMALLINT; DECLARE tn VARCHAR(40); DECLARE titems INTEGER; DECLARE thp INTEGER;
+DECLARE tdm INTEGER; DECLARE tlt DOUBLE PRECISION;
+BEGIN
+  -- SV_TouchLinks: triggers and items whose box we are in
+  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz FROM ents e WHERE e.id = :pe INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
+  FOR SELECT e.id, e.classname FROM ents e
+       WHERE e.solid = 1 AND e.id <> :pe
+         AND e.x + e.maxx >= :px + :mnx AND e.x + e.minx <= :px + :mxx
+         AND e.y + e.maxy >= :py + :mny AND e.y + e.miny <= :py + :mxy
+         AND e.z + e.maxz >= :pz + :mnz AND e.z + e.minz <= :pz + :mxz
+       ORDER BY e.id INTO tid, tcls
+  DO
+  BEGIN
+    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid)) THEN CONTINUE;
+    IF (tcls IN ('trigger_multiple', 'trigger_once', 'trigger_secret')) THEN
+    BEGIN
+      IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid AND e.max_health = 0 AND BIN_AND(e.spawnflags, 2) = 0)) THEN
+        EXECUTE PROCEDURE trigger_fire(tid, pe);
+    END
+    ELSE IF (tcls = 'trigger_teleport') THEN EXECUTE PROCEDURE teleport_touch(tid, pe);
+    ELSE IF (tcls = 'trigger_changelevel') THEN EXECUTE PROCEDURE changelevel(tid);
+    ELSE IF (tcls = 'trigger_push') THEN
+    BEGIN
+      UPDATE ents e SET e.vx = (SELECT tr.p1x * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.vy = (SELECT tr.p1y * tr.speed * 10 FROM ents tr WHERE tr.id = :tid),
+             e.vz = (SELECT tr.p1z * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
+      IF ((SELECT p.fly_sound_time FROM player p WHERE p.id = 1) < t) THEN
+      BEGIN
+        UPDATE player p SET p.fly_sound_time = :t + 1.5e0 WHERE p.id = 1;
+        EXECUTE PROCEDURE snd(pe, 0, 'ambience/windfly.wav', 1, 1);
+      END
+    END
+    ELSE IF (tcls = 'trigger_hurt') THEN
+    BEGIN
+      SELECT e.nextthink, e.dmg FROM ents e WHERE e.id = :tid INTO tlt, tdm;
+      IF (tlt IS NULL OR tlt < t) THEN
+      BEGIN
+        UPDATE ents e SET e.nextthink = :t + 1 WHERE e.id = :tid;
+        EXECUTE PROCEDURE t_damage(pe, tid, tid, tdm);
+      END
+    END
+    ELSE IF (tcls = 'trigger_setskill') THEN                  -- the start map's halls: the skill its message names
+      UPDATE game g SET g.skill = (SELECT CAST(TRIM(e.message) AS SMALLINT) FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]')
+       WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]');
+    ELSE IF (tcls = 'trigger_message') THEN
+    BEGIN
+      SELECT e.attack_finished FROM ents e WHERE e.id = :tid INTO tlt;
+      IF (tlt < t) THEN
+      BEGIN
+        UPDATE ents e SET e.attack_finished = :t + 4 WHERE e.id = :tid;
+        EXECUTE PROCEDURE cprint((SELECT e.message FROM ents e WHERE e.id = :tid));
+        EXECUTE PROCEDURE snd(pe, 2, 'misc/talk.wav', 1, 1);
+      END
+    END
+    ELSE IF (tcls LIKE 'item_%' OR tcls LIKE 'weapon_%' OR tcls = 'backpack') THEN EXECUTE PROCEDURE item_touch(tid, pe);
+  END
+
+  -- door trigger fields: 60 units around a linked group of plain doors
+  FOR SELECT DISTINCT COALESCE(d.linked_id, d.id) FROM ents d
+       WHERE d.classname = 'func_door'
+         AND d.x + d.maxx + 60 >= :px + :mnx AND d.x + d.minx - 60 <= :px + :mxx
+         AND d.y + d.maxy + 60 >= :py + :mny AND d.y + d.miny - 60 <= :py + :mxy
+         AND d.z + d.maxz + 8 >= :pz + :mnz AND d.z + d.minz - 8 <= :pz + :mxz
+       INTO tid
+  DO
+  BEGIN
+    SELECT e.mv_state, e.targetname, e.items, e.max_health FROM ents e WHERE e.id = :tid INTO tst, tn, titems, thp;
+    IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst IN (1, 3)) THEN EXECUTE PROCEDURE door_fire(tid, pe);
+    ELSE IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst = 0) THEN
+      UPDATE ents e SET e.nextthink = e.ltime + e.wait_ WHERE COALESCE(e.linked_id, e.id) = :tid AND e.think = 'door_go_down';
+  END
+  -- plat trigger fields: inside the plat's footprint, up to 8 above its top
+  FOR SELECT e.id, e.mv_state FROM ents e
+       WHERE e.classname = 'func_plat'
+         AND e.p1x + e.maxx - 25 >= :px + :mnx AND e.p1x + e.minx + 25 <= :px + :mxx
+         AND e.p1y + e.maxy - 25 >= :py + :mny AND e.p1y + e.miny + 25 <= :py + :mxy
+         AND e.p1z + e.maxz + 8 >= :pz + :mnz AND e.p2z + e.maxz - 8 <= :pz + :mxz
+       INTO tid, tst
+  DO
+  BEGIN
+    IF (tst = 1) THEN EXECUTE PROCEDURE plat_go_up(tid);
+    ELSE IF (tst = 0) THEN UPDATE ents e SET e.nextthink = e.ltime + 1 WHERE e.id = :tid AND e.think = 'plat_go_down';
+  END
+
+END^
+
 -- SV_ClientThink + PlayerPreThink + physics + PlayerPostThink for one tic
 CREATE OR ALTER PROCEDURE player_think (dt DOUBLE PRECISION, fwd DOUBLE PRECISION, side DOUBLE PRECISION,
   yaw_d DOUBLE PRECISION, pitch_d DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, run SMALLINT, imp SMALLINT)
@@ -298,8 +390,8 @@ BEGIN
   IF (imp > 0) THEN EXECUTE PROCEDURE player_impulse(imp);
 
   -- MOVETYPE_NOCLIP (the console's noclip): SV_AirMove's wish velocity along the whole view, pitch included,
-  -- capped at sv_maxspeed and taken as the velocity, then SV_Physics_Noclip's move through everything,
-  -- linked without touching; no water, no gravity, no ground; the weapon still fires
+  -- capped at sv_maxspeed and taken as the velocity, then SV_Physics_Noclip's move through everything, linked
+  -- with its trigger touches (items, teleporters, exits); no water, no gravity, no ground; the weapon still fires
   IF ((SELECT e.movetype FROM ents e WHERE e.id = :pe) = 8) THEN
   BEGIN
     maxspd = IIF(run = 1, 320, 200);
@@ -311,6 +403,8 @@ BEGIN
     UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.x = e.x + :vx * :dt, e.y = e.y + :vy * :dt, e.z = e.z + :vz * :dt,
                       e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
     EXECUTE PROCEDURE link_ent(pe);
+    EXECUTE PROCEDURE player_touch_triggers(pe, t);      -- SV_LinkEdict(ent, true): noclip touches triggers too
+    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
     EXECUTE PROCEDURE player_fire(fire);
     UPDATE player p SET p.weaponframe = IIF(p.attack_finished > :t AND p.weapon <> 0, 1 + FLOOR((:t - p.lightning_time) * 10 + 0.001e0), 0) WHERE p.id = 1;
     EXIT;
@@ -477,85 +571,7 @@ BEGIN
   UPDATE player p SET p.stepz = IIF(BIN_AND((SELECT e.flags FROM ents e WHERE e.id = :pe), 512) <> 0 AND :pz - :oldz > 0 AND :pz - :oldz <= 18,
                                      MINVALUE(p.stepz + (:pz - :oldz), 18), MAXVALUE(0, p.stepz - 160 * :dt)) WHERE p.id = 1;
 
-  -- SV_TouchLinks: triggers and items whose box we are in
-  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz FROM ents e WHERE e.id = :pe INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
-  FOR SELECT e.id, e.classname FROM ents e
-       WHERE e.solid = 1 AND e.id <> :pe
-         AND e.x + e.maxx >= :px + :mnx AND e.x + e.minx <= :px + :mxx
-         AND e.y + e.maxy >= :py + :mny AND e.y + e.miny <= :py + :mxy
-         AND e.z + e.maxz >= :pz + :mnz AND e.z + e.minz <= :pz + :mxz
-       ORDER BY e.id INTO tid, tcls
-  DO
-  BEGIN
-    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid)) THEN CONTINUE;
-    IF (tcls IN ('trigger_multiple', 'trigger_once', 'trigger_secret')) THEN
-    BEGIN
-      IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid AND e.max_health = 0 AND BIN_AND(e.spawnflags, 2) = 0)) THEN
-        EXECUTE PROCEDURE trigger_fire(tid, pe);
-    END
-    ELSE IF (tcls = 'trigger_teleport') THEN EXECUTE PROCEDURE teleport_touch(tid, pe);
-    ELSE IF (tcls = 'trigger_changelevel') THEN EXECUTE PROCEDURE changelevel(tid);
-    ELSE IF (tcls = 'trigger_push') THEN
-    BEGIN
-      UPDATE ents e SET e.vx = (SELECT tr.p1x * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.vy = (SELECT tr.p1y * tr.speed * 10 FROM ents tr WHERE tr.id = :tid),
-             e.vz = (SELECT tr.p1z * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
-      IF ((SELECT p.fly_sound_time FROM player p WHERE p.id = 1) < t) THEN
-      BEGIN
-        UPDATE player p SET p.fly_sound_time = :t + 1.5e0 WHERE p.id = 1;
-        EXECUTE PROCEDURE snd(pe, 0, 'ambience/windfly.wav', 1, 1);
-      END
-    END
-    ELSE IF (tcls = 'trigger_hurt') THEN
-    BEGIN
-      SELECT e.nextthink, e.dmg FROM ents e WHERE e.id = :tid INTO tlt, tdm;
-      IF (tlt IS NULL OR tlt < t) THEN
-      BEGIN
-        UPDATE ents e SET e.nextthink = :t + 1 WHERE e.id = :tid;
-        EXECUTE PROCEDURE t_damage(pe, tid, tid, tdm);
-      END
-    END
-    ELSE IF (tcls = 'trigger_setskill') THEN                  -- the start map's halls: the skill its message names
-      UPDATE game g SET g.skill = (SELECT CAST(TRIM(e.message) AS SMALLINT) FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]')
-       WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :tid AND TRIM(e.message) SIMILAR TO '[0-3]');
-    ELSE IF (tcls = 'trigger_message') THEN
-    BEGIN
-      SELECT e.attack_finished FROM ents e WHERE e.id = :tid INTO tlt;
-      IF (tlt < t) THEN
-      BEGIN
-        UPDATE ents e SET e.attack_finished = :t + 4 WHERE e.id = :tid;
-        EXECUTE PROCEDURE cprint((SELECT e.message FROM ents e WHERE e.id = :tid));
-        EXECUTE PROCEDURE snd(pe, 2, 'misc/talk.wav', 1, 1);
-      END
-    END
-    ELSE IF (tcls LIKE 'item_%' OR tcls LIKE 'weapon_%' OR tcls = 'backpack') THEN EXECUTE PROCEDURE item_touch(tid, pe);
-  END
-
-  -- door trigger fields: 60 units around a linked group of plain doors
-  FOR SELECT DISTINCT COALESCE(d.linked_id, d.id) FROM ents d
-       WHERE d.classname = 'func_door'
-         AND d.x + d.maxx + 60 >= :px + :mnx AND d.x + d.minx - 60 <= :px + :mxx
-         AND d.y + d.maxy + 60 >= :py + :mny AND d.y + d.miny - 60 <= :py + :mxy
-         AND d.z + d.maxz + 8 >= :pz + :mnz AND d.z + d.minz - 8 <= :pz + :mxz
-       INTO tid
-  DO
-  BEGIN
-    SELECT e.mv_state, e.targetname, e.items, e.max_health FROM ents e WHERE e.id = :tid INTO tst, tn, titems, thp;
-    IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst IN (1, 3)) THEN EXECUTE PROCEDURE door_fire(tid, pe);
-    ELSE IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst = 0) THEN
-      UPDATE ents e SET e.nextthink = e.ltime + e.wait_ WHERE COALESCE(e.linked_id, e.id) = :tid AND e.think = 'door_go_down';
-  END
-  -- plat trigger fields: inside the plat's footprint, up to 8 above its top
-  FOR SELECT e.id, e.mv_state FROM ents e
-       WHERE e.classname = 'func_plat'
-         AND e.p1x + e.maxx - 25 >= :px + :mnx AND e.p1x + e.minx + 25 <= :px + :mxx
-         AND e.p1y + e.maxy - 25 >= :py + :mny AND e.p1y + e.miny + 25 <= :py + :mxy
-         AND e.p1z + e.maxz + 8 >= :pz + :mnz AND e.p2z + e.maxz - 8 <= :pz + :mxz
-       INTO tid, tst
-  DO
-  BEGIN
-    IF (tst = 1) THEN EXECUTE PROCEDURE plat_go_up(tid);
-    ELSE IF (tst = 0) THEN UPDATE ents e SET e.nextthink = e.ltime + 1 WHERE e.id = :tid AND e.think = 'plat_go_down';
-  END
+  EXECUTE PROCEDURE player_touch_triggers(pe, t);
 
   -- powerups wearing off
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(1048576)) WHERE p.id = 1 AND p.invincible_finished < :t AND BIN_AND(p.items, 1048576) <> 0;
