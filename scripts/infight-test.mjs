@@ -178,6 +178,32 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `SV_CheckWaterTransition in the PSQL game: a grunt into the water splashes and is in it (type ${wet.WT}), out again splashes (${s0} → ${s1} → ${s2})`);
 }
 
+// PF_aim in the PSQL game: a grunt in front and above, the player looking level; the rocket goes up at it (autoaim,
+// sv_aim 0.93), turned only in height (its run across stays the view's)
+{
+  const pe3 = await spot();
+  const p = await q1(`SELECT x, y, z, yaw FROM ents WHERE id = ${pe3}`);
+  const g = await spawn('army', 200);
+  const g0 = await q1(`SELECT x, y, z FROM ents WHERE id = ${g}`);
+  let up = null;
+  for (const dz of [60, 48, 72, 40]) {
+    if ((await q1(`SELECT test_position(${g}, ${g0.X}, ${g0.Y}, ${p.Z + dz}) t FROM rdb$database`)).T === 0) { up = dz; break; }
+  }
+  await db.exec(`UPDATE ents SET z = ${p.Z + up}, nextthink = NULL, movetype = 0, flags = BIN_OR(flags, 512) WHERE id = ${g}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${g})`);
+  const yaw = Math.atan2(g0.Y - p.Y, g0.X - p.X) * 180 / Math.PI;
+  await db.exec(`UPDATE ents SET yaw = ${yaw} WHERE id = ${pe3}`);
+  await db.exec('UPDATE player SET pitch = 0, weapon = 32, rockets = 10, attack_finished = 0, items = BIN_OR(items, 32)');
+  const before = (await q1('SELECT MAX(id) m FROM ents')).M;
+  await db.exec('EXECUTE PROCEDURE player_fire(1)');
+  const r = await q1(`SELECT vx, vy, vz FROM ents WHERE id > ${before} ORDER BY id`);
+  const run = Math.hypot(r.VX, r.VY);
+  const across = (r.VX * Math.cos(yaw * Math.PI / 180) + r.VY * Math.sin(yaw * Math.PI / 180)) / run;
+  await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, takedamage = 0, nextthink = NULL WHERE id = ${g}`);
+  assert(up && r.VZ > 100 && across > 0.999 && Math.abs(Math.hypot(r.VX, r.VY, r.VZ) - 1000) < 1,
+    `PF_aim in the PSQL game: looking level at a grunt ${up} units up, the rocket climbs at it (${r.VZ.toFixed(0)} up of 1000), still along the view across`);
+}
+
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);
 assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");

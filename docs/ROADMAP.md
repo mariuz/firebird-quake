@@ -236,6 +236,10 @@ to the same behaviour, with a test of its own:
 - ~~**Swimming walks**~~ done (`npm test`): the PSQL player swam with a plain `fly_move`, where Quake's
   `MOVETYPE_WALK` player always moves by `SV_WalkMove`, whose step-up is allowed in the water: waist-deep against a
   ledge a step above, the player now stairs up onto it without a water jump, as in Quake and QuakeC mode.
+- ~~**Autoaim**~~ done (`npm run test:infight`): the PSQL game's weapons fired straight along the view, where id's
+  shotguns, nailguns and rocket launcher take `aim(self, …)`: `aim_dir` is `PF_aim` (`sv_aim` 0.93), so a shot
+  bends up or down onto a monster near the crosshair, as in Quake and QuakeC mode (the grenade launcher, the
+  thunderbolt and the axe fire straight, as id's do).
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

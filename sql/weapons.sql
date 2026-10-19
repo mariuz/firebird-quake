@@ -95,6 +95,43 @@ BEGIN
   END
 END^
 
+-- PF_aim (sv_aim 0.93): straight ahead if a trace from origin + 20 up hits something DAMAGE_AIM; otherwise towards
+-- the middle of the best such thing within the cone that a trace reaches (edict order, a tie to the later), turned
+-- only up or down (the forward vector's run to it, at its height); else straight ahead
+CREATE OR ALTER PROCEDURE aim_dir (e INTEGER, fx DOUBLE PRECISION, fy DOUBLE PRECISION, fz DOUBLE PRECISION)
+RETURNS (ax DOUBLE PRECISION, ay DOUBLE PRECISION, az DOUBLE PRECISION)
+AS
+DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
+DECLARE hit INTEGER; DECLARE th INTEGER; DECLARE best DOUBLE PRECISION; DECLARE bent INTEGER;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION;
+DECLARE mv DOUBLE PRECISION; DECLARE cur DOUBLE PRECISION; DECLARE c INTEGER;
+BEGIN
+  ax = fx; ay = fy; az = fz;
+  SELECT d.x, d.y, d.z + 20 FROM ents d WHERE d.id = :e INTO x, y, z;
+  SELECT t.hit_ent FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :x, :y, :z, :x + :fx * 2048, :y + :fy * 2048, :z + :fz * 2048, 0) t INTO hit;
+  IF (hit > 0 AND EXISTS (SELECT 1 FROM ents d WHERE d.id = :hit AND d.takedamage = 2)) THEN BEGIN SUSPEND; EXIT; END
+  best = 0.93e0; bent = 0;
+  FOR SELECT d.id, d.x + (d.minx + d.maxx) * 0.5e0, d.y + (d.miny + d.maxy) * 0.5e0, d.z + (d.minz + d.maxz) * 0.5e0 FROM ents d
+       WHERE d.id <> :e AND d.takedamage = 2 ORDER BY d.id INTO c, bx, by_, bz DO
+  BEGIN
+    mv = SQRT((bx - x) * (bx - x) + (by_ - y) * (by_ - y) + (bz - z) * (bz - z));
+    IF (mv = 0) THEN CONTINUE;
+    cur = ((bx - x) * fx + (by_ - y) * fy + (bz - z) * fz) / mv;
+    IF (cur < best) THEN CONTINUE;
+    SELECT t.hit_ent FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :x, :y, :z, :bx, :by_, :bz, 0) t INTO th;
+    IF (th = c) THEN BEGIN best = cur; bent = c; END
+  END
+  IF (bent > 0) THEN
+  BEGIN
+    SELECT d.x - :x, d.y - :y, d.z - (:z - 20) FROM ents d WHERE d.id = :bent INTO bx, by_, bz;
+    mv = bx * fx + by_ * fy + bz * fz;
+    bx = fx * mv; by_ = fy * mv;
+    mv = SQRT(bx * bx + by_ * by_ + bz * bz);
+    IF (mv > 0) THEN BEGIN ax = bx / mv; ay = by_ / mv; az = bz / mv; END
+  END
+  SUSPEND;
+END^
+
 -- W_Attack
 CREATE OR ALTER PROCEDURE player_fire (btn SMALLINT)
 AS
@@ -108,6 +145,7 @@ DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECI
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE quad DOUBLE PRECISION; DECLARE td SMALLINT;
+DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION;
 BEGIN
   SELECT p.ent_id, p.weapon, p.attack_finished, p.shells, p.nails, p.rockets, p.cells, p.weapon_sound, p.super_damage_finished
     FROM player p WHERE p.id = 1 INTO pe, w, af, sh, na, ro, ce, lefty, quad;
@@ -148,29 +186,32 @@ BEGIN
     IF (sh < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/guncock.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.5e0, p.shells = p.shells - 1, p.punchangle = -2 WHERE p.id = 1;
-    EXECUTE PROCEDURE fire_bullets(pe, 6, ex, ey, ez, fx_, fy, fz, 0.04e0, 0.04e0);
+    EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 100000)
+    EXECUTE PROCEDURE fire_bullets(pe, 6, ex, ey, ez, ax, ay, az, 0.04e0, 0.04e0);
   END
   ELSE IF (w = 2) THEN                                                   -- super shotgun
   BEGIN
     IF (sh < 2) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/shotgn2.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.7e0, p.shells = p.shells - 2, p.punchangle = -4 WHERE p.id = 1;
-    EXECUTE PROCEDURE fire_bullets(pe, 14, ex, ey, ez, fx_, fy, fz, 0.14e0, 0.08e0);
+    EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;
+    EXECUTE PROCEDURE fire_bullets(pe, 14, ex, ey, ez, ax, ay, az, 0.14e0, 0.08e0);
   END
   ELSE IF (w = 4 OR w = 8) THEN                                          -- nailguns
   BEGIN
     IF (na < IIF(w = 8, 2, 1)) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
     SELECT p.weapon_sound FROM player p WHERE p.id = 1 INTO lefty;
+    EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 1000)
     UPDATE player p SET p.attack_finished = :t + 0.1e0, p.nails = p.nails - IIF(:w = 8, 2, 1), p.weapon_sound = 1 - COALESCE(:lefty, 0) WHERE p.id = 1;
     IF (w = 8) THEN
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/spike2.wav', 1, 1);
-      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, fx_, fy, fz, 1000, 'superspike');
+      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, ax, ay, az, 1000, 'superspike');
     END
     ELSE
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/rocket1i.wav', 1, 1);
-      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8 + rx * IIF(lefty = 1, -4, 4), ey + fy * 8 + ry * IIF(lefty = 1, -4, 4), ez - 6 + fz * 8, fx_, fy, fz, 1000, 'spike');
+      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8 + rx * IIF(lefty = 1, -4, 4), ey + fy * 8 + ry * IIF(lefty = 1, -4, 4), ez - 6 + fz * 8, ax, ay, az, 1000, 'spike');
     END
     UPDATE player p SET p.punchangle = -2 WHERE p.id = 1;
   END
@@ -186,7 +227,8 @@ BEGIN
     IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/sgun1.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.8e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
-    EXECUTE PROCEDURE launch_rocket(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, fx_, fy, fz, 1000, 100, 'progs/missile.mdl');
+    EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- missile.velocity = aim(self, 1000) * 1000
+    EXECUTE PROCEDURE launch_rocket(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, ax, ay, az, 1000, 100, 'progs/missile.mdl');
   END
   ELSE IF (w = 64) THEN                                                  -- thunderbolt
   BEGIN
