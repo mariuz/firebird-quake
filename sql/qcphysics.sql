@@ -198,6 +198,7 @@ END^
 CREATE OR ALTER PROCEDURE qc_physics_step (e INTEGER, t DOUBLE PRECISION, dt DOUBLE PRECISION)
 AS
 DECLARE fl INTEGER; DECLARE vz DOUBLE PRECISION; DECLARE hitsound SMALLINT; DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE alive SMALLINT;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION;
 BEGIN
   SELECT d.flags, d.vz FROM ents d WHERE d.id = :e INTO fl, vz;
   IF (BIN_AND(fl, 515) = 0) THEN                    -- not FL_ONGROUND, FL_FLY or FL_SWIM
@@ -205,7 +206,7 @@ BEGIN
     hitsound = IIF(vz < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
     EXECUTE PROCEDURE qc_add_gravity(e, dt);
     EXECUTE PROCEDURE qc_clamp_velocity(e);
-    EXECUTE PROCEDURE fly_move(e, dt) RETURNING_VALUES blk, hit;
+    EXECUTE PROCEDURE fly_move(e, dt) RETURNING_VALUES blk, hit, fwx, fwy;
     IF (EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN
     BEGIN
       EXECUTE PROCEDURE link_ent(e);
@@ -417,6 +418,7 @@ AS
 DECLARE f INTEGER; DECLARE mt SMALLINT; DECLARE fl INTEGER; DECLARE alive SMALLINT; DECLARE wl SMALLINT; DECLARE wt INTEGER;
 DECLARE blk SMALLINT; DECLARE hit INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER;
 DECLARE free SMALLINT; DECLARE fo INTEGER; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE ap DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION;
 BEGIN
   IF (qc_client_active(c) = 0 OR NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN EXIT;
   SELECT v.g_self, v.g_other, v.g_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time;
@@ -432,7 +434,10 @@ BEGIN
     SELECT d.flags FROM ents d WHERE d.id = :c INTO fl;
     IF (wl <= 1 AND BIN_AND(fl, 2048) = 0) THEN EXECUTE PROCEDURE qc_add_gravity(c, dt);
     EXECUTE PROCEDURE qc_check_stuck(c) RETURNING_VALUES free;
-    EXECUTE PROCEDURE walk_move(c, dt);
+    -- the view's forward vector (AngleVectors(v_angle)), for SV_WallFriction
+    fo = (SELECT v.f_v_angle FROM qc_vm v WHERE v.id = 1);
+    ap = qc_f(c, fo) * 0.0174532925e0; ay = qc_f(c, fo + 1) * 0.0174532925e0;
+    EXECUTE PROCEDURE walk_move(c, dt, COS(ap) * COS(ay), COS(ap) * SIN(ay));
     -- where a move from a free place ends is free: kept, so the next frame's check need not test it
     IF (free = 1 AND EXISTS (SELECT 1 FROM ents d WHERE d.id = :c)) THEN
     BEGIN
@@ -449,7 +454,7 @@ BEGIN
   ELSE IF (mt = 5) THEN
   BEGIN
     EXECUTE PROCEDURE qc_run_think(c, t, dt) RETURNING_VALUES alive;
-    EXECUTE PROCEDURE fly_move(c, dt) RETURNING_VALUES blk, hit;
+    EXECUTE PROCEDURE fly_move(c, dt) RETURNING_VALUES blk, hit, fwx, fwy;
   END
   ELSE IF (mt = 8) THEN
   BEGIN

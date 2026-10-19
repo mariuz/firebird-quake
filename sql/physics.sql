@@ -629,9 +629,10 @@ CREATE GLOBAL TEMPORARY TABLE clip_planes (
 SET TERM ^ ;
 
 -- SV_FlyMove: slide the entity along the world for `dt` seconds, bumping up
--- to four times. Returns blocked bits (1 floor, 2 wall) and the entity hit.
+-- to four times. Returns blocked bits (1 floor, 2 wall) and the entity hit,
+-- and the last wall's normal (its steptrace, for SV_WallFriction; NULL if none).
 CREATE OR ALTER PROCEDURE fly_move (eid INTEGER, dt DOUBLE PRECISION)
-RETURNS (blocked SMALLINT, hit_ent INTEGER)
+RETURNS (blocked SMALLINT, hit_ent INTEGER, wnx DOUBLE PRECISION, wny DOUBLE PRECISION)
 AS
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
 DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
@@ -688,7 +689,11 @@ BEGIN
       SELECT e.solid FROM ents e WHERE e.id = :hit INTO hsolid;
       IF (hit = 0 OR hsolid = 4) THEN flags = BIN_OR(flags, 512);   -- FL_ONGROUND
     END
-    IF (nz = 0) THEN blocked = BIN_OR(blocked, 2);
+    IF (nz = 0) THEN
+    BEGIN
+      blocked = BIN_OR(blocked, 2);
+      wnx = nx; wny = ny;
+    END
     -- SV_Impact: touch
     UPDATE ents e SET e.x = :px, e.y = :py, e.z = :pz, e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :eid;
     EXECUTE PROCEDURE impact(eid, hit);
@@ -735,7 +740,7 @@ BEGIN
     BEGIN
       IF (numplanes <> 2) THEN
       BEGIN
-        vx = 0; vy = 0; vz = 0;
+        vx = 0; vy = 0; vz = 0; blocked = 7;
         LEAVE;
       END
       -- go along the crease
@@ -780,33 +785,78 @@ BEGIN
 END^
 
 -- SV_WalkMove for the player: fly, and if a wall stopped us try again from
--- one step (18 units) up, keeping that only if it lands on ground.
-CREATE OR ALTER PROCEDURE walk_move (eid INTEGER, dt DOUBLE PRECISION)
+-- one step (18 units) up, keeping that only if it lands on ground. fwx, fwy:
+-- the view's forward vector, given in QuakeC mode, which then also runs
+-- SV_TryUnstick (a step-up that went nowhere is nudged 2 units each way in
+-- turn) and SV_WallFriction (running into a wall nearly head-on keeps only
+-- part of the speed along it); the PSQL game passes NULLs and does neither.
+CREATE OR ALTER PROCEDURE walk_move (eid INTEGER, dt DOUBLE PRECISION, fwx DOUBLE PRECISION, fwy DOUBLE PRECISION)
 AS
 DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
 DECLARE ovx DOUBLE PRECISION; DECLARE ovy DOUBLE PRECISION; DECLARE ovz DOUBLE PRECISION;
 DECLARE nsx DOUBLE PRECISION; DECLARE nsy DOUBLE PRECISION; DECLARE nsz DOUBLE PRECISION;
 DECLARE nsvx DOUBLE PRECISION; DECLARE nsvy DOUBLE PRECISION; DECLARE nsvz DOUBLE PRECISION;
 DECLARE clip SMALLINT; DECLARE hit INTEGER;
-DECLARE oldonground SMALLINT; DECLARE flags INTEGER; DECLARE wl SMALLINT;
+DECLARE oldonground SMALLINT; DECLARE flags INTEGER; DECLARE wl SMALLINT; DECLARE mt SMALLINT;
 DECLARE f DOUBLE PRECISION; DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT;
+DECLARE snx DOUBLE PRECISION; DECLARE sny DOUBLE PRECISION; DECLARE wnx DOUBLE PRECISION; DECLARE wny DOUBLE PRECISION;
+DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
+DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION;
+DECLARE i INTEGER; DECLARE d DOUBLE PRECISION; DECLARE k DOUBLE PRECISION;
 BEGIN
   SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz, e.flags, e.waterlevel FROM ents e WHERE e.id = :eid
     INTO ox, oy, oz, ovx, ovy, ovz, flags, wl;
   oldonground = IIF(BIN_AND(flags, 512) <> 0, 1, 0);
   IF (oldonground = 1) THEN UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
-  EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES clip, hit;
+  EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES clip, hit, snx, sny;
   IF (BIN_AND(clip, 2) = 0) THEN EXIT;                   -- move looks good
   IF (oldonground = 0 AND wl = 0) THEN EXIT;             -- don't stair up while jumping
-  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN EXIT;
+  SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz, e.movetype, e.flags FROM ents e WHERE e.id = :eid
+    INTO nsx, nsy, nsz, nsvx, nsvy, nsvz, mt, flags;
+  IF (mt IS NULL) THEN EXIT;                             -- removed by a touch
+  IF (mt <> 3) THEN EXIT;                                -- gibbed by a trigger
+  IF (BIN_AND(flags, 2048) <> 0) THEN EXIT;              -- FL_WATERJUMP
 
-  SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz FROM ents e WHERE e.id = :eid INTO nsx, nsy, nsz, nsvx, nsvy, nsvz;
   -- try moving up and forward
   UPDATE ents e SET e.x = :ox, e.y = :oy, e.z = :oz, e.vx = :ovx, e.vy = :ovy, e.vz = :ovz WHERE e.id = :eid;
   EXECUTE PROCEDURE push_entity(eid, 0, 0, 18) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
   UPDATE ents e SET e.vx = :ovx, e.vy = :ovy, e.vz = 0 WHERE e.id = :eid;
-  EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES clip, hit;
+  EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES clip, hit, wnx, wny;
+  IF (wnx IS NOT NULL) THEN BEGIN snx = wnx; sny = wny; END
+  IF (fwx IS NOT NULL AND clip <> 0) THEN
+  BEGIN
+    SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :eid INTO ux, uy, uz;
+    IF (ABS(oy - uy) < 0.03125e0 AND ABS(ox - ux) < 0.03125e0) THEN
+    BEGIN
+      -- SV_TryUnstick: stepping up made no progress; push a little each way and retry the move
+      i = 0; clip = 7;
+      WHILE (i < 8) DO
+      BEGIN
+        cx = DECODE(i, 0, 2, 1, 0, 2, -2, 3, 0, 4, 2, 5, -2, 6, 2, -2);
+        cy = DECODE(i, 0, 0, 1, 2, 2, 0, 3, -2, 4, 2, 5, 2, 6, -2, -2);
+        EXECUTE PROCEDURE push_entity(eid, cx, cy, 0) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
+        UPDATE ents e SET e.vx = :ovx, e.vy = :ovy, e.vz = 0 WHERE e.id = :eid;
+        EXECUTE PROCEDURE fly_move(eid, 0.1e0) RETURNING_VALUES clip, hit, wnx, wny;
+        SELECT e.x, e.y FROM ents e WHERE e.id = :eid INTO vx, vy;
+        IF (ABS(uy - vy) > 4 OR ABS(ux - vx) > 4) THEN LEAVE;
+        UPDATE ents e SET e.x = :ux, e.y = :uy, e.z = :uz WHERE e.id = :eid;
+        clip = 7; i = i + 1;
+      END
+      IF (i = 8) THEN UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0 WHERE e.id = :eid;
+    END
+  END
+  IF (fwx IS NOT NULL AND BIN_AND(clip, 2) <> 0 AND snx IS NOT NULL) THEN
+  BEGIN
+    -- SV_WallFriction: the more the view faces the wall, the more of the speed along it is lost
+    d = snx * fwx + sny * fwy + 0.5e0;
+    IF (d < 0) THEN
+    BEGIN
+      SELECT e.vx, e.vy FROM ents e WHERE e.id = :eid INTO vx, vy;
+      k = snx * vx + sny * vy;
+      UPDATE ents e SET e.vx = (:vx - :snx * :k) * (1 + :d), e.vy = (:vy - :sny * :k) * (1 + :d) WHERE e.id = :eid;
+    END
+  END
   -- press down the step height
   EXECUTE PROCEDURE push_entity(eid, 0, 0, -18 + ovz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
   IF (nz > 0.7e0 AND f < 1) THEN

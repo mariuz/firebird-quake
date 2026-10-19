@@ -162,6 +162,13 @@ difference fixed with a test that fails without it:
   players). `trace_move`'s `nomonsters` = 2 is the missile clip. The PSQL game's missiles share `push_entity`
   and clip the same way. Left as it is: Quake links the mover with its trigger touches before the impact;
   here the impact comes first (it matters only when both happen in one frame).
+- ~~**`SV_WalkMove`**~~ done (`npm run test:qcplay`): there was no `SV_WallFriction`, so running into a wall nearly
+  head-on slid along it at full speed; now the speed along it is cut by how squarely the view faces it (facing it,
+  half is kept). There was no `SV_TryUnstick` either, so a run caught on a jamb's edge by a unit stopped dead; now a
+  step-up that made no headway is nudged 2 units each way in turn and the move tried again. The step-up is also
+  skipped for a water jump and for a client whose touch changed its movetype, and `fly_move` returns 7 when it is
+  stopped in a corner, as `SV_FlyMove` does. These run in QuakeC mode (`walk_move` given the view's forward
+  vector); the PSQL game's movement is left as it was.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
 

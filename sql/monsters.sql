@@ -1003,6 +1003,7 @@ DECLARE eid INTEGER; DECLARE mt SMALLINT; DECLARE think VARCHAR(24); DECLARE nt 
 DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE pe INTEGER;
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
 DECLARE tdm INTEGER;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION;
 BEGIN
   t = now_();
   pe = player_ent();
@@ -1021,7 +1022,7 @@ BEGIN
     BEGIN
       -- SV_Physics_Step: a monster that is not on the ground falls
       UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;
-      EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid;
+      EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid, fwx, fwy;
       IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) <> 0)) THEN
       BEGIN
         UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0 WHERE e.id = :eid;

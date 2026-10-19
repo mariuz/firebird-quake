@@ -372,6 +372,74 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(line && missile.H === grunt && missile.F < 1 && trigger.F === 1,
     `MOVE_MISSILE: a missile passing 10 units beside the grunt hits it (fraction ${missile?.F.toFixed(2)}), a bouncing thing on the same line misses, and a tossed trigger-solid one passes through`);
 }
+// SV_WalkMove's SV_WallFriction and SV_TryUnstick (walk_move given the view's forward vector, as QuakeC mode calls it)
+{
+  await db.exec(`UPDATE ents SET x = ${free.X}, y = ${free.Y}, z = ${free.Z}, vx = 0, vy = 0, vz = 0, movetype = 3 WHERE id = 1`);
+  await db.exec('EXECUTE PROCEDURE link_ent(1)');
+  const tr = (x, y, z, dx, dy) => q1(`SELECT fraction f, ex, ey, ez, nx, ny, nz FROM trace_move(1, ${box.join(', ')}, ${x}, ${y}, ${z}, ${x + dx}, ${y + dy}, ${z}, 0)`);
+  const AX = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // a tall wall (blocked at the step height too) facing one of the axes, and the spot 8 units out from it
+  let w = null;
+  for (const [dx, dy] of AX) {
+    const r = await tr(free.X, free.Y, free.Z, dx * 256, dy * 256);
+    const hi = await tr(free.X, free.Y, free.Z + 18, dx * 256, dy * 256);
+    if (r.F < 1 && Math.abs(r.NX + dx) < 1e-6 && Math.abs(r.NY + dy) < 1e-6 && hi.F < 1 && Math.abs(hi.F * 256 - r.F * 256) < 1) { w = { dx, dy, x: r.EX - dx * 8, y: r.EY - dy * 8, z: r.EZ }; break; }
+  }
+  const walk = async (x, y, z, vx, vy, fwd) => {
+    await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, vx = ${vx}, vy = ${vy}, vz = -80, flags = BIN_OR(flags, 512) WHERE id = 1`);   // (gravity added, as a frame has it)
+    await db.exec('EXECUTE PROCEDURE link_ent(1)');
+    await db.exec(`EXECUTE PROCEDURE walk_move(1, 0.1, ${fwd ? fwd[0] : 'NULL'}, ${fwd ? fwd[1] : 'NULL'})`);
+    return ent(1);
+  };
+  // running into it at a slant, 300 units/s at the wall and 100 along it (the tangent t)
+  const tx = -w.dy, ty = w.dx;
+  const faceWall = await walk(w.x, w.y, w.z, w.dx * 300 + tx * 100, w.dy * 300 + ty * 100, [w.dx, w.dy]);
+  const faceAlong = await walk(w.x, w.y, w.z, w.dx * 300 + tx * 100, w.dy * 300 + ty * 100, [tx, ty]);
+  const psql = await walk(w.x, w.y, w.z, w.dx * 300 + tx * 100, w.dy * 300 + ty * 100, null);
+  const along = (e) => e.VX * tx + e.VY * ty;
+  assert(w && Math.abs(along(faceWall) - 50) < 1e-6 && Math.abs(along(faceAlong) - 100) < 1e-6 && Math.abs(along(psql) - 100) < 1e-6,
+    `SV_WallFriction: running into a wall facing it keeps half the speed along it (${along(faceWall).toFixed(1)}), facing along it all of it (${along(faceAlong).toFixed(1)}); the PSQL game has none (${along(psql).toFixed(1)})`);
+  // a jamb: along a wall or across a doorway (its door out of the way), a spot where the way straight on is shut
+  // next to one where it is open: the box there catches the jamb's edge by a unit or less, and a run straight on
+  // from it is nudged free by TryUnstick
+  const findJamb = async (x0, y0, z, dx, dy) => {
+    const tx = -dy, ty = dx;
+    for (const sgn of [1, -1]) {
+      let prev = null;
+      for (let k = 0; k <= 160; k++) {
+        const x = x0 + sgn * tx * k, y = y0 + sgn * ty * k;
+        if (!(await clear(x, y, z))) break;
+        const r = await tr(x, y, z, dx * 64, dy * 64), hi = await tr(x, y, z + 18, dx * 64, dy * 64);
+        const cur = { x, y, z, dx, dy, shut: r.F < 0.3 && hi.F < 0.3, open: r.F === 1 && hi.F === 1 };
+        if (prev?.shut && cur.open) return prev;
+        if (prev?.open && cur.shut) return cur;
+        prev = cur;
+      }
+    }
+    return null;
+  };
+  let jamb = await findJamb(w.x, w.y, w.z, w.dx, w.dy);
+  for (const d of doors) {
+    if (jamb) break;
+    const de = await ent(d);
+    await db.exec(`UPDATE ents SET solid = 0 WHERE id = ${d}`);
+    const cx = de.X + (de.MINX + de.MAXX) / 2, cy = de.Y + (de.MINY + de.MAXY) / 2;
+    const [ax, ay] = de.MAXX - de.MINX < de.MAXY - de.MINY ? [1, 0] : [0, 1];
+    for (const sgn of [1, -1]) {
+      for (const z of [de.Z + de.MINZ + 24.03125, de.Z + de.MINZ + 25.03125]) {
+        if (!jamb) jamb = await findJamb(cx - sgn * ax * 40, cy - sgn * ay * 40, z, sgn * ax, sgn * ay);
+      }
+    }
+    await db.exec(`UPDATE ents SET solid = 4 WHERE id = ${d}`);
+    if (jamb) { jamb.door = d; await db.exec(`UPDATE ents SET solid = 0 WHERE id = ${d}`); }
+  }
+  const unstuck = jamb && await walk(jamb.x, jamb.y, jamb.z, jamb.dx * 300, jamb.dy * 300, [jamb.dx, jamb.dy]);
+  const stuck = jamb && await walk(jamb.x, jamb.y, jamb.z, jamb.dx * 300, jamb.dy * 300, null);
+  if (jamb?.door) await db.exec(`UPDATE ents SET solid = 4 WHERE id = ${jamb.door}`);
+  const gone = (e) => (e.X - jamb.x) * jamb.dx + (e.Y - jamb.y) * jamb.dy;
+  assert(jamb && gone(unstuck) > 4 && gone(stuck) < 1,
+    `SV_TryUnstick: running straight at a jamb that catches the box by a unit, the step-up makes no headway and a nudge sideways lets it through (${jamb ? gone(unstuck).toFixed(1) : '-'} units on; without it ${jamb ? gone(stuck).toFixed(1) : '-'})`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);
