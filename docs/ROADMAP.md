@@ -229,6 +229,10 @@ to the same behaviour, with a test of its own:
   tossed things never splashed going into or out of water; now `water_transition` (one procedure for both games, in
   `game.sql`) runs after a monster's think and after a toss that hit something. And a monster landing thudded
   (`demon/dland2.wav`) after any fall, where Quake thuds only after one faster than a tenth of gravity.
+- ~~**`SV_CheckStuck`**~~ done (`npm test`): the PSQL player left inside something solid stayed there; now
+  `player_check_stuck` puts it back at the last place a move ended free (`player.free_x/y/z`, QuakeC's `oldorigin`,
+  cleared at each spawn) or the first free spot within a unit across and 17 up, untested while the player is where
+  its last move left it.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

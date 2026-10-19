@@ -88,6 +88,24 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
   await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
 }
 
+// SV_CheckStuck in the PSQL game: after a tic standing free, the place is kept (player.free_*); put inside a wall, the
+// player is back there the next tic
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+  const here = (await db.query(`SELECT x, y, z FROM ents WHERE id = ${pe}`)).rows[0];
+  const kept = (await db.query('SELECT free_x x, free_y y, free_z z FROM player')).rows[0];
+  let wall = null;
+  for (const [dx, dy] of [[64, 0], [-64, 0], [0, 64], [0, -64], [128, 0], [-128, 0], [0, 128], [0, -128]]) {
+    if ((await db.query(`SELECT test_position(${pe}, ${here.X + dx}, ${here.Y + dy}, ${here.Z}) s FROM rdb$database`)).rows[0].S === 1) { wall = [here.X + dx, here.Y + dy]; break; }
+  }
+  await db.exec(`UPDATE ents SET x = ${wall[0]}, y = ${wall[1]}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+  const back = (await db.query(`SELECT x, y, z FROM ents WHERE id = ${pe}`)).rows[0];
+  assert(kept.X === here.X && kept.Y === here.Y && Math.hypot(back.X - here.X, back.Y - here.Y) < 1,
+    `SV_CheckStuck in the PSQL game: the free place is kept, and a player put inside a wall is back there the next tic (${back.X.toFixed(0)}, ${back.Y.toFixed(0)})`);
+}
+
 t0 = t();
 s = await tic([1, 0, 0, 0, 0, 1, 0, 1, 0]);
 console.log(`fire            ${(t() - t0).toFixed(0)} ms; shells ${s.SHELLS}`);

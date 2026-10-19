@@ -82,7 +82,7 @@ BEGIN
              e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.anim = 'stand',
              e.z = e.z + 1 WHERE e.id = :eid;                       -- PutClientInServer: spot.origin + '0 0 1'
       EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
-      UPDATE player p SET p.ent_id = :eid WHERE p.id = 1;
+      UPDATE player p SET p.ent_id = :eid, p.free_x = NULL, p.free_y = NULL, p.free_z = NULL WHERE p.id = 1;
       EXECUTE PROCEDURE link_ent(eid);
     END
     ELSE IF (cls = 'info_player_start2') THEN
@@ -92,7 +92,7 @@ BEGIN
         UPDATE ents e SET e.classname = 'player', e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 32,
                e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.z = e.z + 1 WHERE e.id = :eid;
         EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
-        UPDATE player p SET p.ent_id = :eid WHERE p.id = 1;
+        UPDATE player p SET p.ent_id = :eid, p.free_x = NULL, p.free_y = NULL, p.free_z = NULL WHERE p.id = 1;
       END
       ELSE DELETE FROM ents e WHERE e.id = :eid;
     END

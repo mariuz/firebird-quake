@@ -342,6 +342,54 @@ BEGIN
 
 END^
 
+-- SV_CheckStuck for the player: inside something solid, back to the last free place (player.free_*, QuakeC's
+-- oldorigin), or the first free spot within a unit across and 17 up; untested while the player is where its last
+-- move left it (a move only ends where its traces found room). free = 0: stuck where it is.
+CREATE OR ALTER PROCEDURE player_check_stuck (c INTEGER) RETURNS (free SMALLINT)
+AS
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
+DECLARE i INTEGER; DECLARE j INTEGER; DECLARE k INTEGER;
+BEGIN
+  free = 1;
+  SELECT d.x, d.y, d.z FROM ents d WHERE d.id = :c INTO ox, oy, oz;
+  SELECT p.free_x, p.free_y, p.free_z FROM player p WHERE p.id = 1 INTO px, py, pz;
+  IF (px = ox AND py = oy AND pz = oz) THEN EXIT;
+  IF (test_position(c, ox, oy, oz) = 0) THEN
+  BEGIN
+    UPDATE player p SET p.free_x = :ox, p.free_y = :oy, p.free_z = :oz WHERE p.id = 1;
+    EXIT;
+  END
+  IF (px IS NOT NULL AND test_position(c, px, py, pz) = 0) THEN
+  BEGIN
+    UPDATE ents d SET d.x = :px, d.y = :py, d.z = :pz WHERE d.id = :c;
+    EXECUTE PROCEDURE link_ent(c);
+    EXIT;
+  END
+  k = 0;
+  WHILE (k < 18) DO
+  BEGIN
+    i = -1;
+    WHILE (i <= 1) DO
+    BEGIN
+      j = -1;
+      WHILE (j <= 1) DO
+      BEGIN
+        IF (test_position(c, ox + i, oy + j, oz + k) = 0) THEN
+        BEGIN
+          UPDATE ents d SET d.x = :ox + :i, d.y = :oy + :j, d.z = :oz + :k WHERE d.id = :c;
+          EXECUTE PROCEDURE link_ent(c);
+          EXIT;
+        END
+        j = j + 1;
+      END
+      i = i + 1;
+    END
+    k = k + 1;
+  END
+  free = 0;                                        -- player is stuck
+END^
+
 -- SV_ClientThink + PlayerPreThink + physics + PlayerPostThink for one tic
 CREATE OR ALTER PROCEDURE player_think (dt DOUBLE PRECISION, fwd DOUBLE PRECISION, side DOUBLE PRECISION,
   yaw_d DOUBLE PRECISION, pitch_d DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, run SMALLINT, imp SMALLINT)
@@ -365,7 +413,7 @@ DECLARE tlt DOUBLE PRECISION; DECLARE oldz DOUBLE PRECISION; DECLARE w INTEGER;
 DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
-DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE stuckfree SMALLINT;
 BEGIN
   -- the intermission: the player is at its camera, out of the world (MOVETYPE_NONE), until the page goes on
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.intermission = 1)) THEN EXIT;
@@ -557,7 +605,8 @@ BEGIN
   IF (wl < 2 AND wj = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
-  -- move
+  -- move: SV_CheckStuck, then the walk (where it ends is free, kept as the place to come back to)
+  EXECUTE PROCEDURE player_check_stuck(pe) RETURNING_VALUES stuckfree;
   IF (wl >= 2 AND wj = 0) THEN
   BEGIN
     UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
@@ -566,6 +615,9 @@ BEGIN
   -- SV_WalkMove with the view's forward vector (AngleVectors): SV_TryUnstick and SV_WallFriction as in QuakeC mode
   ELSE EXECUTE PROCEDURE walk_move(pe, dt, COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0), COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0));
   EXECUTE PROCEDURE link_ent(pe);
+  IF (stuckfree = 1) THEN
+    UPDATE player p SET p.free_x = (SELECT e.x FROM ents e WHERE e.id = :pe), p.free_y = (SELECT e.y FROM ents e WHERE e.id = :pe),
+                        p.free_z = (SELECT e.z FROM ents e WHERE e.id = :pe) WHERE p.id = 1;
   -- smooth the view over steps
   SELECT e.z FROM ents e WHERE e.id = :pe INTO pz;
   UPDATE player p SET p.stepz = IIF(BIN_AND((SELECT e.flags FROM ents e WHERE e.id = :pe), 512) <> 0 AND :pz - :oldz > 0 AND :pz - :oldz <= 18,

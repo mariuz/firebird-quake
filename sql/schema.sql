@@ -344,6 +344,7 @@ CREATE TABLE player (
   idealpitch      DOUBLE PRECISION DEFAULT 0 NOT NULL,
   oldz            DOUBLE PRECISION DEFAULT 0 NOT NULL,    -- for the stair-step view smoothing
   stepz           DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  free_x DOUBLE PRECISION, free_y DOUBLE PRECISION, free_z DOUBLE PRECISION,   -- SV_CheckStuck's oldorigin: the last place a move ended free
   weapon_sound    SMALLINT DEFAULT 0 NOT NULL
 );
 
