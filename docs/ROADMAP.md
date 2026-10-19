@@ -198,6 +198,11 @@ difference fixed with a test that fails without it:
 - ~~**`PF_setmodel`**~~ done (`npm run test:qcplay`): an alias model left the edict's size as it was, where Quake gives it
   the fixed box `Mod_LoadAliasModel` sets, 16 units each way, until a `setsize`. (A sprite's box, its frame size in
   Quake, is still left at nothing: no progs makes a sprite solid.)
+- ~~**`groundentity`**~~ done (`npm run test:qcplay`): only a landing toss set it; `SV_FlyMove` sets it to the
+  `SOLID_BSP` thing or the world a fall stops on, and `SV_movestep` to what a monster's step stands on. Of the
+  progs at hand only LibreQuake's reads it (its `ClientObituary`). Left as Quake has it: `SV_WalkMove`'s step down
+  sets `FL_ONGROUND` only for a `SOLID_BSP` mover, which a player never is (an id bug); here a step down lands the
+  player on the ground, one frame sooner than Quake would.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world), `droptofloor`, `walkmove`,
   `makevectors`, `rint`, `normalize`, `setorigin`, `setsize`, `checkclient` (`PF_newcheckclient`'s turn every

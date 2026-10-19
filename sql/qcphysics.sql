@@ -30,6 +30,15 @@ BEGIN
   EXECUTE PROCEDURE qc_sg(g_self, oself); EXECUTE PROCEDURE qc_sg(g_other, oother);
 END^
 
+-- groundentity, as SV_FlyMove and SV_movestep set it (fly_move and move_step call this; nothing outside QuakeC mode)
+CREATE OR ALTER PROCEDURE qc_set_ground (e INTEGER, g INTEGER)
+AS
+DECLARE f INTEGER;
+BEGIN
+  SELECT v.f_groundentity FROM qc_vm v JOIN game m ON m.id = 1 AND m.qc_mode = 1 WHERE v.id = 1 INTO f;
+  IF (f IS NOT NULL) THEN EXECUTE PROCEDURE qc_sf(e, f, g);
+END^
+
 -- a pusher's .blocked, called by push_move() through mover_blocked()
 CREATE OR ALTER PROCEDURE qc_blocked (eid INTEGER, other INTEGER)
 AS

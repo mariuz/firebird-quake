@@ -628,6 +628,9 @@ CREATE GLOBAL TEMPORARY TABLE clip_planes (
 
 SET TERM ^ ;
 
+-- forward declaration (body in qcphysics.sql): a QuakeC edict's groundentity, in QuakeC mode
+CREATE OR ALTER PROCEDURE qc_set_ground (e INTEGER, g INTEGER) AS BEGIN END^
+
 -- SV_FlyMove: slide the entity along the world for `dt` seconds, bumping up
 -- to four times. Returns blocked bits (1 floor, 2 wall) and the entity hit,
 -- and the last wall's normal (its steptrace, for SV_WallFriction; NULL if none).
@@ -653,7 +656,7 @@ DECLARE i INTEGER; DECLARE j INTEGER; DECLARE ok SMALLINT; DECLARE cb SMALLINT;
 DECLARE qx DOUBLE PRECISION; DECLARE qy DOUBLE PRECISION; DECLARE qz DOUBLE PRECISION;
 DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION;
 DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION;
-DECLARE d DOUBLE PRECISION;
+DECLARE d DOUBLE PRECISION; DECLARE gnd INTEGER;
 BEGIN
   blocked = 0; hit_ent = 0;
   SELECT e.x, e.y, e.z, e.vx, e.vy, e.vz, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz, e.flags
@@ -687,7 +690,7 @@ BEGIN
     BEGIN
       blocked = BIN_OR(blocked, 1);
       SELECT e.solid FROM ents e WHERE e.id = :hit INTO hsolid;
-      IF (hit = 0 OR hsolid = 4) THEN flags = BIN_OR(flags, 512);   -- FL_ONGROUND
+      IF (hit = 0 OR hsolid = 4) THEN BEGIN flags = BIN_OR(flags, 512); gnd = hit; END   -- FL_ONGROUND, groundentity
     END
     IF (nz = 0) THEN
     BEGIN
@@ -759,6 +762,7 @@ BEGIN
     bump = bump + 1;
   END
   UPDATE ents e SET e.x = :px, e.y = :py, e.z = :pz, e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :eid;
+  IF (gnd IS NOT NULL) THEN EXECUTE PROCEDURE qc_set_ground(eid, gnd);
   SUSPEND;
 END^
 
@@ -991,8 +995,9 @@ BEGIN
     UPDATE ents e SET e.x = :px, e.y = :py, e.z = :pz WHERE e.id = :eid;
     RETURN 0;
   END
-  -- the move is ok; a step onto something that isn't the world is fine too
+  -- the move is ok; a step onto something that isn't the world is fine too, and that is its groundentity
   UPDATE ents e SET e.flags = BIN_OR(BIN_AND(e.flags, BIN_NOT(1024)), 512) WHERE e.id = :eid;
+  EXECUTE PROCEDURE qc_set_ground(eid, hit);
   EXECUTE PROCEDURE link_ent(eid);
   RETURN 1;
 END^

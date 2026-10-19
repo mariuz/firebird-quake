@@ -648,6 +648,37 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(wall && mg && tg,
     `SV_PushEntity: a missile stopped by a wall inside a trigger touches the trigger first (trigger removed: ${tg}), then hits the wall (missile removed: ${mg})`);
 }
+// groundentity: SV_FlyMove sets it to what a landing stopped on (a SOLID_BSP thing or the world), SV_movestep to what
+// a step stands on (LibreQuake's ClientObituary reads it). Set to another edict first, both come back to the world
+{
+  await db.exec(`UPDATE ents SET x = ${free.X}, y = ${free.Y}, z = ${free.Z}, vx = 0, vy = 0, vz = 0, movetype = 3 WHERE id = 1`);
+  await db.exec('EXECUTE PROCEDURE link_ent(1)');
+  await setf(1, 'groundentity', grunt);
+  await frame();
+  const pg = await fld(1, 'groundentity');
+  const g0 = await ent(grunt);
+  const starts = await qa(`SELECT x, y, z FROM ents WHERE BIN_AND(flags, 32) <> 0 AND id <> ${grunt} ORDER BY id`);
+  let stepped = null;
+  for (const st of starts) {
+    await db.exec(`UPDATE ents SET x = ${st.X}, y = ${st.Y}, z = ${st.Z}, flags = BIN_AND(BIN_OR(flags, 512), BIN_NOT(1024)) WHERE id = ${grunt}`);
+    await setf(grunt, 'groundentity', 1);
+    for (const [dx, dy] of [[4, 0], [-4, 0], [0, 4], [0, -4]]) {
+      if ((await q1(`SELECT move_step(${grunt}, ${dx}, ${dy}, 0) m FROM rdb$database`)).M === 1) {
+        stepped = await fld(grunt, 'groundentity');
+        const e = await ent(grunt);
+        // what the step's trace down stands it on
+        const under = await q1(`SELECT hit_ent h FROM trace_move(${grunt}, ${e.MINX}, ${e.MINY}, ${e.MINZ}, ${e.MAXX}, ${e.MAXY}, ${e.MAXZ}, ${e.X}, ${e.Y}, ${e.Z + 18}, ${e.X}, ${e.Y}, ${e.Z - 18}, 0)`);
+        stepped = { got: stepped, under: under.H, cls: (await ent(under.H || 0))?.CLASSNAME ?? 'worldspawn' };
+        break;
+      }
+    }
+    if (stepped !== null) break;
+  }
+  await db.exec(`UPDATE ents SET x = ${g0.X}, y = ${g0.Y}, z = ${g0.Z}, flags = ${g0.FLAGS} WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  assert(pg === 0 && stepped && stepped.got === stepped.under,
+    `groundentity: the player's walk on the floor sets it to the world (${pg}), a grunt's step to what it stands on (${stepped?.got}, ${stepped?.cls})`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);
