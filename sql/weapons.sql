@@ -607,13 +607,9 @@ BEGIN
 
   -- move: SV_CheckStuck, then the walk (where it ends is free, kept as the place to come back to)
   EXECUTE PROCEDURE player_check_stuck(pe) RETURNING_VALUES stuckfree;
-  IF (wl >= 2 AND wj = 0) THEN
-  BEGIN
-    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :pe;
-    EXECUTE PROCEDURE fly_move(pe, dt) RETURNING_VALUES tst, tid, fwx, fwy;
-  END
-  -- SV_WalkMove with the view's forward vector (AngleVectors): SV_TryUnstick and SV_WallFriction as in QuakeC mode
-  ELSE EXECUTE PROCEDURE walk_move(pe, dt, COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0), COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0));
+  -- SV_WalkMove, swimming too (SV_Physics_Client's MOVETYPE_WALK: in the water it may stair up, so the player climbs
+  -- out onto a ledge a step above), with the view's forward vector for SV_TryUnstick and SV_WallFriction
+  EXECUTE PROCEDURE walk_move(pe, dt, COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0), COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0));
   EXECUTE PROCEDURE link_ent(pe);
   IF (stuckfree = 1) THEN
     UPDATE player p SET p.free_x = (SELECT e.x FROM ents e WHERE e.id = :pe), p.free_y = (SELECT e.y FROM ents e WHERE e.id = :pe),

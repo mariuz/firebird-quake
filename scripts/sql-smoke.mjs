@@ -106,6 +106,33 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
     `SV_CheckStuck in the PSQL game: the free place is kept, and a player put inside a wall is back there the next tic (${back.X.toFixed(0)}, ${back.Y.toFixed(0)})`);
 }
 
+// SV_WalkMove while swimming: waist-deep in E1M1's water against a ledge a step above, moving at it (no input, so no
+// water jump), the player stairs up onto it in the tic, as Quake's walk does in the water too
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  const q = (s) => db.query(s).then((r) => r.rows[0]);
+  const tr = (x, y, z, dx, dy, dz = 0) => q(`SELECT fraction f, startsolid s FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${x}, ${y}, ${z}, ${x + dx}, ${y + dy}, ${z + dz}, 0)`);
+  let ledge = null;
+  search: for (const l of (await db.query('SELECT minx, miny, minz, maxx, maxy, maxz FROM leaves WHERE contents = -3 ORDER BY id')).rows) {
+    for (let x = l.MINX + 16; x < l.MAXX; x += 32) for (let y = l.MINY + 16; y < l.MAXY; y += 32) for (let z = l.MINZ + 25; z < l.MAXZ; z += 8) {
+      const c = await q(`SELECT point_contents(${x}, ${y}, ${z}) c, point_contents(${x}, ${y}, ${z + 22}) e FROM rdb$database`);
+      if (c.C !== -3 || c.E !== -1 || (await tr(x, y, z, 0, 0, 0)).S) continue;          // waist deep: waterlevel 2
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const lo = await tr(x, y, z, dx * 64, dy * 64);
+        if (lo.F >= 1 || lo.F * 64 < 4 || (await tr(x, y, z, 0, 0, 18)).F < 1) continue;
+        if ((await tr(x, y, z + 18, dx * 64, dy * 64)).F * 64 > lo.F * 64 + 24) { ledge = { x: x + dx * (lo.F * 64 - 1), y: y + dy * (lo.F * 64 - 1), z, dx, dy }; break search; }
+      }
+    }
+  }
+  await db.exec(`UPDATE ents SET x = ${ledge.x}, y = ${ledge.y}, z = ${ledge.z}, vx = ${ledge.dx * 200}, vy = ${ledge.dy * 200}, vz = 0, yaw = ${Math.atan2(ledge.dy, ledge.dx) * 180 / Math.PI} WHERE id = ${pe}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+  await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+  const e = await q(`SELECT x, y, z, waterlevel wl FROM ents WHERE id = ${pe}`);
+  const on = (e.X - ledge.x) * ledge.dx + (e.Y - ledge.y) * ledge.dy;
+  assert(ledge && e.Z - ledge.z > 4 && on > 0,
+    `SV_WalkMove while swimming: waist deep against a ledge, the player stairs up onto it (${(e.Z - ledge.z).toFixed(1)} up, ${on.toFixed(1)} on)`);
+}
+
 t0 = t();
 s = await tic([1, 0, 0, 0, 0, 1, 0, 1, 0]);
 console.log(`fire            ${(t() - t0).toFixed(0)} ms; shells ${s.SHELLS}`);

@@ -233,6 +233,9 @@ to the same behaviour, with a test of its own:
   `player_check_stuck` puts it back at the last place a move ended free (`player.free_x/y/z`, QuakeC's `oldorigin`,
   cleared at each spawn) or the first free spot within a unit across and 17 up, untested while the player is where
   its last move left it.
+- ~~**Swimming walks**~~ done (`npm test`): the PSQL player swam with a plain `fly_move`, where Quake's
+  `MOVETYPE_WALK` player always moves by `SV_WalkMove`, whose step-up is allowed in the water: waist-deep against a
+  ledge a step above, the player now stairs up onto it without a water jump, as in Quake and QuakeC mode.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 
