@@ -169,6 +169,12 @@ difference fixed with a test that fails without it:
   skipped for a water jump and for a client whose touch changed its movetype, and `fly_move` returns 7 when it is
   stopped in a corner, as `SV_FlyMove` does. These run in QuakeC mode (`walk_move` given the view's forward
   vector); the PSQL game's movement is left as it was.
+- ~~**`SV_movestep`**~~ done (`npm run test:qcplay`): there was no `SV_CheckBottom` after the step, so a monster
+  walked on towards a drop for as long as any part of its box's trace down found floor, until a corner was all
+  that stood on the edge; now the step is refused when the floor under its middle or a corner is more than a step
+  down (one whose floor was pulled out, `FL_PARTIALGROUND`, may still take it to correct). The retry from the
+  wished height after a start in something solid traced 36 units down instead of to the same end, 18. The check is
+  `check_bottom`, which the `checkbottom` builtin uses too; the PSQL game's monsters walk by the same `move_step`.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world).
 

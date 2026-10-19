@@ -440,6 +440,40 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(jamb && gone(unstuck) > 4 && gone(stuck) < 1,
     `SV_TryUnstick: running straight at a jamb that catches the box by a unit, the step-up makes no headway and a nudge sideways lets it through (${jamb ? gone(unstuck).toFixed(1) : '-'} units on; without it ${jamb ? gone(stuck).toFixed(1) : '-'})`);
 }
+// SV_movestep's SV_CheckBottom: a monster walking towards a drop stops while its middle is still over the floor,
+// where the box's trace down alone would let it walk on until a corner was all that stood on the edge
+{
+  const g0 = await ent(grunt);
+  const starts = await qa(`SELECT x, y, z FROM ents WHERE BIN_AND(flags, 32) <> 0 AND id <> ${grunt} ORDER BY id`);
+  let edge = null;
+  for (const st of starts) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      await db.exec(`UPDATE ents SET x = ${st.X}, y = ${st.Y}, z = ${st.Z}, flags = BIN_AND(BIN_OR(flags, 512), BIN_NOT(1024)) WHERE id = ${grunt}`);
+      if ((await q1(`SELECT test_position(${grunt}, ${st.X}, ${st.Y}, ${st.Z}) s FROM rdb$database`)).S !== 0) break;
+      let k = 0;
+      while (k < 64 && (await q1(`SELECT move_step(${grunt}, ${dx * 4}, ${dy * 4}, 0) m FROM rdb$database`)).M === 1) k++;
+      if (k === 64) continue;
+      const e = await ent(grunt);
+      // the refused step: does the box's trace down (as move_step makes it) find a floor there?
+      const nz = e.Z + 18;
+      const down = await q1(`SELECT fraction f, ez, allsolid a, startsolid s FROM trace_move(${grunt}, ${e.MINX}, ${e.MINY}, ${e.MINZ}, ${e.MAXX}, ${e.MAXY}, ${e.MAXZ}, ${e.X + dx * 4}, ${e.Y + dy * 4}, ${nz}, ${e.X + dx * 4}, ${e.Y + dy * 4}, ${nz - 36}, 0)`);
+      if (down.F < 1 && down.A === 0 && down.S === 0) {
+        await db.exec(`UPDATE ents SET x = ${e.X + dx * 4}, y = ${e.Y + dy * 4}, z = ${down.EZ} WHERE id = ${grunt}`);
+        const hangs = (await q1(`SELECT check_bottom(${grunt}) b FROM rdb$database`)).B === 0;
+        await db.exec(`UPDATE ents SET x = ${e.X}, y = ${e.Y}, z = ${e.Z} WHERE id = ${grunt}`);
+        const here = (await q1(`SELECT check_bottom(${grunt}) b FROM rdb$database`)).B === 1;
+        const again = (await q1(`SELECT move_step(${grunt}, ${dx * 4}, ${dy * 4}, 0) m FROM rdb$database`)).M;
+        const still = await ent(grunt);
+        if (hangs && here) { edge = { k, again, moved: Math.hypot(still.X - e.X, still.Y - e.Y, still.Z - e.Z) }; break; }
+      }
+    }
+    if (edge) break;
+  }
+  await db.exec(`UPDATE ents SET x = ${g0.X}, y = ${g0.Y}, z = ${g0.Z}, flags = ${g0.FLAGS} WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  assert(edge && edge.again === 0 && edge.moved === 0,
+    `SV_CheckBottom in SV_movestep: a grunt walking to a ledge stops after ${edge?.k} steps with its middle over the floor, refusing the step the box's trace alone allows (a corner would hang over the drop)`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

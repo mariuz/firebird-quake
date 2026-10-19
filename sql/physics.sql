@@ -870,6 +870,32 @@ BEGIN
   END
 END^
 
+-- SV_CheckBottom: is the entity standing on something under its middle, with no corner over a drop of more than
+-- a step? (Quick yes when the world is solid a unit under all four corners.)
+CREATE OR ALTER FUNCTION check_bottom (eid INTEGER)
+RETURNS SMALLINT
+AS
+DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
+DECLARE a DOUBLE PRECISION; DECLARE b DOUBLE PRECISION;
+DECLARE frac DOUBLE PRECISION; DECLARE mid DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE k INTEGER = 0;
+BEGIN
+  SELECT d.x + d.minx, d.y + d.miny, d.z + d.minz, d.x + d.maxx, d.y + d.maxy FROM ents d WHERE d.id = :eid INTO x, y, z, a, b;
+  IF (point_contents(x, y, z - 1) = -2 AND point_contents(x, b, z - 1) = -2 AND point_contents(a, y, z - 1) = -2 AND point_contents(a, b, z - 1) = -2) THEN
+    RETURN 1;
+  -- the real check: the middle's floor within two steps below, and no corner more than a step below it
+  SELECT t.fraction, t.ez FROM trace_move(:eid, 0, 0, 0, 0, 0, 0, (:x + :a) / 2, (:y + :b) / 2, :z, (:x + :a) / 2, (:y + :b) / 2, :z - 36, 1) t INTO frac, mid;
+  IF (frac = 1) THEN RETURN 0;
+  WHILE (k < 4) DO
+  BEGIN
+    bx = IIF(k < 2, x, a); by_ = IIF(MOD(k, 2) = 0, y, b);
+    SELECT t.fraction, t.ez FROM trace_move(:eid, 0, 0, 0, 0, 0, 0, :bx, :by_, :z, :bx, :by_, :z - 36, 1) t INTO frac, ez;
+    IF (frac = 1 OR mid - ez > 18) THEN RETURN 0;
+    k = k + 1;
+  END
+  RETURN 1;
+END^
+
 -- SV_movestep for monsters: move horizontally, then settle onto the floor
 -- within one step up or down. Returns 1 if the move was taken.
 CREATE OR ALTER FUNCTION move_step (eid INTEGER, dx DOUBLE PRECISION, dy DOUBLE PRECISION, dz DOUBLE PRECISION)
@@ -925,8 +951,8 @@ BEGIN
   IF (als = 1) THEN RETURN 0;
   IF (sts = 1) THEN
   BEGIN
-    nz = nz - 18;
-    EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, nx, ny, nz, nx, ny, nz - 36, 0)
+    nz = nz - 18;                                         -- (to the same end, a step under the wished position)
+    EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, nx, ny, nz, nx, ny, nz - 18, 0)
       RETURNING_VALUES f, ex, ey, ez, pnx, pny, pnz, als, sts, io, iw, hit;
     IF (als = 1 OR sts = 1) THEN RETURN 0;
   END
@@ -941,8 +967,21 @@ BEGIN
     END
     RETURN 0;                 -- walked off an edge
   END
+  -- check point traces down for dangling corners
+  UPDATE ents e SET e.x = :ex, e.y = :ey, e.z = :ez WHERE e.id = :eid;
+  IF (check_bottom(eid) = 0) THEN
+  BEGIN
+    IF (BIN_AND(flags, 1024) <> 0) THEN
+    BEGIN
+      -- the floor mostly pulled out from under it, and it is trying to correct
+      EXECUTE PROCEDURE link_ent(eid);
+      RETURN 1;
+    END
+    UPDATE ents e SET e.x = :px, e.y = :py, e.z = :pz WHERE e.id = :eid;
+    RETURN 0;
+  END
   -- the move is ok; a step onto something that isn't the world is fine too
-  UPDATE ents e SET e.x = :ex, e.y = :ey, e.z = :ez, e.flags = BIN_OR(BIN_AND(e.flags, BIN_NOT(1024)), 512) WHERE e.id = :eid;
+  UPDATE ents e SET e.flags = BIN_OR(BIN_AND(e.flags, BIN_NOT(1024)), 512) WHERE e.id = :eid;
   EXECUTE PROCEDURE link_ent(eid);
   RETURN 1;
 END^

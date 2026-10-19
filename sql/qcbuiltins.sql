@@ -231,24 +231,7 @@ BEGIN
     ok = 1;
     IF (qc_on() = 1) THEN
     BEGIN
-      e = CAST(qc_g(4) AS INTEGER);
-      SELECT d.x + d.minx, d.y + d.miny, d.z + d.minz, d.x + d.maxx, d.y + d.maxy FROM ents d WHERE d.id = :e INTO x, y, z, a, b;
-      IF (point_contents(x, y, z - 1) <> -2 OR point_contents(x, b, z - 1) <> -2 OR point_contents(a, y, z - 1) <> -2 OR point_contents(a, b, z - 1) <> -2) THEN
-      BEGIN
-        -- the real check: the middle's floor within a step below, and no corner more than a step below it
-        SELECT t.fraction, t.ez FROM trace_move(:e, 0, 0, 0, 0, 0, 0, (:x + :a) / 2, (:y + :b) / 2, :z, (:x + :a) / 2, (:y + :b) / 2, :z - 36, 1) t INTO frac, cur;
-        IF (frac = 1) THEN ok = 0;
-        ELSE
-        BEGIN
-          best = cur;
-          FOR SELECT IIF(r.k < 2, :x, :a), IIF(MOD(r.k, 2) = 0, :y, :b) FROM (SELECT 0 k FROM rdb$database UNION ALL SELECT 1 FROM rdb$database UNION ALL SELECT 2 FROM rdb$database UNION ALL SELECT 3 FROM rdb$database) r INTO bx, by_ DO
-          BEGIN
-            SELECT t.fraction, t.ez FROM trace_move(:e, 0, 0, 0, 0, 0, 0, :bx, :by_, :z, :bx, :by_, :z - 36, 1) t INTO frac, ideal;
-            IF (frac < 1 AND ideal > best) THEN best = ideal;
-            IF (frac = 1 OR cur - ideal > 18) THEN ok = 0;
-          END
-        END
-      END
+      ok = check_bottom(CAST(qc_g(4) AS INTEGER));
     END
     EXECUTE PROCEDURE qc_sg(1, ok);
   END
