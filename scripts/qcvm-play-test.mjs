@@ -611,6 +611,18 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   for (const [k, v] of before.entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${7 + k}, ${v})`);
   await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`);
   await db.exec('EXECUTE PROCEDURE qc_builtin(4, 0)');
+  // and a sprite's, half its widest frame across and half its tallest up and down (Mod_LoadSpriteModel)
+  const spr = await q1("SELECT minx, minz, maxx, maxz FROM models WHERE name = 'progs/s_explod.spr'");
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`);
+  await db.exec("EXECUTE PROCEDURE qc_sg(7, (SELECT qc_newstr('progs/s_explod.spr') FROM rdb$database))");
+  await db.exec('EXECUTE PROCEDURE qc_builtin(3, 0)');
+  const sprBox = await box(grunt);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`); await db.exec(`EXECUTE PROCEDURE qc_sg(7, ${await fld(grunt, 'model')})`);
+  for (const [k, v] of before.entries()) await db.exec(`EXECUTE PROCEDURE qc_sg(${7 + k}, ${v})`);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(4, ${grunt})`);
+  await db.exec('EXECUTE PROCEDURE qc_builtin(4, 0)');
+  assert(spr.MINX < 0 && sprBox.join() === [spr.MINX, spr.MINX, spr.MINZ, spr.MAXX, spr.MAXX, spr.MAXZ].join(),
+    `setmodel on s_explod.spr gives its sprite box, ${sprBox.slice(0, 3).join(' ')} to ${sprBox.slice(3).join(' ')}`);
   assert(after.join() === '-16,-16,-16,16,16,16' && row.MINZ === -16 && (await box(grunt)).join() === before.join(),
     `setmodel on soldier.mdl gives the box Quake's alias models have, ${after.slice(0, 3).join(' ')} to ${after.slice(3).join(' ')} (in ents too), until setsize (${before.join(' ')} again)`);
 }

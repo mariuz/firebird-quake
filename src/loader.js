@@ -204,7 +204,9 @@ export async function loadResources(db, pak, { width = 320, height = 200, fov = 
     const id = res.nextModel++;
     res.models.set(id, { id, name, kind: 'S', spr: s });
     res.byName.set(name, id);
-    modelRows.push([id, name, 'S', null, null, null, null, null, null, null, null, null, null, null, s.frames.length, 0, s.radius]);
+    // Mod_LoadSpriteModel's bounds: half the widest frame across, half the tallest up and down (setmodel gives them)
+    const hw = s.maxW / 2, hh = s.maxH / 2;
+    modelRows.push([id, name, 'S', -hw, -hw, -hh, hw, hw, hh, null, null, null, null, null, s.frames.length, 0, s.radius]);
   }
   await bulkLoad(db, 'models', modelRows);
   await bulkLoad(db, 'anims', animRows);

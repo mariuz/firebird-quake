@@ -310,7 +310,8 @@ BEGIN
     mid = (SELECT FIRST 1 m.id FROM models m WHERE m.name = :s);
     EXECUTE PROCEDURE qc_sf(e, (SELECT v.f_modelindex FROM qc_vm v WHERE v.id = 1), COALESCE(mid, IIF(s = '', 0, 1)));
     x = NULL;
-    -- brush models carry their bounds; an alias model has Mod_LoadAliasModel's fixed box, 16 each way, until setsize
+    -- brush models and sprites carry their bounds (a sprite's: its widest and tallest frame, halved); an alias model has
+    -- Mod_LoadAliasModel's fixed box, 16 each way, until setsize
     IF (mid IS NOT NULL) THEN
       SELECT IIF(m.kind = 'M', -16, m.minx), IIF(m.kind = 'M', -16, m.miny), IIF(m.kind = 'M', -16, m.minz),
              IIF(m.kind = 'M', 16, m.maxx), IIF(m.kind = 'M', 16, m.maxy), IIF(m.kind = 'M', 16, m.maxz) FROM models m WHERE m.id = :mid INTO x, y, z, ex, ey, ez;

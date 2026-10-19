@@ -196,8 +196,8 @@ difference fixed with a test that fails without it:
   (`PF_walkmove` restores only `self`, relying on the touch to restore `other`). `aim` now looks through the edicts in
   order, as `PF_aim` does, so a tie goes to the later one.
 - ~~**`PF_setmodel`**~~ done (`npm run test:qcplay`): an alias model left the edict's size as it was, where Quake gives it
-  the fixed box `Mod_LoadAliasModel` sets, 16 units each way, until a `setsize`. (A sprite's box, its frame size in
-  Quake, is still left at nothing: no progs makes a sprite solid.)
+  the fixed box `Mod_LoadAliasModel` sets, 16 units each way, until a `setsize`, and a sprite the box
+  `Mod_LoadSpriteModel` gives it: half its widest frame across and half its tallest up and down.
 - ~~**`groundentity`**~~ done (`npm run test:qcplay`): only a landing toss set it; `SV_FlyMove` sets it to the
   `SOLID_BSP` thing or the world a fall stops on, and `SV_movestep` to what a monster's step stands on. Of the
   progs at hand only LibreQuake's reads it (its `ClientObituary`). Left different on purpose: `SV_WalkMove`'s step down
