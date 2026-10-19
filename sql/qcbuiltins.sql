@@ -253,7 +253,7 @@ BEGIN
       BEGIN
         best = 0.93e0; bent = 0;
         FOR SELECT d.id, d.x + (d.minx + d.maxx) * 0.5e0, d.y + (d.miny + d.maxy) * 0.5e0, d.z + (d.minz + d.maxz) * 0.5e0 FROM ents d
-             WHERE d.id <> :e AND d.solid <> 0 AND qc_f(d.id, :i) = 2 INTO hit, bx, by_, bz DO
+             WHERE d.id <> :e AND d.solid <> 0 AND qc_f(d.id, :i) = 2 ORDER BY d.id INTO hit, bx, by_, bz DO   -- (PF_aim: in edict order, a tie to the later)
         BEGIN
           mv = SQRT((bx - x) * (bx - x) + (by_ - y) * (by_ - y) + (bz - z) * (bz - z));
           IF (mv = 0) THEN CONTINUE;

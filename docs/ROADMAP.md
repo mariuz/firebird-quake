@@ -190,9 +190,14 @@ difference fixed with a test that fails without it:
   degrees (with the exact `180 / π`, so straight along y is 90 and not 89). `findradius`'s chain ran from the lowest
   edict up, where Quake's runs from the highest down (it walks up and puts each in front): a blast's
   `T_RadiusDamage` now hurts things in Quake's order.
+- ~~**`SV_Impact` and `SV_TouchLinks`**~~ done (`npm run test:qcplay`): both left `self` and `other` set to the last
+  touch they ran, where Quake puts them back; a monster's `walkmove` into a trigger came back with `other` changed
+  (`PF_walkmove` restores only `self`, relying on the touch to restore `other`). `aim` now looks through the edicts in
+  order, as `PF_aim` does, so a tie goes to the later one.
 - Checked and found faithful: `SV_Physics_Pusher` (the move limited to the think's time, the think on the
   pusher's `ltime`), `SV_RunThink` (due within the frame, run at its own time, `other` the world), `droptofloor`, `walkmove`,
-  `makevectors`, `rint`, `normalize`, `setorigin`, `setsize`.
+  `makevectors`, `rint`, `normalize`, `setorigin`, `setsize`, `checkclient` (`PF_newcheckclient`'s turn every
+  0.1 s and the PVS of the client's eye; `FL_NOTARGET` is the progs' own test).
 
 ## Performance
 

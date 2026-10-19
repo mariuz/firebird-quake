@@ -579,6 +579,27 @@ assert(Math.hypot(stayed.X - mid[0], stayed.Y - mid[1]) < 1 && Math.hypot(sent.X
   assert(chain.length > 2 && chain.every((e, k) => k === 0 || e < chain[k - 1]),
     `findradius: ${chain.length} edicts within 1000 units, chained from the highest down (${chain.slice(0, 4).join(', ')}, …)`);
 }
+// SV_TouchLinks and SV_Impact put self and other back after the touches they run
+{
+  const g = (k) => q1(`SELECT qc_g(${k}) v FROM rdb$database`).then((r) => r.V);
+  const [gs, go] = await q1("SELECT g_self s, g_other o FROM qc_vm WHERE id = 1").then((r) => [r.S, r.O]);
+  const g0 = await ent(grunt);
+  const tb = await ent((await byClass('trigger_teleport'))[0]);
+  const mid = [tb.X + (tb.MINX + tb.MAXX) / 2, tb.Y + (tb.MINY + tb.MAXY) / 2, tb.Z + tb.MINZ + 25];
+  await db.exec(`UPDATE ents SET x = ${mid[0]}, y = ${mid[1]}, z = ${mid[2]}, solid = 3 WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE qc_sg(${gs}, 1)`); await db.exec(`EXECUTE PROCEDURE qc_sg(${go}, 7)`);
+  await db.exec(`EXECUTE PROCEDURE qc_touch_triggers(${grunt})`);
+  const sent = await ent(grunt);
+  const afterTouch = [await g(gs), await g(go)];
+  const item = (await qa(`SELECT e.id FROM ents e WHERE e.solid = 1 AND BIN_AND(e.flags, 256) <> 0 ORDER BY e.id`)).find(() => true).ID;
+  await db.exec(`EXECUTE PROCEDURE qc_sg(${gs}, 1)`); await db.exec(`EXECUTE PROCEDURE qc_sg(${go}, 7)`);
+  await db.exec(`EXECUTE PROCEDURE qc_impact(${item}, 0)`);
+  const afterImpact = [await g(gs), await g(go)];
+  await db.exec(`UPDATE ents SET x = ${g0.X}, y = ${g0.Y}, z = ${g0.Z}, solid = ${g0.SOLID} WHERE id = ${grunt}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${grunt})`);
+  assert(Math.hypot(sent.X - mid[0], sent.Y - mid[1]) > 64 && afterTouch.join() === '1,7' && afterImpact.join() === '1,7',
+    `self and other are put back after a trigger's touch (the teleporter sent the grunt on: self ${afterTouch[0]}, other ${afterTouch[1]}) and after an impact's (an item's touch: ${afterImpact.join(', ')})`);
+}
 assert((await errors()).length === 0, 'no QuakeC errors in the whole run');
 
 const sorted = [...frameMs].sort((a, b) => a - b);

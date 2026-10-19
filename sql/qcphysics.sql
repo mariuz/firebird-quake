@@ -7,12 +7,15 @@ CREATE OR ALTER PROCEDURE qc_water_transition (e INTEGER) AS BEGIN END^   -- def
 
 -- ── the server's physics on QuakeC edicts (sv_phys.c, sv_user.c), in QuakeC mode ──
 
--- SV_Impact: both sides' touch, when they are solid. Called by the physics through impact().
+-- SV_Impact: both sides' touch, when they are solid. Called by the physics through impact(). self and other are
+-- as they were afterwards.
 CREATE OR ALTER PROCEDURE qc_impact (e1 INTEGER, e2 INTEGER)
 AS
 DECLARE f INTEGER; DECLARE g_self INTEGER; DECLARE g_other INTEGER; DECLARE g_time INTEGER; DECLARE f_touch INTEGER; DECLARE svt DOUBLE PRECISION;
+DECLARE oself DOUBLE PRECISION; DECLARE oother DOUBLE PRECISION;
 BEGIN
   SELECT v.g_self, v.g_other, v.g_time, v.f_touch, v.sv_time FROM qc_vm v WHERE v.id = 1 INTO g_self, g_other, g_time, f_touch, svt;
+  oself = qc_g(g_self); oother = qc_g(g_other);
   EXECUTE PROCEDURE qc_sg(g_time, svt);
   IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.solid <> 0)) THEN
   BEGIN
@@ -24,6 +27,7 @@ BEGIN
     f = CAST(qc_f(e2, f_touch) AS INTEGER);
     IF (f <> 0) THEN BEGIN EXECUTE PROCEDURE qc_sg(g_self, e2); EXECUTE PROCEDURE qc_sg(g_other, e1); EXECUTE PROCEDURE qc_call(f); END
   END
+  EXECUTE PROCEDURE qc_sg(g_self, oself); EXECUTE PROCEDURE qc_sg(g_other, oother);
 END^
 
 -- a pusher's .blocked, called by push_move() through mover_blocked()
@@ -38,9 +42,11 @@ BEGIN
   EXECUTE PROCEDURE qc_call(f);
 END^
 
--- SV_TouchLinks: every trigger whose absolute box meets the entity's gets touched by it
+-- SV_TouchLinks: every trigger whose absolute box meets the entity's gets touched by it, self and other as they were
+-- afterwards
 CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER)
 AS
+DECLARE oself DOUBLE PRECISION; DECLARE oother DOUBLE PRECISION; DECLARE touched SMALLINT = 0;
 DECLARE x0 DOUBLE PRECISION; DECLARE y0 DOUBLE PRECISION; DECLARE z0 DOUBLE PRECISION;
 DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION;
 DECLARE sol SMALLINT; DECLARE tr INTEGER; DECLARE f INTEGER;
@@ -59,14 +65,16 @@ BEGIN
        ORDER BY t.id
        INTO tr DO
   BEGIN
-    IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN EXIT;              -- removed by an earlier touch
+    IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :e)) THEN LEAVE;             -- removed by an earlier touch
     IF (NOT EXISTS (SELECT 1 FROM ents d WHERE d.id = :tr AND d.solid = 1)) THEN CONTINUE;
     f = CAST(qc_f(tr, f_touch) AS INTEGER);
     IF (f = 0) THEN CONTINUE;
+    IF (touched = 0) THEN BEGIN oself = qc_g(g_self); oother = qc_g(g_other); touched = 1; END
     UPDATE qc_globals g SET g.v = CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END WHERE g.ofs IN (:g_time, :g_self, :g_other)
       AND g.v IS DISTINCT FROM CASE g.ofs WHEN :g_time THEN :svt WHEN :g_self THEN :tr ELSE :e END;
     EXECUTE PROCEDURE qc_call(f);
   END
+  IF (touched = 1) THEN BEGIN EXECUTE PROCEDURE qc_sg(g_self, oself); EXECUTE PROCEDURE qc_sg(g_other, oother); END
 END^
 
 -- SV_RunThink: the think, if it is due in this frame, at its own time; alive = 0 if it removed itself
