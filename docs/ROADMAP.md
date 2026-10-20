@@ -240,6 +240,11 @@ to the same behaviour, with a test of its own:
   shotguns, nailguns and rocket launcher take `aim(self, …)`: `aim_dir` is `PF_aim` (`sv_aim` 0.93), so a shot
   bends up or down onto a monster near the crosshair, as in Quake and QuakeC mode (the grenade launcher, the
   thunderbolt and the axe fire straight, as id's do).
+- ~~**`T_Damage`'s order**~~ done (`npm test`): the PSQL game returned at god mode and invulnerability before the
+  armor and the push; Quake spends the armor and gives the push first, so in god mode a rocket still throws the
+  player (a rocket jump) and the armor still goes. The invulnerability's sound has its own 2-second timer
+  (`player.invincible_sound`) instead of borrowing the pain timer, and on nightmare the player's next pain waits
+  five seconds, as `T_Damage` does after any `th_pain`.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

@@ -97,18 +97,7 @@ BEGIN
   save = 0;
   IF (cls = 'player') THEN
   BEGIN
-    IF (BIN_AND(flags, 64) <> 0) THEN EXIT;                               -- god mode
     SELECT p.armorvalue, p.armortype, p.invincible_finished FROM player p WHERE p.id = 1 INTO av, atype, inv;
-    IF (inv >= now_()) THEN
-    BEGIN
-      SELECT p.pain_finished FROM player p WHERE p.id = 1 INTO pf;
-      IF (pf < now_()) THEN
-      BEGIN
-        EXECUTE PROCEDURE snd(targ, 3, 'items/protect3.wav', 1, 1);
-        UPDATE player p SET p.pain_finished = now_() + 2 WHERE p.id = 1;
-      END
-      EXIT;
-    END
     save = CEILING(atype * damage);
     IF (save >= av) THEN
     BEGIN
@@ -129,6 +118,19 @@ BEGIN
       UPDATE ents e SET e.vx = e.vx + :dx / :dl * :damage * 8, e.vy = e.vy + :dy / :dl * :damage * 8, e.vz = e.vz + :dz / :dl * :damage * 8 WHERE e.id = :targ;
   END
 
+  -- god mode and invulnerability, only now (T_Damage: the armor is spent and the push given first: a rocket jump
+  -- in god mode still flies); the invulnerability's sound every 2 s at most (its own timer)
+  IF (BIN_AND(flags, 64) <> 0) THEN EXIT;
+  IF (cls = 'player' AND inv >= now_()) THEN
+  BEGIN
+    IF ((SELECT p.invincible_sound FROM player p WHERE p.id = 1) < now_()) THEN
+    BEGIN
+      EXECUTE PROCEDURE snd(targ, 3, 'items/protect3.wav', 1, 1);
+      UPDATE player p SET p.invincible_sound = now_() + 2 WHERE p.id = 1;
+    END
+    EXIT;
+  END
+
   UPDATE ents e SET e.health = e.health - :take WHERE e.id = :targ RETURNING e.health INTO hp;
   IF (hp <= 0) THEN
   BEGIN
@@ -143,6 +145,8 @@ BEGIN
       EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(1 + FLOOR(rnd() * 6) AS INTEGER) || '.wav', 1, 1);
       UPDATE player p SET p.pain_finished = now_() + 0.5e0, p.punchangle = -2 WHERE p.id = 1;
     END
+    -- (T_Damage after th_pain: on nightmare the player's next pain waits 5 s too)
+    IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = now_() + 5 WHERE p.id = 1;
     EXIT;
   END
   IF (BIN_AND(flags, 32) <> 0) THEN

@@ -90,6 +90,24 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
   await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
 }
 
+// T_Damage spends the armor and gives the push before it looks at god mode: in god mode a 50-point blast from
+// below leaves the health, takes 15 of green armor (0.3 × 50) and throws the player up (50 × 8)
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  const e0 = (await db.query(`SELECT x, y, z, health, flags FROM ents WHERE id = ${pe}`)).rows[0];
+  await db.exec(`UPDATE ents SET flags = BIN_OR(flags, 64), vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await db.exec('UPDATE player SET armorvalue = 100, armortype = 0.3');
+  await db.exec(`INSERT INTO ents (id, classname, x, y, z) VALUES (900003, 'blast', ${e0.X}, ${e0.Y}, ${e0.Z - 40})`);
+  await db.exec(`EXECUTE PROCEDURE t_damage(${pe}, 900003, 900003, 50)`);
+  const e1 = (await db.query(`SELECT health, vz FROM ents WHERE id = ${pe}`)).rows[0];
+  const pl = (await db.query('SELECT armorvalue av FROM player')).rows[0];
+  await db.exec('DELETE FROM ents WHERE id = 900003');
+  await db.exec(`UPDATE ents SET flags = ${e0.FLAGS}, vz = 0 WHERE id = ${pe}`);
+  await db.exec('UPDATE player SET armorvalue = 0, armortype = 0');
+  assert(e1.HEALTH === e0.HEALTH && pl.AV === 85 && Math.abs(e1.VZ - 400) < 1,
+    `T_Damage in god mode: the health stays (${e1.HEALTH}), the armor is spent (${pl.AV}) and the blast throws the player (vz ${e1.VZ.toFixed(0)})`);
+}
+
 // SV_CheckStuck in the PSQL game: after a tic standing free, the place is kept (player.free_*); put inside a wall, the
 // player is back there the next tic
 {
