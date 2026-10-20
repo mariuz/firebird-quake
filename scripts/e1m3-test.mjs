@@ -97,6 +97,42 @@ assert(s.KILLED === killed0 + 1, 'the kill is counted');
 await db.exec(`EXECUTE PROCEDURE t_damage(${z1.ID}, ${pe}, ${pe}, 100)`);
 assert((await zombie(z1.ID))?.ST === 'dead', 'and stays dead');
 
+// CheckWaterJump in the PSQL game (E1M3's water has such a wall): waist deep against a wall that reaches the waist (8 up) but not the head (maxs_z up), facing it,
+// with no input at all: the hop out (225 up), and SV_WaterJump's push into the wall (its normal × -50) carries the
+// player over it and out of the water
+{
+  const q = q1;
+  const line = (x, y, z, dx, dy) => q(`SELECT fraction f, nx, ny FROM trace_move(${pe}, 0, 0, 0, 0, 0, 0, ${x}, ${y}, ${z}, ${x + dx}, ${y + dy}, ${z}, 1)`);
+  const box = (x, y, z, dx, dy, dz) => q(`SELECT fraction f FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${x}, ${y}, ${z}, ${x + dx}, ${y + dy}, ${z + dz}, 0)`);
+  let spot = null;
+  search: for (const l of (await db.query('SELECT minx, miny, minz, maxx, maxy, maxz FROM leaves WHERE contents = -3 ORDER BY id')).rows) {
+    for (let x = l.MINX + 16; x < l.MAXX; x += 16) for (let y = l.MINY + 16; y < l.MAXY; y += 16) for (let z = l.MINZ + 25; z < l.MAXZ; z += 4) {
+      // waterlevel 2: the box's middle (4 up) in the water, the eye (22 up) out of it
+      const c = await q(`SELECT point_contents(${x}, ${y}, ${z - 23}) f, point_contents(${x}, ${y}, ${z + 4}) c, point_contents(${x}, ${y}, ${z + 22}) e, test_position(${pe}, ${x}, ${y}, ${z}) t FROM rdb$database`);
+      if (c.F !== -3 || c.C !== -3 || c.E !== -1 || c.T !== 0) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        // a plain wall facing back (its normal against the way in) with room on top for the player
+        const w = await line(x, y, z + 8, dx * 24, dy * 24);
+        if (w.F === 1 || Math.abs(w.NX + dx) > 1e-6 || Math.abs(w.NY + dy) > 1e-6 || (await line(x, y, z + 32, dx * 24, dy * 24)).F < 1) continue;
+        if ((await box(x, y, z, 0, 0, 40)).F === 1 && (await box(x, y, z + 40, dx * 40, dy * 40, 0)).F === 1) { spot = { x, y, z, dx, dy }; break search; }
+      }
+    }
+  }
+  assert(spot, 'a waist-high wall by the water to climb out at');
+  if (spot) {
+    await db.exec(`UPDATE ents SET x = ${spot.x}, y = ${spot.y}, z = ${spot.z}, vx = 0, vy = 0, vz = 0, flags = BIN_AND(flags, BIN_NOT(2048)), yaw = ${Math.atan2(spot.dy, spot.dx) * 180 / Math.PI} WHERE id = ${pe}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+    await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+    const j1 = await q(`SELECT vz, flags FROM ents WHERE id = ${pe}`);
+    for (let i = 0; i < 20; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+    const j2 = await q(`SELECT x, y, z, waterlevel wl FROM ents WHERE id = ${pe}`);
+    const on = (j2.X - spot.x) * spot.dx + (j2.Y - spot.y) * spot.dy;
+    await db.exec(`UPDATE ents SET flags = BIN_AND(flags, BIN_NOT(2048)), teleport_time = 0 WHERE id = ${pe}`);
+    assert((j1.FLAGS & 2048) !== 0 && Math.abs(j1.VZ - 225) < 0.01 && j2.WL === 0 && on > 16 && j2.Z > spot.z + 8,
+      `CheckWaterJump with no input: the hop out (vz ${j1.VZ.toFixed(1)}), and SV_WaterJump's push takes the player over the wall and out of the water (${on.toFixed(0)} on, ${(j2.Z - spot.z).toFixed(0)} up)`);
+  }
+}
+
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');
 process.exit(failed ? 1 : 0);

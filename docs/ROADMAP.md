@@ -254,6 +254,12 @@ to the same behaviour, with a test of its own:
   refuses backing into a teleporter just used and doubles the friction at an edge. The PSQL game's input now
   follows QuakeC mode's `SV_ClientThink`: a walking strafe is as fast as a run, looking far down slows the walk, and
   the swim's wish takes the same speeds.
+- ~~**The water jump**~~ done (`npm run test:e1m3`): the PSQL game hopped out of the water only with forward held and
+  looked for the open space at 24 up; `CheckWaterJump` runs whenever the player is waist deep, whatever the input,
+  looks at the head (`maxs_z`, 32), and keeps the push into the ledge (the wall's normal × -50, `player.wj_dx/dy`)
+  that `SV_WaterJump` then holds as the velocity across. A swimming jump no longer overrides the hop (`PlayerJump`
+  returns during it), the check comes after the frame's move as `PlayerPreThink` does, and the jump ends by the
+  water level the last frame left, as `SV_ClientThink` sees it, which is what lets the push carry the player over.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

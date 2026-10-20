@@ -456,7 +456,7 @@ DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE stuckfree SMALLINT;
-DECLARE fm DOUBLE PRECISION; DECLARE sm DOUBLE PRECISION;
+DECLARE fm DOUBLE PRECISION; DECLARE sm DOUBLE PRECISION; DECLARE owl SMALLINT;
 BEGIN
   -- the intermission: the player is at its camera, out of the world (MOVETYPE_NONE), until the page goes on
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.intermission = 1)) THEN EXIT;
@@ -501,7 +501,8 @@ BEGIN
     EXIT;
   END
 
-  -- water: drowning, slime and lava
+  -- water: drowning, slime and lava (owl: the level the last frame left, what SV_ClientThink sees in Quake)
+  SELECT e.waterlevel FROM ents e WHERE e.id = :pe INTO owl;
   EXECUTE PROCEDURE check_water(pe) RETURNING_VALUES wl, wt;
   IF (wl = 3) THEN
   BEGIN
@@ -529,31 +530,16 @@ BEGIN
     EXECUTE PROCEDURE snd(pe, 2, 'player/inh2o.wav', 1, 1);
   UPDATE ents e SET e.flags = IIF(:wl > 0, BIN_OR(e.flags, 16), BIN_AND(e.flags, BIN_NOT(16))) WHERE e.id = :pe;
 
-  -- FL_WATERJUMP: the hop out of the water onto a low ledge (CheckWaterJump)
+  -- SV_WaterJump (SV_ClientThink, while FL_WATERJUMP holds from an earlier frame): the push into the ledge the jump
+  -- found (CheckWaterJump's movedir) is the velocity across, until teleport_time or out of the water; that frame has
+  -- no friction or acceleration of its own
   SELECT e.flags, e.teleport_time, e.yaw FROM ents e WHERE e.id = :pe INTO flags, ttime, yaw;
   wj = IIF(BIN_AND(flags, 2048) <> 0, 1, 0);
-  IF (wj = 1 AND (wl = 0 OR ttime < t)) THEN
+  IF (wj = 1) THEN
   BEGIN
-    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(2048)) WHERE e.id = :pe;
-    wj = 0;
-  END
-  IF (wj = 0 AND wl = 2 AND fwd > 0) THEN
-  BEGIN
-    SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :pe INTO px, py, pz;
-    -- solid at the waist 24 units ahead, open at the head: a ledge to climb
-    EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + 8, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + 8, 1)
-      RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
-    IF (f < 1) THEN
-    BEGIN
-      EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + 24, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + 24, 1)
-        RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
-      IF (f = 1) THEN
-      BEGIN
-        UPDATE ents e SET e.flags = BIN_OR(e.flags, 2048), e.vz = 225, e.teleport_time = :t + 2 WHERE e.id = :pe;
-        UPDATE player p SET p.jump_released = 0 WHERE p.id = 1;
-        wj = 1;
-      END
-    END
+    IF (owl = 0 OR t > ttime) THEN
+      UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(2048)), e.teleport_time = 0 WHERE e.id = :pe;
+    UPDATE ents e SET e.vx = (SELECT p.wj_dx FROM player p WHERE p.id = 1), e.vy = (SELECT p.wj_dy FROM player p WHERE p.id = 1) WHERE e.id = :pe;
   END
 
   SELECT e.vx, e.vy, e.vz, e.flags FROM ents e WHERE e.id = :pe INTO vx, vy, vz, flags;
@@ -625,9 +611,33 @@ BEGIN
     END
   END
 
+  -- CheckWaterJump (PlayerPreThink, waist deep, whatever the input): solid at the waist 24 units ahead along the
+  -- body's yaw, open at the head (maxs_z up): the hop out, 225 up, the push into the ledge (its normal × -50) kept
+  -- for SV_WaterJump, 2 seconds at most
+  IF (wl = 2) THEN
+  BEGIN
+    SELECT e.x, e.y, e.z, e.maxz FROM ents e WHERE e.id = :pe INTO px, py, pz, tz;
+    EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + 8, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + 8, 1)
+      RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+    IF (f < 1) THEN
+    BEGIN
+      tx = nx * -50; ty = ny * -50;
+      EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px, py, pz + tz, px + COS(yaw * 0.0174532925e0) * 24, py + SIN(yaw * 0.0174532925e0) * 24, pz + tz, 1)
+        RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+      IF (f = 1) THEN
+      BEGIN
+        flags = BIN_OR(flags, 2048); vz = 225;
+        UPDATE ents e SET e.teleport_time = :t + 2 WHERE e.id = :pe;
+        UPDATE player p SET p.jump_released = 0, p.wj_dx = :tx, p.wj_dy = :ty WHERE p.id = 1;
+        jr = 0;
+      END
+    END
+  END
+
   -- jumping (PlayerJump, in PlayerPreThink: after SV_ClientThink's friction and acceleration, so the jump's frame
   -- still has the ground's friction and swimming up is the liquid's speed itself)
-  IF (jump = 1) THEN
+  IF (jump = 1 AND BIN_AND(flags, 2048) <> 0) THEN BEGIN END     -- no jumping during a water jump
+  ELSE IF (jump = 1) THEN
   BEGIN
     IF (wl >= 2) THEN
     BEGIN
@@ -652,7 +662,7 @@ BEGIN
   -- SV_AddGravity, every frame but swimming or water-jumping, on the ground too: the walk then presses into
   -- the floor and finds it again (without it FL_ONGROUND went off every other frame, halving friction
   -- and dropping jumps)
-  IF (wl < 2 AND wj = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
+  IF (wl < 2 AND BIN_AND(flags, 2048) = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
   -- move: SV_CheckStuck, then the walk (where it ends is free, kept as the place to come back to)
