@@ -245,6 +245,9 @@ to the same behaviour, with a test of its own:
   player (a rocket jump) and the armor still goes. The invulnerability's sound has its own 2-second timer
   (`player.invincible_sound`) instead of borrowing the pain timer, and on nightmare the player's next pain waits
   five seconds, as `T_Damage` does after any `th_pain`.
+- ~~**The jump after the input**~~ done (`npm test`): the PSQL game jumped before `SV_ClientThink`'s friction and
+  acceleration, where `PlayerJump` runs in `PlayerPreThink`, after them: a running jump skipped its frame's ground
+  friction (300 kept where Quake leaves 240), and water friction cut the liquid's swim-up speed (100 in water) by a fifth.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

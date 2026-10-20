@@ -108,6 +108,31 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
     `T_Damage in god mode: the health stays (${e1.HEALTH}), the armor is spent (${pl.AV}) and the blast throws the player (vz ${e1.VZ.toFixed(0)})`);
 }
 
+// PlayerJump comes after SV_ClientThink: the jump's own frame still has the ground's friction, so running at 300 and
+// jumping with no input leaves 240 across (300 - 0.05 × 300 × 4), and 270 up less a frame's gravity
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  const e0 = (await db.query(`SELECT x, y, z, yaw FROM ents WHERE id = ${pe}`)).rows[0];
+  let dir = null;
+  for (const a of [0, 90, 180, 270, 45, 135, 225, 315]) {
+    const r = (await db.query(`SELECT fraction f FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${e0.X}, ${e0.Y}, ${e0.Z}, ${e0.X + Math.cos(a * Math.PI / 180) * 64}, ${e0.Y + Math.sin(a * Math.PI / 180) * 64}, ${e0.Z + 16}, 0)`)).rows[0];
+    if (r.F === 1) { dir = a; break; }
+  }
+  const z = (await db.query(`SELECT ez FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${e0.X}, ${e0.Y}, ${e0.Z}, ${e0.X}, ${e0.Y}, ${e0.Z - 64}, 0)`)).rows[0].EZ;
+  const vx = Math.cos(dir * Math.PI / 180) * 300, vy = Math.sin(dir * Math.PI / 180) * 300;
+  await db.exec(`UPDATE ents SET z = ${z}, vx = ${vx}, vy = ${vy}, vz = 0, flags = BIN_OR(flags, 512) WHERE id = ${pe}`);
+  await db.exec('UPDATE player SET jump_released = 1');
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+  await tic([1, 0, 0, 0, 0, 0, 1, 1, 0]);
+  const e1 = (await db.query(`SELECT vx, vy, vz FROM ents WHERE id = ${pe}`)).rows[0];
+  await db.exec(`UPDATE ents SET x = ${e0.X}, y = ${e0.Y}, z = ${e0.Z}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+  for (let i = 0; i < 20; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
+  const across = Math.hypot(e1.VX, e1.VY);
+  assert(dir !== null && Math.abs(across - 240) < 0.01 && Math.abs(e1.VZ - 230) < 0.01,
+    `PlayerJump after SV_ClientThink: a running jump's frame has the ground's friction (${across.toFixed(1)} across, ${e1.VZ.toFixed(1)} up)`);
+}
+
 // SV_CheckStuck in the PSQL game: after a tic standing free, the place is kept (player.free_*); put inside a wall, the
 // player is back there the next tic
 {

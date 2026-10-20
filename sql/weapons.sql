@@ -559,29 +559,6 @@ BEGIN
   onground = IIF(BIN_AND(flags, 512) <> 0, 1, 0);
   maxspd = IIF(run = 1, 320, 200);
 
-  -- jumping
-  IF (jump = 1) THEN
-  BEGIN
-    IF (wl >= 2) THEN
-    BEGIN
-      vz = IIF(wt = -3, 100, IIF(wt = -4, 80, 50));
-      IF ((SELECT p.swim_time FROM player p WHERE p.id = 1) < t) THEN
-      BEGIN
-        UPDATE player p SET p.swim_time = :t + 1 WHERE p.id = 1;
-        EXECUTE PROCEDURE snd(pe, 2, IIF(rnd() < 0.5e0, 'misc/water1.wav', 'misc/water2.wav'), 1, 1);
-      END
-    END
-    ELSE IF (onground = 1 AND jr = 1) THEN
-    BEGIN
-      vz = vz + 270;
-      flags = BIN_AND(flags, BIN_NOT(512));
-      onground = 0;
-      UPDATE player p SET p.jump_released = 0 WHERE p.id = 1;
-      EXECUTE PROCEDURE snd(pe, 2, 'player/plyrjmp8.wav', 1, 1);
-    END
-  END
-  ELSE UPDATE player p SET p.jump_released = 1 WHERE p.id = 1;
-
   -- SV_UserFriction
   IF (wj = 0 AND (onground = 1 OR wl >= 2)) THEN
   BEGIN
@@ -641,6 +618,30 @@ BEGIN
       END
     END
   END
+  -- jumping (PlayerJump, in PlayerPreThink: after SV_ClientThink's friction and acceleration, so the jump's frame
+  -- still has the ground's friction and swimming up is the liquid's speed itself)
+  IF (jump = 1) THEN
+  BEGIN
+    IF (wl >= 2) THEN
+    BEGIN
+      vz = IIF(wt = -3, 100, IIF(wt = -4, 80, 50));
+      IF ((SELECT p.swim_time FROM player p WHERE p.id = 1) < t) THEN
+      BEGIN
+        UPDATE player p SET p.swim_time = :t + 1 WHERE p.id = 1;
+        EXECUTE PROCEDURE snd(pe, 2, IIF(rnd() < 0.5e0, 'misc/water1.wav', 'misc/water2.wav'), 1, 1);
+      END
+    END
+    ELSE IF (onground = 1 AND jr = 1) THEN
+    BEGIN
+      vz = vz + 270;
+      flags = BIN_AND(flags, BIN_NOT(512));
+      onground = 0;
+      UPDATE player p SET p.jump_released = 0 WHERE p.id = 1;
+      EXECUTE PROCEDURE snd(pe, 2, 'player/plyrjmp8.wav', 1, 1);
+    END
+  END
+  ELSE UPDATE player p SET p.jump_released = 1 WHERE p.id = 1;
+
   -- SV_AddGravity, every frame but swimming or water-jumping, on the ground too: the walk then presses into
   -- the floor and finds it again (without it FL_ONGROUND went off every other frame, halving friction
   -- and dropping jumps)
