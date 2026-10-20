@@ -456,6 +456,7 @@ DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE stuckfree SMALLINT;
+DECLARE fm DOUBLE PRECISION; DECLARE sm DOUBLE PRECISION;
 BEGIN
   -- the intermission: the player is at its camera, out of the world (MOVETYPE_NONE), until the page goes on
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.intermission = 1)) THEN EXIT;
@@ -559,53 +560,58 @@ BEGIN
   onground = IIF(BIN_AND(flags, 512) <> 0, 1, 0);
   maxspd = IIF(run = 1, 320, 200);
 
-  -- SV_UserFriction
-  IF (wj = 0 AND (onground = 1 OR wl >= 2)) THEN
-  BEGIN
-    spd = IIF(wl >= 2, vlen(vx, vy, vz), vlen(vx, vy, 0));
-    IF (spd > 0) THEN
-    BEGIN
-      IF (wl >= 2) THEN ns = spd - dt * spd * 4;
-      ELSE
-      BEGIN
-        control = IIF(spd < 100, 100, spd);
-        ns = spd - dt * control * 4;
-      END
-      IF (ns < 0) THEN ns = 0;
-      vx = vx * ns / spd; vy = vy * ns / spd;
-      IF (wl >= 2) THEN vz = vz * ns / spd;
-    END
-  END
-
-  -- the wish direction
-  fx_ = COS(yaw * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0);
-  rx = fy; ry = -fx_;
+  -- SV_ClientThink's move, as QuakeC mode has it: the input as Quake's client sends it (cl_forwardspeed 200 and
+  -- cl_sidespeed 350, twice those running), no backing into a teleporter just used; then SV_WaterMove (the whole
+  -- view's direction, friction 4 on the speed, 0.7 of the wish) or SV_AirMove (the body's angles, whose pitch is a
+  -- third of the view's, the wish flat and at most sv_maxspeed 320; on the ground SV_UserFriction, doubled at an
+  -- edge, and SV_Accelerate; in the air SV_AirAccelerate)
+  fm = fwd * IIF(run = 1, 400, 200); sm = side * IIF(run = 1, 700, 350);
+  IF (t < ttime AND fm < 0) THEN fm = 0;
+  rx = SIN(yaw * 0.0174532925e0); ry = -COS(yaw * 0.0174532925e0);
   IF (wl >= 2 AND wj = 0) THEN
   BEGIN
-    -- swimming: the forward vector follows the pitch
+    spd = vlen(vx, vy, vz);
+    IF (spd > 0) THEN
+    BEGIN
+      ns = MAXVALUE(0, spd - dt * spd * 4);
+      vx = vx * ns / spd; vy = vy * ns / spd; vz = vz * ns / spd;
+    END
+    fx_ = COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0); fy = COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0);
     fz = -SIN(pitch * 0.0174532925e0);
-    fx_ = fx_ * COS(pitch * 0.0174532925e0); fy = fy * COS(pitch * 0.0174532925e0);
-    wx = fx_ * fwd * maxspd + rx * side * maxspd; wy = fy * fwd * maxspd + ry * side * maxspd; wz = fz * fwd * maxspd;
+    wx = fx_ * fm + rx * sm; wy = fy * fm + ry * sm; wz = fz * fm;
     IF (fwd = 0 AND side = 0 AND jump = 0) THEN wz = wz - 60;      -- drift towards the bottom
     wspd = vlen(wx, wy, wz);
-    IF (wspd > maxspd) THEN BEGIN wx = wx * maxspd / wspd; wy = wy * maxspd / wspd; wz = wz * maxspd / wspd; wspd = maxspd; END
-    wspd = wspd * 0.7e0;
+    IF (wspd > 320) THEN BEGIN wx = wx * 320 / wspd; wy = wy * 320 / wspd; wz = wz * 320 / wspd; wspd = 320; END
     IF (wspd > 0) THEN
     BEGIN
-      cur = (vx * wx + vy * wy + vz * wz) / vlen(wx, wy, wz);
-      add_ = wspd - cur;
+      cur = (vx * wx + vy * wy + vz * wz) / wspd;
+      add_ = wspd * 0.7e0 - cur;
       IF (add_ > 0) THEN
       BEGIN
-        acc = MINVALUE(add_, 10 * wspd * dt);
-        vx = vx + acc * wx / vlen(wx, wy, wz); vy = vy + acc * wy / vlen(wx, wy, wz); vz = vz + acc * wz / vlen(wx, wy, wz);
+        acc = MINVALUE(add_, 10 * wspd * 0.7e0 * dt);
+        vx = vx + acc * wx / wspd; vy = vy + acc * wy / wspd; vz = vz + acc * wz / wspd;
       END
     END
   END
-  ELSE
+  ELSE IF (wj = 0) THEN
   BEGIN
-    wx = fx_ * fwd * maxspd + rx * side * maxspd; wy = fy * fwd * maxspd + ry * side * maxspd;
+    fx_ = COS(pitch / 3 * 0.0174532925e0) * COS(yaw * 0.0174532925e0); fy = COS(pitch / 3 * 0.0174532925e0) * SIN(yaw * 0.0174532925e0);
+    wx = fx_ * fm + rx * sm; wy = fy * fm + ry * sm;
     wspd = vlen(wx, wy, 0);
-    IF (wspd > maxspd) THEN BEGIN wx = wx * maxspd / wspd; wy = wy * maxspd / wspd; wspd = maxspd; END
+    IF (wspd > 320) THEN BEGIN wx = wx * 320 / wspd; wy = wy * 320 / wspd; wspd = 320; END
+    IF (onground = 1) THEN
+    BEGIN
+      spd = vlen(vx, vy, 0);
+      IF (spd > 0) THEN
+      BEGIN
+        SELECT e.x, e.y, e.z + e.minz FROM ents e WHERE e.id = :pe INTO px, py, pz;
+        EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, px + vx / spd * 16, py + vy / spd * 16, pz, px + vx / spd * 16, py + vy / spd * 16, pz - 34, 1)
+          RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+        control = IIF(spd < 100, 100, spd);
+        ns = MAXVALUE(0, spd - dt * control * IIF(f = 1, 8, 4));
+        vx = vx * ns / spd; vy = vy * ns / spd;
+      END
+    END
     IF (wspd > 0) THEN
     BEGIN
       cur = (vx * wx + vy * wy) / wspd;
@@ -618,6 +624,7 @@ BEGIN
       END
     END
   END
+
   -- jumping (PlayerJump, in PlayerPreThink: after SV_ClientThink's friction and acceleration, so the jump's frame
   -- still has the ground's friction and swimming up is the liquid's speed itself)
   IF (jump = 1) THEN

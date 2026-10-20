@@ -133,6 +133,37 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
     `PlayerJump after SV_ClientThink: a running jump's frame has the ground's friction (${across.toFixed(1)} across, ${e1.VZ.toFixed(1)} up)`);
 }
 
+// SV_AirMove's input as Quake's: one tic from rest on the ground reaches half the wish speed (SV_Accelerate: 10 × wish
+// × 0.05). A walking strafe wishes 350, capped at 320: 160 (the walk's 200 gave 100); walking forward looking 80° down
+// wishes 200 × cos(80° / 3), the body's pitch: 89.4; and backing up just after a teleport is refused
+{
+  const pe = (await db.query('SELECT player_ent() p FROM rdb$database')).rows[0].P;
+  const e0 = (await db.query(`SELECT x, y, z, yaw FROM ents WHERE id = ${pe}`)).rows[0];
+  // a flat floor near the start (on a slope, gravity clipped against it moves the player too)
+  let spot = null;
+  for (let r = 0; r <= 256 && !spot; r += 32) for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+    const d = (await db.query(`SELECT ez, nz, fraction f, startsolid s FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${e0.X + dx}, ${e0.Y + dy}, ${e0.Z}, ${e0.X + dx}, ${e0.Y + dy}, ${e0.Z - 64}, 0)`)).rows[0];
+    if (d.S === 0 && d.F < 1 && d.NZ === 1) { spot = { x: e0.X + dx, y: e0.Y + dy, z: d.EZ }; break; }
+  }
+  const z = spot.z;
+  const oneTic = async (fwd, side, pitch, tele = false) => {
+    await db.exec(`UPDATE ents SET x = ${spot.x}, y = ${spot.y}, z = ${z}, vx = 0, vy = 0, vz = 0, flags = BIN_OR(flags, 512),
+      teleport_time = ${tele ? '(SELECT g.time_ + 1 FROM game g WHERE g.id = 1)' : 0} WHERE id = ${pe}`);
+    await db.exec(`UPDATE player SET pitch = ${pitch}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+    await tic([1, fwd, side, 0, 0, 0, 0, 0, 0]);
+    const e = (await db.query(`SELECT vx, vy FROM ents WHERE id = ${pe}`)).rows[0];
+    return Math.hypot(e.VX, e.VY);
+  };
+  const strafe = await oneTic(0, 1, 0), down = await oneTic(1, 0, 80), back = await oneTic(-1, 0, 0, true);
+  await db.exec(`UPDATE ents SET x = ${e0.X}, y = ${e0.Y}, z = ${e0.Z}, vx = 0, vy = 0, vz = 0, teleport_time = 0 WHERE id = ${pe}`);
+  await db.exec('UPDATE player SET pitch = 0');
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+  const want = 0.5 * 200 * Math.cos(80 / 3 * Math.PI / 180);
+  assert(Math.abs(strafe - 160) < 0.01 && Math.abs(down - want) < 0.01 && back === 0,
+    `SV_AirMove's input: a walking strafe ${strafe.toFixed(1)} (160), walking forward looking down ${down.toFixed(1)} (${want.toFixed(1)}), backing out of a teleporter ${back}`);
+}
+
 // SV_CheckStuck in the PSQL game: after a tic standing free, the place is kept (player.free_*); put inside a wall, the
 // player is back there the next tic
 {

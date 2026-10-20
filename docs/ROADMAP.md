@@ -248,6 +248,12 @@ to the same behaviour, with a test of its own:
 - ~~**The jump after the input**~~ done (`npm test`): the PSQL game jumped before `SV_ClientThink`'s friction and
   acceleration, where `PlayerJump` runs in `PlayerPreThink`, after them: a running jump skipped its frame's ground
   friction (300 kept where Quake leaves 240), and water friction cut the liquid's swim-up speed (100 in water) by a fifth.
+- ~~**`SV_AirMove`'s input**~~ done (`npm test`): the PSQL game capped every wish at the walk's 200 or the run's
+  320, flat along the yaw, with friction always 4; Quake's client sends 200 forward and 350 to the side (twice
+  running) and the server takes the body's angles, whose pitch is a third of the view's, caps the wish at 320,
+  refuses backing into a teleporter just used and doubles the friction at an edge. The PSQL game's input now
+  follows QuakeC mode's `SV_ClientThink`: a walking strafe is as fast as a run, looking far down slows the walk, and
+  the swim's wish takes the same speeds.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 
