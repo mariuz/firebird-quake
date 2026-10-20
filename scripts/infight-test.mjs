@@ -204,6 +204,54 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `PF_aim in the PSQL game: looking level at a grunt ${up} units up, the rocket climbs at it (${r.VZ.toFixed(0)} up of 1000), still along the view across`);
 }
 
+// FindTarget: an invisible player is never seen, nor one with notarget; but a monster that saw the player (the
+// sight_entity of FoundTarget, for 0.1 s) wakes another that sees it, invisible player or not, unless that one lies in
+// ambush (spawnflags & 3)
+{
+  const pe4 = await spot();
+  const p = await q1(`SELECT x, y, z, yaw FROM ents WHERE id = ${pe4}`);
+  const a = await spawn('army', 120), b = await spawn('army', 240);
+  // a where it sees the player, b where it sees a (on the floor, in the open)
+  const placeSeeing = async (m, target, from) => {
+    const tz = (await q1(`SELECT z FROM ents WHERE id = ${target}`)).Z;
+    for (let d = from; d < from + 400; d += 40) for (let k = 0; k < 16; k++) {
+      const t = (await q1(`SELECT x, y FROM ents WHERE id = ${target}`));
+      const x = t.X + Math.cos(k * Math.PI / 8) * d, y = t.Y + Math.sin(k * Math.PI / 8) * d;
+      if ((await q1(`SELECT test_position(${m}, ${x}, ${y}, ${tz}) t FROM rdb$database`)).T !== 0) continue;
+      await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${tz} WHERE id = ${m}`);
+      await db.exec(`EXECUTE PROCEDURE link_ent(${m})`);
+      if ((await q1(`SELECT visible(${m}, ${target}) v FROM rdb$database`)).V === 1) return true;
+    }
+    return false;
+  };
+  const placed = (await placeSeeing(a, pe4, 120)) && (await placeSeeing(b, a, 120));
+  const ap = await q1(`SELECT x, y FROM ents WHERE id = ${a}`), bp = await q1(`SELECT x, y FROM ents WHERE id = ${b}`);
+  // a faces the player, b faces a
+  const yawTo = (f, to) => Math.atan2(to.Y - f.Y, to.X - f.X) * 180 / Math.PI;
+  await db.exec(`UPDATE ents SET yaw = ${yawTo(ap, p)}, enemy_id = NULL, st = 'stand', nextthink = NULL WHERE id = ${a}`);
+  await db.exec(`UPDATE ents SET yaw = ${yawTo(bp, ap)}, enemy_id = NULL, st = 'stand', nextthink = NULL, spawnflags = 0 WHERE id = ${b}`);
+  await db.exec("UPDATE game SET sight_entity = NULL, sight_entity_time = -1");
+  const find = async (m) => (await q1(`SELECT find_target(${m}) f FROM rdb$database`)).F;
+  const seen0 = await find(a);
+  await db.exec('UPDATE player SET invisible_finished = (SELECT g.time_ + 30 FROM game g WHERE g.id = 1)');
+  let invisibleSeen = 0;
+  for (let i = 0; i < 100; i++) invisibleSeen += (await find(a)) ? 1 : 0;
+  await db.exec('UPDATE player SET invisible_finished = 0');
+  await db.exec(`UPDATE ents SET flags = BIN_OR(flags, 128) WHERE id = ${pe4}`);
+  const notarget = await find(a);
+  await db.exec(`UPDATE ents SET flags = BIN_AND(flags, BIN_NOT(128)) WHERE id = ${pe4}`);
+  // invisible again: a is set on the player (FoundTarget), and b, which sees a, wakes onto the player through it
+  await db.exec('UPDATE player SET invisible_finished = (SELECT g.time_ + 30 FROM game g WHERE g.id = 1)');
+  await db.exec(`EXECUTE PROCEDURE found_target(${a}, ${pe4})`);
+  const viaA = await find(b);
+  await db.exec(`UPDATE ents SET spawnflags = 1 WHERE id = ${b}`);
+  const ambush = await find(b);
+  await db.exec('UPDATE player SET invisible_finished = 0');
+  await db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, takedamage = 0, nextthink = NULL WHERE id IN (${a}, ${b})`);
+  assert(placed && seen0 === pe4 && invisibleSeen === 0 && notarget === 0 && viaA === pe4 && ambush === 0,
+    `FindTarget: the player is seen (${seen0}), not when invisible (${invisibleSeen} of 100) or notarget (${notarget}); a monster that saw it wakes another through it (${viaA}), but not one in ambush (${ambush})`);
+}
+
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);
 assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");

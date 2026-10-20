@@ -260,6 +260,11 @@ to the same behaviour, with a test of its own:
   that `SV_WaterJump` then holds as the velocity across. A swimming jump no longer overrides the hop (`PlayerJump`
   returns during it), the check comes after the frame's move as `PlayerPreThink` does, and the jump ends by the
   water level the last frame left, as `SV_ClientThink` sees it, which is what lets the push carry the player over.
+- ~~**`FindTarget` and `FoundTarget`**~~ done (`npm run test:infight`): the PSQL monsters saw an invisible player one
+  look in twenty and ignored `notarget`; in Quake the ring hides the player entirely and `FL_NOTARGET` is never
+  found. And a monster that sees the player now wakes the others, as `FoundTarget`'s `sight_entity` does: for 0.1 s
+  any monster not lying in ambush (`spawnflags & 3`) that sees it takes up its enemy, the player, invisible or not
+  (`game.sight_entity`, `ents.show_hostile` for the near test).
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

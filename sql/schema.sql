@@ -17,6 +17,8 @@ CREATE TABLE game (
   id             SMALLINT NOT NULL PRIMARY KEY,
   tic            INTEGER DEFAULT 0 NOT NULL,
   time_          DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- seconds, tic / 20
+  sight_entity   INTEGER,                               -- FoundTarget: the monster that last saw the player, and when
+  sight_entity_time DOUBLE PRECISION DEFAULT -1 NOT NULL,
   map_name       VARCHAR(32),
   next_map       VARCHAR(32),                           -- set by trigger_changelevel
   exit_kind      SMALLINT DEFAULT 0 NOT NULL,           -- 0 playing, 1 change level, 3 restart (player died)
@@ -289,6 +291,7 @@ CREATE TABLE ents (
   watertype  INTEGER DEFAULT -1 NOT NULL,
   ltime      DOUBLE PRECISION DEFAULT 0 NOT NULL,
   teleport_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  show_hostile  DOUBLE PRECISION DEFAULT 0 NOT NULL,     -- a monster's (FoundTarget sets it a second on: FindTarget's near test)
   spawn_x DOUBLE PRECISION DEFAULT 0 NOT NULL, spawn_y DOUBLE PRECISION DEFAULT 0 NOT NULL, spawn_z DOUBLE PRECISION DEFAULT 0 NOT NULL,
   mtype      VARCHAR(16),                  -- monster_types.name
   alpha      SMALLINT DEFAULT 0 NOT NULL   -- 1 = draw translucent (ghostly)

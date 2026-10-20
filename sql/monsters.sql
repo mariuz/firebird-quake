@@ -126,21 +126,49 @@ BEGIN
 END^
 
 -- FindTarget: can this monster see the player?
-CREATE OR ALTER FUNCTION find_target (eid INTEGER) RETURNS SMALLINT
+CREATE OR ALTER FUNCTION find_target (eid INTEGER) RETURNS INTEGER
 AS
-DECLARE pe INTEGER; DECLARE r INTEGER; DECLARE inv DOUBLE PRECISION; DECLARE sh DOUBLE PRECISION; DECLARE php INTEGER;
+DECLARE pe INTEGER; DECLARE r INTEGER; DECLARE inv DOUBLE PRECISION; DECLARE sh DOUBLE PRECISION;
+DECLARE client INTEGER; DECLARE se INTEGER; DECLARE set_ DOUBLE PRECISION; DECLARE sf INTEGER; DECLARE en INTEGER;
+DECLARE cen INTEGER; DECLARE cfl INTEGER; DECLARE t DOUBLE PRECISION; DECLARE pvs VARCHAR(8192) CHARACTER SET OCTETS;
 BEGIN
+  -- FindTarget: the monster that saw the player in the last 0.1 s (sight_entity), unless this one waits in ambush
+  -- (spawnflags & 3); else the player, if this monster's leaf is in the PVS of the player's (checkclient)
+  t = now_();
   pe = player_ent();
-  SELECT p.invisible_finished, p.show_hostile FROM player p WHERE p.id = 1 INTO inv, sh;
-  SELECT e.health FROM ents e WHERE e.id = :pe INTO php;
-  IF (php <= 0) THEN RETURN 0;
-  IF (inv > now_() AND rnd() < 0.95e0) THEN RETURN 0;
-  r = ent_range(eid, pe);
+  SELECT g.sight_entity, g.sight_entity_time FROM game g WHERE g.id = 1 INTO se, set_;
+  SELECT e.spawnflags, e.enemy_id FROM ents e WHERE e.id = :eid INTO sf, en;
+  IF (set_ >= t - 0.1e0 AND BIN_AND(COALESCE(sf, 0), 3) = 0 AND se IS NOT NULL AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :se)) THEN
+  BEGIN
+    client = se;
+    SELECT e.enemy_id FROM ents e WHERE e.id = :se INTO cen;
+    IF (cen IS NOT DISTINCT FROM en) THEN RETURN 0;
+  END
+  ELSE
+  BEGIN
+    SELECT l.pvs FROM leaves l WHERE l.id = (SELECT e.leaf FROM ents e WHERE e.id = :pe) INTO pvs;
+    IF (pvs_visible(pvs, (SELECT e.leaf FROM ents e WHERE e.id = :eid)) = 0) THEN RETURN 0;
+    IF ((SELECT e.health FROM ents e WHERE e.id = :pe) <= 0) THEN RETURN 0;
+    client = pe;
+  END
+  IF (client IS NOT DISTINCT FROM en) THEN RETURN 0;
+  SELECT e.flags FROM ents e WHERE e.id = :client INTO cfl;
+  IF (BIN_AND(cfl, 128) <> 0) THEN RETURN 0;                       -- FL_NOTARGET
+  IF (client = pe) THEN SELECT p.invisible_finished, p.show_hostile FROM player p WHERE p.id = 1 INTO inv, sh;
+  ELSE SELECT e.show_hostile FROM ents e WHERE e.id = :client INTO sh;
+  IF (client = pe AND inv > t) THEN RETURN 0;                       -- IT_INVISIBILITY: not seen at all
+  r = ent_range(eid, client);
   IF (r = 3) THEN RETURN 0;
-  IF (visible(eid, pe) = 0) THEN RETURN 0;
-  IF (r = 1) THEN BEGIN IF (sh < now_() AND infront(eid, pe) = 0) THEN RETURN 0; END
-  ELSE IF (r = 2) THEN BEGIN IF (infront(eid, pe) = 0) THEN RETURN 0; END
-  RETURN 1;
+  IF (visible(eid, client) = 0) THEN RETURN 0;
+  IF (r = 1) THEN BEGIN IF (sh < t AND infront(eid, client) = 0) THEN RETURN 0; END
+  ELSE IF (r = 2) THEN BEGIN IF (infront(eid, client) = 0) THEN RETURN 0; END
+  -- got one: a monster seen is the way to its enemy, which must be the player
+  IF (client <> pe) THEN
+  BEGIN
+    IF (cen IS DISTINCT FROM pe) THEN RETURN 0;
+    client = cen;
+  END
+  RETURN client;
 END^
 
 -- FoundTarget / HuntTarget: the enemy (the player it saw, or whoever hurt it), the sight sound, the
@@ -150,6 +178,10 @@ AS
 DECLARE s VARCHAR(64); DECLARE run_ VARCHAR(16);
 BEGIN
   SELECT t.sight_snd, t.run_anim FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO s, run_;
+  -- FoundTarget: with the player for its enemy, the monster is the sight_entity a moment (others that see it wake),
+  -- and its show_hostile is a second on
+  IF (enemy = player_ent()) THEN UPDATE game g SET g.sight_entity = :eid, g.sight_entity_time = now_() WHERE g.id = 1;
+  UPDATE ents e SET e.show_hostile = now_() + 1 WHERE e.id = :eid;
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
   UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5,
          e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
@@ -593,10 +625,10 @@ BEGIN
     -- ai_stand / ai_walk: look for the player (cheaply: only when in the player's PVS)
     IF (st <> 'rise' AND MOD(af, 2) = 0) THEN
     BEGIN
-      SELECT l.pvs FROM leaves l WHERE l.id = (SELECT e.leaf FROM ents e WHERE e.id = player_ent()) INTO pvs;
-      IF (pvs_visible(pvs, lf) = 1 AND find_target(eid) = 1) THEN
+      enemy = find_target(eid);
+      IF (enemy > 0) THEN
       BEGIN
-        EXECUTE PROCEDURE found_target(eid, player_ent());
+        EXECUTE PROCEDURE found_target(eid, enemy);
         EXIT;
       END
     END
@@ -1140,7 +1172,7 @@ BEGIN
   UPDATE demo d SET d.recording = 0 WHERE d.id = 1;      -- a demo is one level
   -- the edicts are numbered from 1 again (loadMap emptied ents), so a replay makes the same ids
   i = GEN_ID(ent_seq, -GEN_ID(ent_seq, 0));
-  UPDATE game g SET g.tic = 0, g.time_ = 0, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
+  UPDATE game g SET g.tic = 0, g.time_ = 0, g.sight_entity = NULL, g.sight_entity_time = -1, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
          g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
          g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1,
          g.gravity = IIF(LOWER(:map_name) = 'e1m8', 100, 800) WHERE g.id = 1;   -- worldspawn: Ziggurat Vertigo has low gravity
