@@ -293,7 +293,9 @@ assert(missing.length === 0, `all queued sounds exist in the pak (${missing.join
 const refs = [...new Set([...Object.values(sql).join('\n').matchAll(/'([a-z0-9_\/]+\.wav)'/g)].map((m) => m[1]))];
 // the registered episodes' monsters have sounds the shareware pak does not carry
 const registeredOnly = /^(enforcer|hknight|shalrath|blob|fish|boss2)\//;
-const missing2 = refs.filter((n) => !registeredOnly.test(n) && !pak.has('sound/' + n));
+// and id's slime splash, which LibreQuake does not carry (the page plays nothing for a sound the paks lack)
+const notEverywhere = new Set(['player/slimbrn2.wav']);
+const missing2 = refs.filter((n) => !registeredOnly.test(n) && !notEverywhere.has(n) && !pak.has('sound/' + n));
 assert(missing2.length === 0, `all referenced sounds exist in the pak (${missing2.join(', ') || 'none missing'})`);
 
 await db.close();

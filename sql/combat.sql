@@ -77,7 +77,8 @@ BEGIN
 END^
 
 -- T_Damage
-CREATE OR ALTER PROCEDURE t_damage (targ INTEGER, inflictor INTEGER, attacker INTEGER, damage INTEGER)
+-- (the damage is a fraction, as in T_Damage: the push takes it whole, the armor and health its ceiling)
+CREATE OR ALTER PROCEDURE t_damage (targ INTEGER, inflictor INTEGER, attacker INTEGER, damage DOUBLE PRECISION)
 AS
 DECLARE td SMALLINT; DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp INTEGER;
 DECLARE save INTEGER; DECLARE take INTEGER; DECLARE av INTEGER; DECLARE atype DOUBLE PRECISION; DECLARE inv DOUBLE PRECISION;
@@ -104,7 +105,7 @@ BEGIN
       save = av;
       UPDATE player p SET p.armortype = 0, p.items = BIN_AND(p.items, BIN_NOT(8192 + 16384 + 32768)) WHERE p.id = 1;
     END
-    UPDATE player p SET p.armorvalue = p.armorvalue - :save, p.dmg_take = p.dmg_take + (:damage - :save), p.dmg_save = p.dmg_save + :save, p.dmg_time = now_() WHERE p.id = 1;
+    UPDATE player p SET p.armorvalue = p.armorvalue - :save, p.dmg_take = p.dmg_take + CEILING(:damage - :save), p.dmg_save = p.dmg_save + :save, p.dmg_time = now_() WHERE p.id = 1;
   END
   take = CEILING(damage - save);
 
@@ -143,7 +144,7 @@ BEGIN
     IF (pf < now_() AND take > 0) THEN
     BEGIN
       EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(1 + FLOOR(rnd() * 6) AS INTEGER) || '.wav', 1, 1);
-      UPDATE player p SET p.pain_finished = now_() + 0.5e0, p.punchangle = -2 WHERE p.id = 1;
+      UPDATE player p SET p.pain_finished = now_() + 0.5e0 WHERE p.id = 1;   -- (no view kick: player_pain has none)
     END
     -- (T_Damage after th_pain: on nightmare the player's next pain waits 5 s too)
     IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = now_() + 5 WHERE p.id = 1;
@@ -230,7 +231,7 @@ BEGIN
     ok = can_damage(eid, inflictor);
     IF (ok = 0) THEN CONTINUE;
     IF (cls = 'shambler') THEN pts = pts * 0.5e0;     -- shambler takes half damage from all explosions
-    EXECUTE PROCEDURE t_damage(eid, inflictor, attacker, CAST(pts AS INTEGER));
+    EXECUTE PROCEDURE t_damage(eid, inflictor, attacker, pts);
   END
 END^
 
@@ -327,8 +328,9 @@ BEGIN
   ELSE IF (c1 = 'rocket') THEN
   BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END
+    -- T_MissileTouch: 100 to 120 on what it hit, and a blast of 120 on the rest
     IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(rnd() * 20));
-    EXECUTE PROCEDURE t_radius_damage(e1, own, dmg, e2);
+    EXECUTE PROCEDURE t_radius_damage(e1, own, 120, e2);
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
     DELETE FROM ents e WHERE e.id = :e1;
@@ -398,16 +400,6 @@ BEGIN
     IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e2 AND e.max_health = 0)) THEN EXECUTE PROCEDURE button_fire(e2, e1);
   END
   ELSE IF (c1 = 'player' AND c2 = 'misc_explobox') THEN BEGIN END
-  ELSE IF (c1 = 'player' AND e2 = 0 AND vz < -300) THEN
-  BEGIN
-    -- falling damage, in SV_Physics_Client terms: lands hard
-    IF (vz < -650) THEN
-    BEGIN
-      EXECUTE PROCEDURE t_damage(e1, 0, 0, 5);
-      EXECUTE PROCEDURE snd(e1, 2, 'player/land2.wav', 1, 1);
-    END
-    ELSE EXECUTE PROCEDURE snd(e1, 2, 'player/land.wav', 1, 1);
-  END
 END^
 
 SET TERM ; ^

@@ -122,6 +122,7 @@ assert((await zombie(z1.ID))?.ST === 'dead', 'and stays dead');
   if (spot) {
     await db.exec(`UPDATE ents SET x = ${spot.x}, y = ${spot.y}, z = ${spot.z}, vx = 0, vy = 0, vz = 0, flags = BIN_AND(flags, BIN_NOT(2048)), yaw = ${Math.atan2(spot.dy, spot.dx) * 180 / Math.PI} WHERE id = ${pe}`);
     await db.exec(`EXECUTE PROCEDURE link_ent(${pe})`);
+    await q(`SELECT * FROM check_water(${pe})`);              // the level a frame there would have stored (PlayerPreThink reads it)
     await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);
     const j1 = await q(`SELECT vz, flags FROM ents WHERE id = ${pe}`);
     for (let i = 0; i < 20; i++) await tic([1, 0, 0, 0, 0, 0, 0, 1, 0]);

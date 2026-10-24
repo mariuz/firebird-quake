@@ -286,6 +286,43 @@ to the same behaviour, with a test of its own:
   when the pack holds none). The message lists the ammo with commas, as `BackpackTouch` sprints it. The items'
   respawn is deathmatch's, which the PSQL game does not play (QuakeC mode runs progs.dat's own). Left as it was:
   the pack comes at the moment of death, not on the third death frame 0.2 s later.
+- ~~**A test that plays both games**~~ done (`npm run test:parity`, `scripts/parity-test.mjs`): E1M1 loaded twice
+  with the same seed, the same input given to `quake_tic` and `qc_tic` tic by tic, and the player compared every tic
+  (place to a hundredth, view, health, armor, ammo, weapon, the view weapon's frame) through walking, a ramp,
+  strafing, wall slides, the shotgun, a weapon change, the nailgun, a rocket jump, falls, swimming, drowning and slime.
+  It found eleven differences in the PSQL game, all fixed to id's code (the old SQL fails 14 of its 17 checks):
+  - `SV_UserFriction` scales the vertical speed too: running down a ramp the PSQL player kept 1 % more speed a tic.
+  - The view weapon's frames: id's `player_shot1..6` and kin step them every 0.1 s on the think's phase (a think
+    due before the frame's end runs in it), six for the shotguns and launchers, four for the axe, the nailguns
+    cycling 1 to 8 and the thunderbolt 1 to 4 while held; the PSQL game drew them a tic late, from the time left to
+    `attack_finished` (the shotgun never reached frame 6). `player_weapon_frame` runs before the move, where the
+    client's think runs.
+  - The nailguns' and the thunderbolt's shots come from those frame thinks (one per 0.1 s, the second a tic after
+    the first), and a fresh press waits for `attack_finished`, 0.2 s after the last shot (`W_FireSpikes`); the
+    PSQL game fired on a 0.1 s timer after the move.
+  - Impulses (a weapon change) wait in `W_WeaponFrame` until `attack_finished` has passed, kept until then
+    (`player.impulse`, `player_impulse_due`), and a change puts the view weapon back to frame 0 (`player_run`); the
+    PSQL game changed weapons at once, mid-shot.
+  - The landing (`PlayerPostThink`): judged by the vertical speed the last frame in the air left (`jump_flag`,
+    `player.jump_flag`), on anything (a lift or a door too), a splash in water; the PSQL game used the speed at the
+    impact, which already had the landing frame's gravity, and only on the world.
+  - `WaterMove`'s drag: in a liquid the speed loses 0.8 × waterlevel of itself a second.
+  - The water level each step sees: everything before the move sees the level the last frame's `SV_CheckWater`
+    stored, and this frame's check decides only the gravity; the PSQL game checked first and used the new level
+    throughout, a frame early.
+  - `SV_WaterMove` accelerates by the wish less the whole speed (not the speed along the wish), and drifts down
+    with jump held too (jump is a button, not `upmove`).
+  - The rest of `WaterMove`: the burn timer cleared on going in (so slime and lava bite again the frame after the
+    first bite), the liquid's own entry sound and `misc/outwater.wav`, the gasp coming up, and drowning that grows
+    by 2 a second (2, 4 … 14, then 10, `player.drown_dmg`) instead of a steady 2.
+  - The rocket (`T_MissileTouch`): 100 to 120 on what it hits and a blast of 120; the PSQL rocket's blast was its
+    direct damage, 100.
+  - `T_Damage` takes the damage as a fraction (`t_damage`'s `damage` is now `DOUBLE PRECISION`): the push is
+    8 × all of it, the armor and the health take its ceiling; the blasts were rounded first.
+  And the PSQL game's view kick on pain (2° up) is gone: `player_pain` has none. Quake's kick on damage is the
+  client's `V_ParseDamage` (`v_kickpitch`, `v_kickroll`, from the damage's direction), which the page does for
+  neither game yet. Not compared yet: monsters (their random choices draw from different generators in the two
+  games), doors and lifts under the player, teleporters, items.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

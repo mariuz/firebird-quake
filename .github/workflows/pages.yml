@@ -51,12 +51,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # demos played back bit for bit; the skills; infighting
+          # demos played back bit for bit; the skills; infighting; the two games given the same input
           - group: demos and monsters
             run: |
               npm run test:demo
               npm run test:skill
               npm run test:infight
+              npm run test:parity
           # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode
           - group: QuakeC
             run: |

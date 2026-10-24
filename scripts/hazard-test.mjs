@@ -1,7 +1,8 @@
 // hazard-test.mjs – what hurts the player besides monsters, as client.qc's WaterMove and triggers.qc's
 // hurt_touch do it: slime (E1M1) takes 4 × waterlevel a second, nothing in the biosuit; lava (E1M8)
 // 10 × waterlevel every 0.2 s, every second in the biosuit (a hit waits until time is past the
-// wait, so at 20 tics a second lava hits every fifth tic, four times a second, as Quake does). Each
+// wait, so at 20 tics a second lava hits every fifth tic, four times a second, as Quake does, or every
+// fourth where the time's rounding puts t + 0.2 just under a tic). Each
 // in the PSQL game and in QuakeC mode, where progs.dat's own WaterMove reads the engine's waterlevel
 // and watertype. (trigger_hurt is tested in scripts/lq-test.mjs, in lq_e0m7's boss trap.)
 //
@@ -86,10 +87,14 @@ async function session(pakFiles) {
       }
       return best;
     },
-    // health lost over n tics standing at a spot
+    // health lost over n tics standing at a spot, already in the liquid
     async loss(spot, n, start = 900) {
-      await api.place(spot.x, spot.y, spot.z);
+      // settled in it first: going in, WaterMove clears dmgtime and bites twice (tested in parity-test.mjs)
+      for (let i = 0; i < 3; i++) { await api.place(spot.x, spot.y, spot.z); await api.tic(); }
       await api.health(start);
+      // and the wait over, so the first tic bites and the window starts at a bite
+      if (qc) await db.exec("EXECUTE PROCEDURE qc_sf(1, qc_fdef('dmgtime'), 0)");
+      else await db.exec('UPDATE player SET dmg_lava_time = 0');
       let r;
       for (let i = 0; i < n; i++) {
         await api.place(spot.x, spot.y, spot.z); r = await api.tic();
@@ -118,8 +123,10 @@ for (const mode of ['psql', 'qc']) {
   const lava = await id.inLiquid(-5);
   assert(!!lava, `${label}: a spot in E1M8's lava (waterlevel ${lava?.wl})`);
   if (lava) {
-    const lost = await id.loss(lava, 20);     // one second: a hit every fifth tic, four
-    assert(lost === 4 * 10 * lava.wl, `${label}: lava takes 10 × waterlevel every 0.2 s, past the wait (${lost} in 1 s, expected ${4 * 10 * lava.wl})`);
+    // one second: a bite every fifth tic, four; or every fourth, five, where the time's sum rounds t + 0.2 to just
+    // under the tic four later (the same double arithmetic in both games, as id's float time has its own)
+    const lost = await id.loss(lava, 20);
+    assert(lost === 4 * 10 * lava.wl || lost === 5 * 10 * lava.wl, `${label}: lava takes 10 × waterlevel every 0.2 s, past the wait (${lost} in 1 s, expected ${4 * 10 * lava.wl} or, on the rounding, ${5 * 10 * lava.wl})`);
     await id.suit(30);
     const suited = await id.loss(lava, 40);
     assert(suited === 2 * 10 * lava.wl, `${label}: in the biosuit, once a second (${suited} in 2 s, expected ${2 * 10 * lava.wl})`);

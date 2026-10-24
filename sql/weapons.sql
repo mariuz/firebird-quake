@@ -145,10 +145,10 @@ DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECI
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE quad DOUBLE PRECISION; DECLARE td SMALLINT;
-DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION;
+DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION; DECLARE wf INTEGER;
 BEGIN
-  SELECT p.ent_id, p.weapon, p.attack_finished, p.shells, p.nails, p.rockets, p.cells, p.weapon_sound, p.super_damage_finished
-    FROM player p WHERE p.id = 1 INTO pe, w, af, sh, na, ro, ce, lefty, quad;
+  SELECT p.ent_id, p.weapon, p.attack_finished, p.shells, p.nails, p.rockets, p.cells, p.weapon_sound, p.super_damage_finished, p.weaponframe
+    FROM player p WHERE p.id = 1 INTO pe, w, af, sh, na, ro, ce, lefty, quad, wf;
   t = now_();
   SELECT e.waterlevel FROM ents e WHERE e.id = :pe INTO wl;
   IF (btn = 0) THEN
@@ -156,9 +156,14 @@ BEGIN
     UPDATE player p SET p.weapon_sound = 0 WHERE p.id = 1;
     EXIT;
   END
-  IF (af > t) THEN EXIT;
+  -- btn 2: a nailgun's or the thunderbolt's next shot, fired by its frames (player_nail1/2, player_light1/2) while
+  -- the button is held; a press starts them once attack_finished is past (W_WeaponFrame's W_Attack)
+  IF (btn = 1 AND w IN (4, 8, 64) AND wf > 0) THEN EXIT;
+  IF (af > t AND btn <> 2) THEN EXIT;
   EXECUTE PROCEDURE view_vectors RETURNING_VALUES ex, ey, ez, fx_, fy, fz, rx, ry, rz, ux, uy, uz;
-  UPDATE player p SET p.show_hostile = :t + 1, p.lightning_time = :t WHERE p.id = 1;   -- lightning_time doubles as attack start
+  -- an attack starts the view weapon's frames at 1 (lightning_time doubles as their start); the cycle's shots go on
+  UPDATE player p SET p.show_hostile = :t + 1, p.lightning_time = IIF(:btn = 2, p.lightning_time, :t),
+    p.weaponframe = IIF(:btn = 2, p.weaponframe, 1) WHERE p.id = 1;
 
   IF (w = 4096) THEN                                                      -- axe
   BEGIN
@@ -183,7 +188,7 @@ BEGIN
   END
   ELSE IF (w = 1) THEN                                                   -- shotgun
   BEGIN
-    IF (sh < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (sh < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/guncock.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.5e0, p.shells = p.shells - 1, p.punchangle = -2 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 100000)
@@ -191,7 +196,7 @@ BEGIN
   END
   ELSE IF (w = 2) THEN                                                   -- super shotgun
   BEGIN
-    IF (sh < 2) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (sh < 2) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/shotgn2.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.7e0, p.shells = p.shells - 2, p.punchangle = -4 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;
@@ -199,10 +204,10 @@ BEGIN
   END
   ELSE IF (w = 4 OR w = 8) THEN                                          -- nailguns
   BEGIN
-    IF (na < IIF(w = 8, 2, 1)) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (na < IIF(w = 8, 2, 1)) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     SELECT p.weapon_sound FROM player p WHERE p.id = 1 INTO lefty;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 1000)
-    UPDATE player p SET p.attack_finished = :t + 0.1e0, p.nails = p.nails - IIF(:w = 8, 2, 1), p.weapon_sound = 1 - COALESCE(:lefty, 0) WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :t + 0.2e0, p.nails = p.nails - IIF(:w = 8, 2, 1), p.weapon_sound = 1 - COALESCE(:lefty, 0) WHERE p.id = 1;
     IF (w = 8) THEN
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/spike2.wav', 1, 1);
@@ -217,14 +222,14 @@ BEGIN
   END
   ELSE IF (w = 16) THEN                                                  -- grenade launcher
   BEGIN
-    IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/grenade.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.6e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
     EXECUTE PROCEDURE launch_grenade(pe, ex, ey, ez - 6, fx_ * 600, fy * 600, fz * 600 + 200, 120, 'progs/grenade.mdl', 2.5e0);
   END
   ELSE IF (w = 32) THEN                                                  -- rocket launcher
   BEGIN
-    IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/sgun1.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.8e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- missile.velocity = aim(self, 1000) * 1000
@@ -232,10 +237,10 @@ BEGIN
   END
   ELSE IF (w = 64) THEN                                                  -- thunderbolt
   BEGIN
-    IF (ce < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1; EXIT; END
+    IF (ce < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     SELECT p.weapon_sound FROM player p WHERE p.id = 1 INTO lefty;
     IF (COALESCE(lefty, 0) = 0) THEN EXECUTE PROCEDURE snd(pe, 1, 'weapons/lstart.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.1e0, p.cells = p.cells - 1, p.weapon_sound = 1, p.punchangle = -2 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :t + 0.2e0, p.cells = p.cells - 1, p.weapon_sound = 1, p.punchangle = -2 WHERE p.id = 1;
     IF (wl > 1) THEN                                                     -- discharge!
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/lhit.wav', 1, 1);
@@ -271,7 +276,7 @@ BEGIN
     SELECT p.weapon FROM player p WHERE p.id = 1 INTO w;
     w = IIF(w >= 64, 4096, IIF(w = 4096, 1, w * 2));
     WHILE (BIN_AND(it, w) = 0) DO w = IIF(w >= 64, 4096, IIF(w = 4096, 1, w * 2));
-    UPDATE player p SET p.weapon = :w WHERE p.id = 1;
+    UPDATE player p SET p.weapon = :w, p.weaponframe = 0 WHERE p.id = 1;
     EXIT;
   END
   w = CASE imp WHEN 1 THEN 4096 WHEN 2 THEN 1 WHEN 3 THEN 2 WHEN 4 THEN 4 WHEN 5 THEN 8 WHEN 6 THEN 16 WHEN 7 THEN 32 WHEN 8 THEN 64 ELSE 0 END;
@@ -289,7 +294,7 @@ BEGIN
     EXECUTE PROCEDURE sprint('not enough ammo.');
     EXIT;
   END
-  UPDATE player p SET p.weapon = :w WHERE p.id = 1;
+  UPDATE player p SET p.weapon = :w, p.weaponframe = 0 WHERE p.id = 1;
 END^
 
 -- SV_TouchLinks for the player (SV_LinkEdict(ent, true), every movetype): the triggers and items whose box it is
@@ -432,6 +437,40 @@ BEGIN
   free = 0;                                        -- player is stuck
 END^
 
+-- the view weapon's frame, as id's player_shot1..6 and kin step it: an attack sets frame 1 (player_fire), and a
+-- think every 0.1 s from it steps it on, run in the tic it falls in (SV_RunThink runs a think due before the frame's
+-- end) and before the move, as the client's think is; six frames for the shotguns and the launchers, four for the axe
+-- (id's player_axe1..4; it picks frames 5 to 8 half the time); the nailguns cycle 1 to 8 and the thunderbolt 1 to 4,
+-- each think firing the next shot while the button is held, back to 0 at the first think after it is let go
+CREATE OR ALTER PROCEDURE player_weapon_frame (t DOUBLE PRECISION, dt DOUBLE PRECISION, btn SMALLINT)
+AS
+DECLARE w INTEGER; DECLARE wf INTEGER; DECLARE lt DOUBLE PRECISION;
+BEGIN
+  SELECT p.weapon, p.weaponframe, p.lightning_time FROM player p WHERE p.id = 1 INTO w, wf, lt;
+  IF (wf = 0) THEN EXIT;
+  IF (FLOOR((t - lt + dt) * 10 + 0.001e0) = FLOOR((t - lt) * 10 + 0.001e0)) THEN EXIT;    -- no think due this tic
+  IF (w IN (4, 8, 64) AND btn <> 0) THEN
+  BEGIN
+    UPDATE player p SET p.weaponframe = MOD(:wf, IIF(:w = 64, 4, 8)) + 1 WHERE p.id = 1;
+    EXECUTE PROCEDURE player_fire(2);
+    EXIT;
+  END
+  wf = IIF(w IN (4, 8, 64) OR wf + 1 > IIF(w = 4096, 4, 6), 0, wf + 1);
+  UPDATE player p SET p.weaponframe = :wf WHERE p.id = 1;
+END^
+
+-- W_WeaponFrame's ImpulseCommands: the impulse the client sent last (kept until used, as the engine keeps it) waits
+-- until attack_finished has passed; a weapon change puts the view weapon back to its first frame (player_run)
+CREATE OR ALTER PROCEDURE player_impulse_due (t DOUBLE PRECISION)
+AS
+DECLARE imp SMALLINT;
+BEGIN
+  SELECT p.impulse FROM player p WHERE p.id = 1 AND p.attack_finished <= :t INTO imp;
+  IF (imp IS NULL OR imp = 0) THEN EXIT;
+  UPDATE player p SET p.impulse = 0 WHERE p.id = 1;
+  EXECUTE PROCEDURE player_impulse(imp);
+END^
+
 -- SV_ClientThink + PlayerPreThink + physics + PlayerPostThink for one tic
 CREATE OR ALTER PROCEDURE player_think (dt DOUBLE PRECISION, fwd DOUBLE PRECISION, side DOUBLE PRECISION,
   yaw_d DOUBLE PRECISION, pitch_d DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, run SMALLINT, imp SMALLINT)
@@ -455,7 +494,7 @@ DECLARE tlt DOUBLE PRECISION; DECLARE oldz DOUBLE PRECISION; DECLARE w INTEGER;
 DECLARE wj SMALLINT; DECLARE ttime DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
-DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE stuckfree SMALLINT;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE stuckfree SMALLINT; DECLARE jf DOUBLE PRECISION;
 DECLARE fm DOUBLE PRECISION; DECLARE sm DOUBLE PRECISION; DECLARE owl SMALLINT;
 BEGIN
   -- the intermission: the player is at its camera, out of the world (MOVETYPE_NONE), until the page goes on
@@ -478,13 +517,14 @@ BEGIN
   yaw = anglemod(yaw + yaw_d);
   UPDATE player p SET p.pitch = MAXVALUE(-70, MINVALUE(80, p.pitch + :pitch_d)), p.punchangle = MINVALUE(0, p.punchangle + 10 * :dt) WHERE p.id = 1 RETURNING p.pitch INTO pitch;
   UPDATE ents e SET e.yaw = :yaw WHERE e.id = :pe;
-  IF (imp > 0) THEN EXECUTE PROCEDURE player_impulse(imp);
+  IF (imp > 0) THEN UPDATE player p SET p.impulse = :imp WHERE p.id = 1;   -- kept for W_WeaponFrame (player_impulse_due)
 
   -- MOVETYPE_NOCLIP (the console's noclip): SV_AirMove's wish velocity along the whole view, pitch included,
   -- capped at sv_maxspeed and taken as the velocity, then SV_Physics_Noclip's move through everything, linked
   -- with its trigger touches (items, teleporters, exits); no water, no gravity, no ground; the weapon still fires
   IF ((SELECT e.movetype FROM ents e WHERE e.id = :pe) = 8) THEN
   BEGIN
+    EXECUTE PROCEDURE player_weapon_frame(t, dt, fire);
     maxspd = IIF(run = 1, 320, 200);
     fx_ = COS(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0);
     fz = -SIN(pitch * 0.0174532925e0); rx = SIN(yaw * 0.0174532925e0); ry = -COS(yaw * 0.0174532925e0);
@@ -496,26 +536,33 @@ BEGIN
     EXECUTE PROCEDURE link_ent(pe);
     EXECUTE PROCEDURE player_touch_triggers(pe, t);      -- SV_LinkEdict(ent, true): noclip touches triggers too
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
+    EXECUTE PROCEDURE player_impulse_due(t);
     EXECUTE PROCEDURE player_fire(fire);
-    UPDATE player p SET p.weaponframe = IIF(p.attack_finished > :t AND p.weapon <> 0, 1 + FLOOR((:t - p.lightning_time) * 10 + 0.001e0), 0) WHERE p.id = 1;
     EXIT;
   END
 
-  -- water: drowning, slime and lava (owl: the level the last frame left, what SV_ClientThink sees in Quake)
-  SELECT e.waterlevel FROM ents e WHERE e.id = :pe INTO owl;
-  EXECUTE PROCEDURE check_water(pe) RETURNING_VALUES wl, wt;
-  IF (wl = 3) THEN
+  -- water: drowning, slime and lava. As in Quake, everything before the move sees the water level and type the last
+  -- frame's SV_CheckWater stored (taken before that frame's move): SV_ClientThink, PlayerPreThink's WaterMove,
+  -- CheckWaterJump and PlayerJump; this frame's check comes just before the gravity, which it decides
+  SELECT e.waterlevel, e.watertype FROM ents e WHERE e.id = :pe INTO owl, wt;
+  wl = owl;
+  -- WaterMove: out of the water a gasp after a long breath held, and the air back to 12 s; under it, past the air,
+  -- a bite each second that grows by 2 (2, 4 ... 14, then 10 again), the drowning sound for its pain
+  IF (wl <> 3) THEN
   BEGIN
-    IF (afin < t) THEN
-    BEGIN
-      EXECUTE PROCEDURE t_damage(pe, 0, 0, 2);
-      EXECUTE PROCEDURE snd(pe, 2, 'player/drown' || CAST(1 + FLOOR(rnd() * 2) AS INTEGER) || '.wav', 1, 1);
-      UPDATE player p SET p.air_finished = :t + 1 WHERE p.id = 1;
-    END
+    IF (afin < t) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp2.wav', 1, 1);
+    ELSE IF (afin < t + 9) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp1.wav', 1, 1);
+    UPDATE player p SET p.air_finished = :t + 12, p.drown_dmg = 2 WHERE p.id = 1 AND (p.air_finished <> :t + 12 OR p.drown_dmg <> 2);
   END
-  ELSE UPDATE player p SET p.air_finished = :t + 12 WHERE p.id = 1;
-  -- WaterMove: lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel
-  -- every second (not at all in the biosuit); a hit waits until time is past dmgtime
+  ELSE IF (afin < t AND (SELECT p.pain_finished FROM player p WHERE p.id = 1) < t) THEN
+  BEGIN
+    UPDATE player p SET p.drown_dmg = IIF(p.drown_dmg + 2 > 15, 10, p.drown_dmg + 2) WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, (SELECT p.drown_dmg FROM player p WHERE p.id = 1));
+    EXECUTE PROCEDURE snd(pe, 2, 'player/drown' || CAST(1 + FLOOR(rnd() * 2) AS INTEGER) || '.wav', 1, 1);
+    UPDATE player p SET p.pain_finished = :t + 1 WHERE p.id = 1;
+  END
+  -- lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel every second (not at
+  -- all in the biosuit); a bite waits until time is past dmgtime
   IF (wl > 0 AND wt = -5 AND dltime < t) THEN
   BEGIN
     UPDATE player p SET p.dmg_lava_time = :t + IIF(p.radsuit_finished > :t, 1, 0.2e0) WHERE p.id = 1;
@@ -526,9 +573,23 @@ BEGIN
     UPDATE player p SET p.dmg_lava_time = :t + 1 WHERE p.id = 1;
     EXECUTE PROCEDURE t_damage(pe, 0, 0, 4 * wl);
   END
-  IF (wl > 0 AND wt = -3 AND dltime < t AND BIN_AND(flags, 16) = 0) THEN
-    EXECUTE PROCEDURE snd(pe, 2, 'player/inh2o.wav', 1, 1);
-  UPDATE ents e SET e.flags = IIF(:wl > 0, BIN_OR(e.flags, 16), BIN_AND(e.flags, BIN_NOT(16))) WHERE e.id = :pe;
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
+  -- going in (FL_INWATER): the liquid's sound, and dmgtime cleared, so the frame after the first bite bites again;
+  -- coming out: misc/outwater.wav
+  SELECT e.flags FROM ents e WHERE e.id = :pe INTO flags;
+  IF (wl = 0 AND BIN_AND(flags, 16) <> 0) THEN
+  BEGIN
+    EXECUTE PROCEDURE snd(pe, 4, 'misc/outwater.wav', 1, 1);
+    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(16)) WHERE e.id = :pe;
+  END
+  ELSE IF (wl > 0 AND BIN_AND(flags, 16) = 0) THEN
+  BEGIN
+    IF (wt = -5) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inlava.wav', 1, 1);
+    ELSE IF (wt = -3) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inh2o.wav', 1, 1);
+    ELSE IF (wt = -4) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/slimbrn2.wav', 1, 1);
+    UPDATE ents e SET e.flags = BIN_OR(e.flags, 16) WHERE e.id = :pe;
+    UPDATE player p SET p.dmg_lava_time = 0 WHERE p.id = 1;
+  END
 
   -- SV_WaterJump (SV_ClientThink, while FL_WATERJUMP holds from an earlier frame): the push into the ledge the jump
   -- found (CheckWaterJump's movedir) is the velocity across, until teleport_time or out of the water; that frame has
@@ -565,12 +626,12 @@ BEGIN
     fx_ = COS(pitch * 0.0174532925e0) * COS(yaw * 0.0174532925e0); fy = COS(pitch * 0.0174532925e0) * SIN(yaw * 0.0174532925e0);
     fz = -SIN(pitch * 0.0174532925e0);
     wx = fx_ * fm + rx * sm; wy = fy * fm + ry * sm; wz = fz * fm;
-    IF (fwd = 0 AND side = 0 AND jump = 0) THEN wz = wz - 60;      -- drift towards the bottom
+    IF (fm = 0 AND sm = 0) THEN wz = wz - 60;                      -- drift towards the bottom (jump is no upmove)
     wspd = vlen(wx, wy, wz);
     IF (wspd > 320) THEN BEGIN wx = wx * 320 / wspd; wy = wy * 320 / wspd; wz = wz * 320 / wspd; wspd = 320; END
     IF (wspd > 0) THEN
     BEGIN
-      cur = (vx * wx + vy * wy + vz * wz) / wspd;
+      cur = vlen(vx, vy, vz);                                        -- SV_WaterMove: the wish less the whole speed
       add_ = wspd * 0.7e0 - cur;
       IF (add_ > 0) THEN
       BEGIN
@@ -595,7 +656,7 @@ BEGIN
           RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
         control = IIF(spd < 100, 100, spd);
         ns = MAXVALUE(0, spd - dt * control * IIF(f = 1, 8, 4));
-        vx = vx * ns / spd; vy = vy * ns / spd;
+        vx = vx * ns / spd; vy = vy * ns / spd; vz = vz * ns / spd;     -- all three, as SV_UserFriction scales them
       END
     END
     IF (wspd > 0) THEN
@@ -609,6 +670,12 @@ BEGIN
         vx = vx + acc * wx / wspd; vy = vy + acc * wy / wspd;
       END
     END
+  END
+  -- WaterMove's drag (PlayerPreThink): in a liquid, but not in a water jump, the speed loses 0.8 × waterlevel of
+  -- itself a second
+  IF (wl > 0 AND BIN_AND(flags, 2048) = 0) THEN
+  BEGIN
+    vx = vx - 0.8e0 * wl * dt * vx; vy = vy - 0.8e0 * wl * dt * vy; vz = vz - 0.8e0 * wl * dt * vz;
   END
 
   -- CheckWaterJump (PlayerPreThink, waist deep, whatever the input): solid at the waist 24 units ahead along the
@@ -662,6 +729,10 @@ BEGIN
   -- SV_AddGravity, every frame but swimming or water-jumping, on the ground too: the walk then presses into
   -- the floor and finds it again (without it FL_ONGROUND went off every other frame, halving friction
   -- and dropping jumps)
+  -- the client's think (SV_RunThink, before the move): the view weapon's frames, the nailguns' next shot
+  EXECUTE PROCEDURE player_weapon_frame(t, dt, fire);
+  -- SV_CheckWater, then: no gravity waist deep or deeper
+  EXECUTE PROCEDURE check_water(pe) RETURNING_VALUES wl, wt;
   IF (wl < 2 AND BIN_AND(flags, 2048) = 0) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;
   UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.flags = :flags WHERE e.id = :pe;
 
@@ -692,9 +763,27 @@ BEGIN
      AND BIN_AND((SELECT p.items FROM player p WHERE p.id = 1), 65536) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(65536)) WHERE p.id = 1 AND (SELECT e.health FROM ents e WHERE e.id = :pe) <= 100;
 
-  -- weapon
+  -- weapon (W_WeaponFrame)
+  EXECUTE PROCEDURE player_impulse_due(t);
   EXECUTE PROCEDURE player_fire(fire);
-  UPDATE player p SET p.weaponframe = IIF(p.attack_finished > :t AND p.weapon <> 0, 1 + FLOOR((:t - p.lightning_time) * 10 + 0.001e0), 0) WHERE p.id = 1;
+  -- PlayerPostThink's landing: on the ground (on anything) after a frame in the air that left it falling faster than
+  -- 300, a splash in water, else the thud, and from faster than 650 five points of damage
+  SELECT e.flags, e.vz, e.watertype, e.health FROM ents e WHERE e.id = :pe INTO flags, vz, wt, hp;
+  SELECT p.jump_flag FROM player p WHERE p.id = 1 INTO jf;
+  IF (BIN_AND(flags, 512) <> 0 AND jf < -300 AND hp > 0) THEN
+  BEGIN
+    IF (wt = -3) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/h2ojump.wav', 1, 1);
+    ELSE IF (jf < -650) THEN
+    BEGIN
+      EXECUTE PROCEDURE t_damage(pe, 0, 0, 5);
+      EXECUTE PROCEDURE snd(pe, 2, 'player/land2.wav', 1, 1);
+    END
+    ELSE EXECUTE PROCEDURE snd(pe, 2, 'player/land.wav', 1, 1);
+    jf = 0;
+  END
+  IF (BIN_AND(flags, 512) = 0) THEN jf = vz;
+  UPDATE player p SET p.jump_flag = :jf WHERE p.id = 1 AND p.jump_flag <> :jf;
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
   -- player animation
   UPDATE ents e SET e.anim = TRIM(IIF(ABS(e.vx) + ABS(e.vy) > 10, 'rockrun', 'stand')), e.anim_frame = MOD(CAST(:t * 10 AS INTEGER), 6) WHERE e.id = :pe;
 END^

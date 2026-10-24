@@ -350,6 +350,8 @@ CREATE TABLE player (
   wj_dx DOUBLE PRECISION DEFAULT 0 NOT NULL, wj_dy DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- CheckWaterJump's movedir: the push into the ledge
   invincible_sound DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- the next time the invulnerability's sound may play
   free_x DOUBLE PRECISION, free_y DOUBLE PRECISION, free_z DOUBLE PRECISION,   -- SV_CheckStuck's oldorigin: the last place a move ended free
+  drown_dmg SMALLINT DEFAULT 2 NOT NULL,                  -- WaterMove's self.dmg: the next drowning bite (2, 4 ... 14, then 10)
+  jump_flag DOUBLE PRECISION DEFAULT 0 NOT NULL,          -- PlayerPostThink's: the vertical speed the last frame in the air left
   weapon_sound    SMALLINT DEFAULT 0 NOT NULL
 );
 

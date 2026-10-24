@@ -77,6 +77,7 @@ await teleport(wx, wy, surface - 60, 0);
 s = await tic();
 assert(s.WATERLEVEL === 3 && s.WATERTYPE === -3, `the player is under water (level ${s.WATERLEVEL}, type ${s.WATERTYPE})`);
 assert(s.AMB_WATER === 255, 'the leaf plays the water ambient at full volume');
+s = await tic();                                   // WaterMove sees the level the last frame stored: the splash a frame later
 assert((await sounds('player/inh2o.wav')) > 0, 'the splash of going under was heard');
 assert(s.HEALTH === 100, 'no harm yet: the player holds his breath');
 // swimming: hold jump and the player rises; let go and he sinks

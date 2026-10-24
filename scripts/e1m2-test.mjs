@@ -84,7 +84,8 @@ let onBridge = false, wading = false, crossed = false;
 for (let i = 0; i < 160 && !crossed; i++) {
   s = await tic([1, 1, 0, 0, 0, 0, 0, 0, 0]);     // walking, so the slab is sampled more than once on the way
   if (s.PX > d.X0 && s.PX < d.X1) {
-    const down = await q1(`SELECT hit_ent h FROM trace_move(${pe}, -16, -16, -24, 16, 16, 32, ${s.PX}, ${s.PY}, ${s.PZ}, ${s.PX}, ${s.PY}, ${s.PZ - 40}, 1)`);
+    // the slab under the player's middle (the box's edges reach the banks, which a box trace meets first)
+    const down = await q1(`SELECT hit_ent h FROM trace_move(${pe}, 0, 0, 0, 0, 0, 0, ${s.PX}, ${s.PY}, ${s.PZ}, ${s.PX}, ${s.PY}, ${s.PZ - 40}, 1)`);
     if (down.H === d.ID) onBridge = true;
     if (s.WATERLEVEL >= 1) wading = true;
   }
