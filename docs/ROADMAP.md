@@ -265,6 +265,13 @@ to the same behaviour, with a test of its own:
   found. And a monster that sees the player now wakes the others, as `FoundTarget`'s `sight_entity` does: for 0.1 s
   any monster not lying in ambush (`spawnflags & 3`) that sees it takes up its enemy, the player, invisible or not
   (`game.sight_entity`, `ents.show_hostile` for the near test).
+- **Monster attacks** (next): id's `CheckAttack` (the range bands, the chance of attacking at each, `attack_finished`)
+  and `ai_run`'s strafing and charging (`ai_run_slide`, `ai_run_melee`, `ai_run_missile`) against the PSQL game's
+  `monster_think`. They shape every fight in the PSQL game; the largest gap left.
+- **Thrown objects**: `toss_move` does not take the velocity again after the touch the move ran, nor cap it at
+  2000 units/s, as `SV_Physics_Toss` does (and QuakeC mode's `qc_toss`).
+- **Items and backpacks**: the items' respawn and the backpacks' contents (`DropBackpack`, `BackpackTouch`) against
+  `items.qc`.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 
