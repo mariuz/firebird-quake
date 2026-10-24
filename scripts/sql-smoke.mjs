@@ -164,6 +164,17 @@ assert(Math.abs(s.PZ - start.z) < 64, `player stayed on the floor (dz ${(s.PZ - 
     `SV_AirMove's input: a walking strafe ${strafe.toFixed(1)} (160), walking forward looking down ${down.toFixed(1)} (${want.toFixed(1)}), backing out of a teleporter ${back}`);
 }
 
+// SV_Physics_Toss's SV_CheckVelocity: something thrown at 5000 units/s across goes at sv_maxvelocity, 2000
+{
+  const open = (await db.query(`SELECT FIRST 1 (l.minx + l.maxx) / 2 x, (l.miny + l.maxy) / 2 y, (l.minz + l.maxz) / 2 z FROM leaves l
+    WHERE l.contents = -1 AND l.maxx - l.minx > 256 ORDER BY (l.maxx - l.minx) * (l.maxy - l.miny) DESC`)).rows[0];
+  await db.exec(`INSERT INTO ents (id, classname, x, y, z, movetype, solid, vx, vy, vz) VALUES (900004, 'gib', ${open.X - 50}, ${open.Y}, ${open.Z}, 6, 0, 5000, 0, 0)`);
+  await db.exec('EXECUTE PROCEDURE toss_move(900004, 0.05)');
+  const g = (await db.query('SELECT x, vx FROM ents WHERE id = 900004')).rows[0];
+  await db.exec('DELETE FROM ents WHERE id = 900004');
+  assert(g.VX === 2000 && Math.abs(g.X - (open.X - 50 + 100)) < 1e-6, `SV_CheckVelocity: thrown at 5000 across, it goes at ${g.VX} (100 units in the tic)`);
+}
+
 // SV_CheckStuck in the PSQL game: after a tic standing free, the place is kept (player.free_*); put inside a wall, the
 // player is back there the next tic
 {

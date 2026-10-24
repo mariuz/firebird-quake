@@ -1017,12 +1017,16 @@ DECLARE backoff DOUBLE PRECISION;
 BEGIN
   SELECT e.movetype, e.flags, e.vx, e.vy, e.vz FROM ents e WHERE e.id = :eid INTO mt, flags, vx, vy, vz;
   IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN EXIT;       -- resting on the ground
+  -- SV_CheckVelocity: sv_maxvelocity 2000 on each axis
+  vx = MAXVALUE(-2000, MINVALUE(2000, vx)); vy = MAXVALUE(-2000, MINVALUE(2000, vy)); vz = MAXVALUE(-2000, MINVALUE(2000, vz));
   IF (mt IN (6, 10)) THEN vz = vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * dt;   -- SV_AddGravity (toss, bounce)
-  UPDATE ents e SET e.vz = :vz, e.yaw = MOD(e.yaw + e.avel_yaw * :dt + 360, 360) WHERE e.id = :eid;
+  UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz, e.yaw = MOD(e.yaw + e.avel_yaw * :dt + 360, 360) WHERE e.id = :eid;
   EXECUTE PROCEDURE push_entity(eid, vx * dt, vy * dt, vz * dt) RETURNING_VALUES f, nx, ny, nz, als, sts, hit;
   IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN EXIT;
   EXECUTE PROCEDURE link_ent(eid);
   IF (f = 1) THEN EXIT;
+  -- the touch may have changed the velocity and the movetype: the bounce takes them as they are now
+  SELECT e.movetype, e.vx, e.vy, e.vz FROM ents e WHERE e.id = :eid INTO mt, vx, vy, vz;
   backoff = IIF(mt = 10, 1.5e0, 1);
   EXECUTE PROCEDURE clip_velocity(vx, vy, vz, nx, ny, nz, backoff) RETURNING_VALUES ox, oy, oz, cb;
   -- stop if on ground
