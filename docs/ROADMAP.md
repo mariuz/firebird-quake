@@ -279,8 +279,13 @@ to the same behaviour, with a test of its own:
 - ~~**Thrown objects**~~ done (`npm test`): `toss_move` now caps the velocity at 2000 units/s on each axis before the
   gravity (`SV_CheckVelocity`; something thrown at 5000 went at 4000 after the gravity) and takes the velocity and
   movetype again after the move's touch, for the bounce, as `SV_Physics_Toss` and QuakeC mode's `qc_toss` do.
-- **Items and backpacks**: the items' respawn and the backpacks' contents (`DropBackpack`, `BackpackTouch`) against
-  `items.qc`.
+- ~~**Items and backpacks**~~ done (`npm run test:infight`): a gibbed grunt, ogre or Enforcer dropped a backpack too,
+  where `DropBackpack` comes in the regular death's frames only; the pack was put down on the floor where Quake
+  throws it from 24 below the body, 300 up and up to 100 each way across; and picking it up with the axe in hand
+  changed to the best weapon, where single player keeps the weapon in hand (`self.weapon = new`, the player's own
+  when the pack holds none). The message lists the ammo with commas, as `BackpackTouch` sprints it. The items'
+  respawn is deathmatch's, which the PSQL game does not play (QuakeC mode runs progs.dat's own). Left as it was:
+  the pack comes at the moment of death, not on the third death frame 0.2 s later.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

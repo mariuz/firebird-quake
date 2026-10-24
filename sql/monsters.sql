@@ -532,15 +532,17 @@ BEGIN
   END
   UPDATE game g SET g.killed = g.killed + 1 WHERE g.id = 1;
   IF (attacker = player_ent()) THEN UPDATE player p SET p.kills = p.kills + 1 WHERE p.id = 1;
-  -- drop the backpack
-  IF (drop_ IS NOT NULL) THEN
+  -- DropBackpack, in a regular death only (army_die3, ogre_die3, enf_die3: a gibbed body drops nothing): from 24
+  -- below the origin, thrown 300 up and up to 100 each way across, a trigger, gone after two minutes
+  IF (drop_ IS NOT NULL AND hp >= gh) THEN
   BEGIN
     EXECUTE PROCEDURE spawn_ent('backpack', x, y, z - 24) RETURNING_VALUES bp;
     EXECUTE PROCEDURE set_model(bp, 'progs/backpack.mdl');
     UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
            e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.ammo_cells = IIF(:drop_ = 'cells', 5, 0),
+           e.vx = -100 + rnd() * 200, e.vy = -100 + rnd() * 200, e.vz = 300,
            e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
-    EXECUTE PROCEDURE drop_to_floor(bp);
+    EXECUTE PROCEDURE link_ent(bp);
   END
   IF (mt = 'boss') THEN
   BEGIN

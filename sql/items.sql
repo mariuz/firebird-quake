@@ -156,11 +156,11 @@ BEGIN
   END
   ELSE IF (cls = 'backpack') THEN
   BEGIN
+    -- BackpackTouch: the ammo added and bounded, "You get 5 shells, 2 rockets", and in single player the weapon in
+    -- hand stays (self.weapon = new, new being the player's own weapon when the pack holds none)
     UPDATE player p SET p.shells = p.shells + :sh, p.nails = p.nails + :na, p.rockets = p.rockets + :ro, p.cells = p.cells + :ce WHERE p.id = 1;
     EXECUTE PROCEDURE bound_ammo;
-    msg = 'You get ' || TRIM(IIF(sh > 0, sh || ' shells ', '') || IIF(na > 0, na || ' nails ', '') || IIF(ro > 0, ro || ' rockets ', '') || IIF(ce > 0, ce || ' cells', ''));
-    SELECT p.weapon FROM player p WHERE p.id = 1 INTO w;
-    IF (w = 4096) THEN UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1;
+    msg = 'You get ' || SUBSTRING(IIF(sh > 0, ', ' || sh || ' shells', '') || IIF(na > 0, ', ' || na || ' nails', '') || IIF(ro > 0, ', ' || ro || ' rockets', '') || IIF(ce > 0, ', ' || ce || ' cells', '') FROM 3);
   END
   ELSE EXIT;
 
