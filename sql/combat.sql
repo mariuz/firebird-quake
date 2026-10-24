@@ -166,6 +166,38 @@ BEGIN
   END
 END^
 
+-- CanDamage: can the inflictor's origin reach targ? A brush model by the middle of its bounds (or the line ending on
+-- it), anything else by its origin or one of four points 15 units off it across (lines that pass monsters)
+CREATE OR ALTER FUNCTION can_damage (targ INTEGER, inflictor INTEGER) RETURNS SMALLINT
+AS
+DECLARE ix DOUBLE PRECISION; DECLARE iy DOUBLE PRECISION; DECLARE iz DOUBLE PRECISION;
+DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE cx DOUBLE PRECISION; DECLARE cy DOUBLE PRECISION; DECLARE cz DOUBLE PRECISION; DECLARE mt SMALLINT;
+DECLARE f DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE k INTEGER = 0;
+BEGIN
+  SELECT e.x, e.y, e.z FROM ents e WHERE e.id = :inflictor INTO ix, iy, iz;
+  SELECT e.x, e.y, e.z, e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + (e.minz + e.maxz) / 2, e.movetype
+    FROM ents e WHERE e.id = :targ INTO ox, oy, oz, cx, cy, cz, mt;
+  IF (ix IS NULL OR ox IS NULL) THEN RETURN 0;
+  IF (mt = 7) THEN
+  BEGIN
+    EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz, cx, cy, cz, 1)
+      RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
+    RETURN IIF(f = 1 OR hit = targ, 1, 0);
+  END
+  WHILE (k < 5) DO
+  BEGIN
+    EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz,
+        ox + DECODE(k, 1, 15, 2, -15, 3, -15, 4, 15, 0), oy + DECODE(k, 1, 15, 2, -15, 3, 15, 4, -15, 0), oz, 1)
+      RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
+    IF (f = 1) THEN RETURN 1;
+    k = k + 1;
+  END
+  RETURN 0;
+END^
+
 -- T_RadiusDamage
 CREATE OR ALTER PROCEDURE t_radius_damage (inflictor INTEGER, attacker INTEGER, damage INTEGER, ignore INTEGER)
 AS
@@ -195,27 +227,7 @@ BEGIN
     pts = damage - 0.5e0 * d;
     IF (eid = attacker) THEN pts = pts * 0.5e0;
     IF (pts <= 0) THEN CONTINUE;
-    -- CanDamage: a brush model by the middle of its bounds (or the line ending on it), anything else by its origin or
-    -- one of four points 15 units off it across
-    ok = 0;
-    IF (mt = 7) THEN
-    BEGIN
-      EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz, cx, cy, cz, 1)
-        RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
-      IF (f = 1 OR hit = eid) THEN ok = 1;
-    END
-    ELSE
-    BEGIN
-      k = 0;
-      WHILE (k < 5 AND ok = 0) DO
-      BEGIN
-        EXECUTE PROCEDURE trace_move(inflictor, 0, 0, 0, 0, 0, 0, ix, iy, iz,
-            ox + DECODE(k, 1, 15, 2, -15, 3, -15, 4, 15, 0), oy + DECODE(k, 1, 15, 2, -15, 3, 15, 4, -15, 0), oz, 1)
-          RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
-        IF (f = 1) THEN ok = 1;
-        k = k + 1;
-      END
-    END
+    ok = can_damage(eid, inflictor);
     IF (ok = 0) THEN CONTINUE;
     IF (cls = 'shambler') THEN pts = pts * 0.5e0;     -- shambler takes half damage from all explosions
     EXECUTE PROCEDURE t_damage(eid, inflictor, attacker, CAST(pts AS INTEGER));

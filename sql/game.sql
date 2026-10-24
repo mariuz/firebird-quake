@@ -150,13 +150,15 @@ BEGIN
 END^
 
 -- the distance between two entities' boxes, classified as Quake's range()
+-- forward declaration (below): the eye's height above the origin
+CREATE OR ALTER FUNCTION eye_height (e INTEGER) RETURNS DOUBLE PRECISION AS BEGIN RETURN 0; END^
+
 CREATE OR ALTER FUNCTION ent_range (a INTEGER, b INTEGER) RETURNS INTEGER
 AS
 DECLARE d DOUBLE PRECISION;
 BEGIN
-  SELECT vlen(e1.x + (e1.minx + e1.maxx) / 2 - e2.x - (e2.minx + e2.maxx) / 2,
-              e1.y + (e1.miny + e1.maxy) / 2 - e2.y - (e2.miny + e2.maxy) / 2,
-              e1.z + (e1.minz + e1.maxz) / 2 - e2.z - (e2.minz + e2.maxz) / 2)
+  -- range(): eye to eye (origin + view_ofs): melee under 120, near under 500, mid under 1000, else far
+  SELECT vlen(e1.x - e2.x, e1.y - e2.y, e1.z + eye_height(e1.id) - e2.z - eye_height(e2.id))
     FROM ents e1 CROSS JOIN ents e2 WHERE e1.id = :a AND e2.id = :b INTO d;
   IF (d IS NULL) THEN RETURN 3;
   RETURN CASE WHEN d < 120 THEN 0 WHEN d < 500 THEN 1 WHEN d < 1000 THEN 2 ELSE 3 END;

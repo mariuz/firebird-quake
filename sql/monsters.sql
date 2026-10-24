@@ -188,58 +188,125 @@ BEGIN
   EXECUTE PROCEDURE set_anim(eid, run_);
 END^
 
--- CheckAttack: decide between melee, missile and keep running
+-- th_melee / th_missile called at once (CheckAttack's and SoldierCheckAttack's way): the attack's animation and its
+-- starting sound, without waiting to face the enemy as ai_run_melee and ai_run_missile do
+CREATE OR ALTER PROCEDURE start_attack (eid INTEGER, melee SMALLINT)
+AS
+DECLARE a VARCHAR(16); DECLARE ss VARCHAR(64);
+BEGIN
+  SELECT IIF(:melee = 1, t.melee_anim, t.missile_anim), IIF(:melee = 1, t.melee_start_snd, t.missile_start_snd)
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO a, ss;
+  UPDATE ents e SET e.st = IIF(:melee = 1, 'melee', 'missile'), e.attack_state = 1 WHERE e.id = :eid;
+  EXECUTE PROCEDURE set_anim(eid, a);
+  IF (ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, ss, 1, 1);
+END^
+
+-- CheckAnyAttack (ai.qc): nothing without sight of the enemy; then the monster's own check: SoldierCheckAttack,
+-- OgreCheckAttack, ShamCheckAttack, DemonCheckAttack, DogCheckAttack, WizardCheckAttack, else CheckAttack (fight.qc).
+-- attack_state: 1 AS_STRAIGHT, 2 AS_SLIDING, 3 AS_MELEE, 4 AS_MISSILE (begun by ai_run once facing the enemy).
+-- SUB_AttackFinished leaves attack_finished alone on nightmare.
 CREATE OR ALTER FUNCTION check_attack (eid INTEGER) RETURNS SMALLINT
 AS
 DECLARE enemy INTEGER; DECLARE r INTEGER; DECLARE has_melee SMALLINT; DECLARE has_missile SMALLINT; DECLARE af DOUBLE PRECISION;
-DECLARE chance DOUBLE PRECISION; DECLARE mk VARCHAR(16); DECLARE ac DOUBLE PRECISION; DECLARE mrange DOUBLE PRECISION;
+DECLARE chance DOUBLE PRECISION; DECLARE mt VARCHAR(16); DECLARE t DOUBLE PRECISION; DECLARE nm SMALLINT;
 DECLARE x1 DOUBLE PRECISION; DECLARE y1 DOUBLE PRECISION; DECLARE z1 DOUBLE PRECISION; DECLARE x2 DOUBLE PRECISION; DECLARE y2 DOUBLE PRECISION; DECLARE z2 DOUBLE PRECISION;
 DECLARE f DOUBLE PRECISION; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
-DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE d DOUBLE PRECISION; DECLARE leap_min DOUBLE PRECISION;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE d DOUBLE PRECISION;
+DECLARE clear_ SMALLINT; DECLARE sz1 DOUBLE PRECISION; DECLARE sz2 DOUBLE PRECISION; DECLARE ez1 DOUBLE PRECISION; DECLARE ez2 DOUBLE PRECISION;
 BEGIN
-  SELECT e.enemy_id, IIF(t.melee_anim IS NULL, 0, 1), IIF(t.missile_anim IS NULL, 0, 1), e.attack_finished, t.missile_kind, t.attack_chance, t.melee_range, t.leap_min
-    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO enemy, has_melee, has_missile, af, mk, ac, mrange, leap_min;
+  SELECT e.enemy_id, IIF(t.melee_anim IS NULL, 0, 1), IIF(t.missile_anim IS NULL, 0, 1), e.attack_finished, e.mtype
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO enemy, has_melee, has_missile, af, mt;
   IF (enemy IS NULL) THEN RETURN 0;
-  -- see if any entities are in the way of the shot
-  -- from self.origin + self.view_ofs to targ.origin + targ.view_ofs: a monster as its enemy is aimed at its
-  -- own eye, not the player's
-  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :eid INTO x1, y1, z1;
-  SELECT e.x, e.y, e.z + eye_height(e.id) FROM ents e WHERE e.id = :enemy INTO x2, y2, z2;
+  IF (visible(eid, enemy) = 0) THEN RETURN 0;                  -- enemy_vis
+  t = now_(); nm = nightmare();
+  r = ent_range(eid, enemy);
+  -- the shot's line, eye to eye: clear (it ends on the enemy) and not across a liquid's surface
+  SELECT e.x, e.y, e.z + eye_height(e.id), e.z + e.minz, e.z + e.maxz FROM ents e WHERE e.id = :eid INTO x1, y1, z1, sz1, sz2;
+  SELECT e.x, e.y, e.z + eye_height(e.id), e.z + e.minz, e.z + e.maxz FROM ents e WHERE e.id = :enemy INTO x2, y2, z2, ez1, ez2;
   EXECUTE PROCEDURE trace_move(eid, 0, 0, 0, 0, 0, 0, x1, y1, z1, x2, y2, z2, 0)
     RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
-  IF (f < 1 AND hit <> enemy) THEN RETURN 0;                   -- don't have a clear shot
-  IF (io = 1 AND iw = 1) THEN RETURN 0;                        -- sight line crossed contents
-  r = ent_range(eid, enemy);
-  d = vlen(x2 - x1, y2 - y1, 0);
-  IF (has_melee = 1 AND d <= mrange AND (r = 0 OR d < 100)) THEN
+  clear_ = IIF((f = 1 OR hit = enemy) AND NOT (io = 1 AND iw = 1), 1, 0);
+
+  IF (mt = 'army') THEN
   BEGIN
-    UPDATE ents e SET e.attack_state = 3 WHERE e.id = :eid;
+    IF (clear_ = 0 OR t < af OR r = 3) THEN RETURN 0;
+    chance = DECODE(r, 0, 0.9e0, 1, 0.4e0, 2, 0.05e0, 0);
+    IF (rnd() >= chance) THEN RETURN 0;
+    EXECUTE PROCEDURE start_attack(eid, 0);
+    UPDATE ents e SET e.attack_finished = IIF(:nm = 1, e.attack_finished, :t + 1 + rnd()) WHERE e.id = :eid;
+    IF (rnd() < 0.3e0) THEN UPDATE ents e SET e.lefty = 1 - e.lefty WHERE e.id = :eid;
     RETURN 1;
   END
-  -- missile attack
-  IF (has_missile = 0) THEN RETURN 0;
-  IF (now_() < af) THEN RETURN 0;
-  IF (r = 3) THEN RETURN 0;
-  IF (mk = 'leap') THEN
+  IF (mt IN ('ogre', 'shambler')) THEN
   BEGIN
-    -- DemonCheckAttack / dog: jump when 100–400 away and roughly level
-    IF (d > 400 OR ABS(z1 - z2) > 64) THEN RETURN 0;
-    IF (d < leap_min) THEN RETURN 0;   -- 100 but for the spawn, which jumps from anywhere
-    chance = IIF(r = 1, 0.5e0, 0.2e0);
+    IF (r = 0 AND can_damage(enemy, eid) = 1) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 3 WHERE e.id = :eid;
+      RETURN 1;
+    END
+    IF (t < af) THEN RETURN 0;
+    IF (mt = 'shambler' AND vlen(x2 - x1, y2 - y1, z2 - z1) > 600) THEN RETURN 0;
+    IF (clear_ = 0 OR r = 3) THEN RETURN 0;
+    -- (OgreCheckAttack works out a chance by range and never uses it: the ogre always throws)
+    UPDATE ents e SET e.attack_state = 4,
+      e.attack_finished = IIF(:nm = 1, e.attack_finished, :t + IIF(:mt = 'ogre', 1 + 2 * rnd(), 2 + 2 * rnd())) WHERE e.id = :eid;
+    RETURN 1;
   END
-  ELSE IF (r = 0) THEN chance = 0.9e0;
+  IF (mt IN ('demon1', 'dog')) THEN
+  BEGIN
+    IF (r = 0) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 3 WHERE e.id = :eid;
+      RETURN 1;
+    END
+    -- the jump: the heights overlapping (between a quarter and three quarters of the enemy's), 80 to 150 across
+    -- for the dog, from 100 for the fiend (past 200 one time in ten)
+    IF (sz1 > ez1 + 0.75e0 * (ez2 - ez1) OR sz2 < ez1 + 0.25e0 * (ez2 - ez1)) THEN RETURN 0;
+    SELECT vlen(b.x - a.x, b.y - a.y, 0) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
+    IF (mt = 'dog' AND (d < 80 OR d > 150)) THEN RETURN 0;
+    IF (mt = 'demon1' AND (d < 100 OR (d > 200 AND rnd() < 0.9e0))) THEN RETURN 0;
+    UPDATE ents e SET e.attack_state = 4 WHERE e.id = :eid;
+    IF (mt = 'demon1') THEN EXECUTE PROCEDURE snd(eid, 2, 'demon/djump.wav', 1, 1);
+    RETURN 1;
+  END
+  IF (mt = 'wizard') THEN
+  BEGIN
+    IF (t < af) THEN RETURN 0;
+    IF (r = 3 OR (f < 1 AND hit IS DISTINCT FROM enemy)) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 1 WHERE e.id = :eid;
+      RETURN 0;
+    END
+    chance = DECODE(r, 0, 0.9e0, 1, 0.6e0, 2, 0.2e0, 0);
+    IF (rnd() < chance) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 4 WHERE e.id = :eid;
+      RETURN 1;
+    END
+    UPDATE ents e SET e.attack_state = IIF(:r = 2, 1, 2) WHERE e.id = :eid;
+    RETURN 0;
+  END
+  -- CheckAttack
+  IF (clear_ = 0) THEN RETURN 0;
+  IF (r = 0 AND has_melee = 1) THEN
+  BEGIN
+    EXECUTE PROCEDURE start_attack(eid, 1);
+    RETURN 1;
+  END
+  IF (has_missile = 0 OR t < af OR r = 3) THEN RETURN 0;
+  IF (r = 0) THEN
+  BEGIN
+    chance = 0.9e0;
+    UPDATE ents e SET e.attack_finished = 0 WHERE e.id = :eid;
+  END
   ELSE IF (r = 1) THEN chance = IIF(has_melee = 1, 0.2e0, 0.4e0);
   ELSE IF (r = 2) THEN chance = IIF(has_melee = 1, 0.05e0, 0.1e0);
   ELSE chance = 0;
-  chance = chance * ac / 0.3e0;
-  IF (rnd() < chance) THEN
-  BEGIN
-    UPDATE ents e SET e.attack_state = 4, e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 2 * rnd()) WHERE e.id = :eid;
-    RETURN 1;
-  END
-  UPDATE ents e SET e.attack_state = IIF(:r = 2, 1, 2) WHERE e.id = :eid;
-  RETURN 0;
+  IF (rnd() >= chance) THEN RETURN 0;
+  EXECUTE PROCEDURE start_attack(eid, 0);
+  UPDATE ents e SET e.attack_finished = IIF(:nm = 1, e.attack_finished, :t + 2 * rnd()) WHERE e.id = :eid;
+  RETURN 1;
 END^
 
 -- a monster's missile at the frame that fires
@@ -748,7 +815,18 @@ BEGIN
       EXIT;
     END
     IF (check_attack(eid) = 1) THEN EXIT;
-    IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, run_spd);
+    IF ((SELECT e.attack_state FROM ents e WHERE e.id = :eid) = 2) THEN
+    BEGIN
+      -- ai_run_slide: face the enemy and step sideways, the other way if that side is blocked
+      EXECUTE PROCEDURE change_yaw(eid);
+      SELECT e.ideal_yaw, e.lefty FROM ents e WHERE e.id = :eid INTO d, flags;
+      IF (move_step(eid, COS((d + IIF(flags = 1, 90, -90)) * 0.0174532925e0) * run_spd, SIN((d + IIF(flags = 1, 90, -90)) * 0.0174532925e0) * run_spd, 0) = 0) THEN
+      BEGIN
+        UPDATE ents e SET e.lefty = 1 - e.lefty WHERE e.id = :eid;
+        d = move_step(eid, COS((d - IIF(flags = 1, 90, -90)) * 0.0174532925e0) * run_spd, SIN((d - IIF(flags = 1, 90, -90)) * 0.0174532925e0) * run_spd, 0);
+      END
+    END
+    ELSE IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, run_spd);
     ELSE EXECUTE PROCEDURE change_yaw(eid);
     af = MOD(af + 1, fc);
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;

@@ -252,6 +252,89 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `FindTarget: the player is seen (${seen0}), not when invisible (${invisibleSeen} of 100) or notarget (${notarget}); a monster that saw it wakes another through it (${viaA}), but not one in ambush (${ambush})`);
 }
 
+// CheckAnyAttack, per monster as id's: the ogre always throws when it can (OgreCheckAttack's chance goes unused), the
+// shambler casts only within 600, the dog leaps from 80 to 150 across, the soldier begins firing the moment it
+// decides to (th_missile called at once), and the scrag that does not cast at near range slides sideways
+{
+  const pe5 = await spot();
+  const p = await q1(`SELECT x, y, z FROM ents WHERE id = ${pe5}`);
+  // a spot d away from the player, on its floor, in the open and in sight of it
+  const placeAt = async (m, d) => {
+    for (let k = 0; k < 32; k++) {
+      const x = p.X + Math.cos(k * Math.PI / 16) * d, y = p.Y + Math.sin(k * Math.PI / 16) * d;
+      if ((await q1(`SELECT test_position(${m}, ${x}, ${y}, ${p.Z}) t FROM rdb$database`)).T !== 0) continue;
+      await db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${p.Z}, yaw = ${Math.atan2(p.Y - y, p.X - x) * 180 / Math.PI}, enemy_id = ${pe5},
+        st = 'run', attack_state = 1, attack_finished = 0, nextthink = NULL WHERE id = ${m}`);
+      await db.exec(`EXECUTE PROCEDURE link_ent(${m})`);
+      if ((await q1(`SELECT visible(${m}, ${pe5}) v FROM rdb$database`)).V === 1) return true;
+    }
+    return false;
+  };
+  const tries = async (m, n = 20) => {
+    let hits = 0;
+    for (let i = 0; i < n; i++) {
+      await db.exec(`UPDATE ents SET attack_state = 1, attack_finished = 0, st = 'run' WHERE id = ${m}`);
+      hits += (await q1(`SELECT check_attack(${m}) c FROM rdb$database`)).C;
+    }
+    return hits;
+  };
+  const gone = (m) => db.exec(`UPDATE ents SET health = 0, st = 'dead', solid = 0, takedamage = 0, nextthink = NULL WHERE id = ${m}`);
+  const ogre = await spawn('ogre', 300);
+  const ogreOk = await placeAt(ogre, 300), ogreHits = await tries(ogre);
+  await gone(ogre);
+  const sham = await spawn('shambler', 300);
+  const shamNear = (await placeAt(sham, 400)) ? await tries(sham) : -1;
+  // past 600: two floor spots of the level (where things were placed) 620 to 1000 apart and in sight of each other,
+  // the player at one and the shambler at the other
+  let shamFar = -1;
+  const spots = (await db.query(`SELECT ox x, oy y, oz z FROM map_ents WHERE classname LIKE 'item_%' OR classname LIKE 'weapon_%' OR classname LIKE 'monster_%' OR classname LIKE 'info_player%'`)).rows;
+  far: for (const a of spots) for (const b of spots) {
+    const d = Math.hypot(a.X - b.X, a.Y - b.Y);
+    if (d < 620 || d > 1000 || Math.abs(a.Z - b.Z) > 32) continue;
+    await db.exec(`UPDATE ents SET x = ${a.X}, y = ${a.Y}, z = ${a.Z + 24}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe5}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${pe5})`);
+    const bz = b.Z + 25;
+    if ((await q1(`SELECT test_position(${sham}, ${b.X}, ${b.Y}, ${bz}) t, test_position(${pe5}, ${a.X}, ${a.Y}, ${a.Z + 24}) u FROM rdb$database`)).T !== 0) continue;
+    await db.exec(`UPDATE ents SET x = ${b.X}, y = ${b.Y}, z = ${bz}, yaw = ${Math.atan2(a.Y - b.Y, a.X - b.X) * 180 / Math.PI}, enemy_id = ${pe5}, st = 'run', nextthink = NULL WHERE id = ${sham}`);
+    await db.exec(`EXECUTE PROCEDURE link_ent(${sham})`);
+    if ((await q1(`SELECT visible(${sham}, ${pe5}) v FROM rdb$database`)).V !== 1) continue;
+    shamFar = await tries(sham);
+    break far;
+  }
+  await db.exec(`UPDATE ents SET x = ${p.X}, y = ${p.Y}, z = ${p.Z}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe5}`);
+  await db.exec(`EXECUTE PROCEDURE link_ent(${pe5})`);
+  await gone(sham);
+  const dog = await spawn('dog', 120);
+  const dogNear = (await placeAt(dog, 120)) ? await tries(dog) : -1;
+  const dogFar = (await placeAt(dog, 250)) ? await tries(dog) : -1;
+  await gone(dog);
+  const army = await spawn('army', 200);
+  await placeAt(army, 200);
+  let fired = null;
+  for (let i = 0; i < 100 && !fired; i++) {
+    await db.exec(`UPDATE ents SET attack_state = 1, attack_finished = 0, st = 'run' WHERE id = ${army}`);
+    if ((await q1(`SELECT check_attack(${army}) c FROM rdb$database`)).C === 1) fired = await q1(`SELECT st FROM ents WHERE id = ${army}`);
+  }
+  await gone(army);
+  const wiz = await spawn('wizard', 200);
+  await placeAt(wiz, 200);
+  let slid = null;
+  for (let i = 0; i < 100 && slid === null; i++) {
+    await db.exec(`UPDATE ents SET attack_state = 1, attack_finished = 0, st = 'run' WHERE id = ${wiz}`);
+    if ((await q1(`SELECT check_attack(${wiz}) c FROM rdb$database`)).C === 0) slid = (await q1(`SELECT attack_state a FROM ents WHERE id = ${wiz}`)).A;
+  }
+  // and in its think a sliding scrag (its attack not due) steps sideways to the player, not at it
+  const w0 = await q1(`SELECT x, y, z FROM ents WHERE id = ${wiz}`);
+  await db.exec(`UPDATE ents SET attack_state = 2, attack_finished = (SELECT g.time_ + 10 FROM game g WHERE g.id = 1), st = 'run', anim = 'run', anim_frame = 0 WHERE id = ${wiz}`);
+  await db.exec(`EXECUTE PROCEDURE monster_think(${wiz})`);
+  const w1 = await q1(`SELECT x, y FROM ents WHERE id = ${wiz}`);
+  const tox = p.X - w0.X, toy = p.Y - w0.Y, tl = Math.hypot(tox, toy);
+  const side = Math.abs(((w1.X - w0.X) * -toy + (w1.Y - w0.Y) * tox) / tl), toward = ((w1.X - w0.X) * tox + (w1.Y - w0.Y) * toy) / tl;
+  await gone(wiz);
+  assert(ogreOk && ogreHits === 20 && shamNear === 20 && shamFar === 0 && dogNear === 20 && dogFar === 0 && fired?.ST === 'missile' && slid === 2 && side > 1 && Math.abs(toward) < side,
+    `CheckAnyAttack: the ogre throws ${ogreHits} of 20, the shambler casts ${shamNear} of 20 at 400 and ${shamFar} past 600, the dog leaps ${dogNear} of 20 at 120 and ${dogFar} at 250, the soldier fires at once (${fired?.ST}), the scrag slides (attack_state ${slid}, ${side.toFixed(1)} across, ${toward.toFixed(1)} towards)`);
+}
+
 // a swimming monster's eye is lower (swimmonster_start_go: 10)
 const fish = await spawn('fish', 200);
 assert((await q1(`SELECT eye_height(${fish}) f FROM rdb$database`)).F === 10, "a fish's eye is 10 above its origin");

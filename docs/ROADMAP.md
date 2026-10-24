@@ -265,9 +265,17 @@ to the same behaviour, with a test of its own:
   found. And a monster that sees the player now wakes the others, as `FoundTarget`'s `sight_entity` does: for 0.1 s
   any monster not lying in ambush (`spawnflags & 3`) that sees it takes up its enemy, the player, invisible or not
   (`game.sight_entity`, `ents.show_hostile` for the near test).
-- **Monster attacks** (next): id's `CheckAttack` (the range bands, the chance of attacking at each, `attack_finished`)
-  and `ai_run`'s strafing and charging (`ai_run_slide`, `ai_run_melee`, `ai_run_missile`) against the PSQL game's
-  `monster_think`. They shape every fight in the PSQL game; the largest gap left.
+- ~~**Monster attacks**~~ done (`npm run test:infight`): the PSQL game had one `CheckAttack` for every monster, its
+  chances scaled by a per-type factor and its melee by the distance across. `check_attack` is now `CheckAnyAttack`:
+  no attack without sight of the enemy, then the soldier's (0.9, 0.4, 0.05 by range; firing at once; the next shot
+  1 to 2 s later), the ogre's (a melee it can reach, else always a grenade: the chance `OgreCheckAttack` works out
+  is never used; 1 to 3 s), the shambler's (lightning within 600 only; 2 to 4 s), the fiend's and the dog's (the
+  slash in melee range, the leap with the heights overlapping, 80 to 150 across for the dog, from 100 for the fiend,
+  past 200 one time in ten) and the scrag's (0.9, 0.6, 0.2; else straight on at mid range or sliding sideways near
+  it, `ai_run_slide`), and `CheckAttack` for the rest (melee at once in melee range; 0.9, 0.2 or 0.4, 0.05 or 0.1;
+  0 to 2 s). The ranges are eye to eye, as `range()` measures them (they were between the boxes' middles), and the
+  ogre's and shambler's melee asks `CanDamage` (now `can_damage`, shared with the blasts). Left as it was: the
+  knight's choice between its two swings (`knight_attack`).
 - ~~**Thrown objects**~~ done (`npm test`): `toss_move` now caps the velocity at 2000 units/s on each axis before the
   gravity (`SV_CheckVelocity`; something thrown at 5000 went at 4000 after the gravity) and takes the velocity and
   movetype again after the move's touch, for the bounce, as `SV_Physics_Toss` and QuakeC mode's `qc_toss` do.
