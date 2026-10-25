@@ -351,6 +351,7 @@ CREATE TABLE player (
   invincible_sound DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- the next time the invulnerability's sound may play
   free_x DOUBLE PRECISION, free_y DOUBLE PRECISION, free_z DOUBLE PRECISION,   -- SV_CheckStuck's oldorigin: the last place a move ended free
   drown_dmg SMALLINT DEFAULT 2 NOT NULL,                  -- WaterMove's self.dmg: the next drowning bite (2, 4 ... 14, then 10)
+  rot_time DOUBLE PRECISION,                              -- item_megahealth_rot's next think
   jump_flag DOUBLE PRECISION DEFAULT 0 NOT NULL,          -- PlayerPostThink's: the vertical speed the last frame in the air left
   weapon_sound    SMALLINT DEFAULT 0 NOT NULL
 );

@@ -107,6 +107,15 @@ BEGIN
     UPDATE game g SET g.time_ = :t + 0.05e0 WHERE g.id = 1;
     i = i + 1;
   END
+  -- a svc_setangle sent this frame (fixangle: a teleport) shows with it: the view takes the body's angles now, and
+  -- the next frame's input starts from them
+  IF (qc_f(1, fa) <> 0) THEN
+  BEGIN
+    SELECT e.pitch, e.yaw FROM ents e WHERE e.id = 1 INTO vpitch, vyaw;
+    EXECUTE PROCEDURE qc_sf(1, fa, 0);
+    EXECUTE PROCEDURE qc_sf(1, va, vpitch); EXECUTE PROCEDURE qc_sf(1, va + 1, vyaw);
+    UPDATE player p SET p.pitch = :vpitch WHERE p.id = 1;
+  END
   -- the eye: view_ofs, and the damage handed over once
   vo = qc_f(1, qc_fdef('view_ofs') + 2);
   fdt = qc_fdef('dmg_take'); fds = qc_fdef('dmg_save');

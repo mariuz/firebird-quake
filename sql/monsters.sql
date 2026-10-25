@@ -942,7 +942,12 @@ BEGIN
   IF (mname = 'fish') THEN UPDATE ents e SET e.maxz = 24 WHERE e.id = :id;
   IF (mname = 'oldone') THEN UPDATE ents e SET e.minx = -160, e.miny = -128, e.maxx = 160, e.maxy = 128, e.maxz = 256, e.takedamage = 0, e.movetype = 0 WHERE e.id = :id;
   UPDATE game g SET g.total_monsters = g.total_monsters + 1 WHERE g.id = 1;
-  IF (BIN_AND(mflags, 3) = 0) THEN EXECUTE PROCEDURE drop_to_floor(id); ELSE EXECUTE PROCEDURE link_ent(id);
+  IF (BIN_AND(mflags, 3) = 0) THEN
+  BEGIN
+    UPDATE ents e SET e.z = e.z + 1 WHERE e.id = :id;          -- walkmonster_start_go: a unit up, then droptofloor
+    EXECUTE PROCEDURE drop_to_floor(id);
+  END
+  ELSE EXECUTE PROCEDURE link_ent(id);
   SUSPEND;
 END^
 
@@ -1265,10 +1270,13 @@ BEGIN
            p.invincible_finished = 0, p.invisible_finished = 0, p.super_damage_finished = 0, p.radsuit_finished = 0, p.kills = 0 WHERE p.id = 1;
   UPDATE player p SET p.weaponframe = 0, p.attack_finished = 0, p.pain_finished = 0, p.punchangle = 0, p.view_ofs = 22, p.dmg_take = 0, p.dmg_save = 0,
          p.dmg_time = -10, p.bonus_time = -10, p.msg = NULL, p.msg_time = 0, p.cprint = NULL, p.cprint_time = 0, p.dead_time = 0, p.pitch = 0, p.stepz = 0,
-         p.jump_released = 1, p.air_finished = 12, p.dmg_lava_time = 0, p.drown_dmg = 2, p.jump_flag = 0, p.impulse = 0, p.weapon_sound = 0, p.items = BIN_AND(p.items, BIN_NOT(131072 + 262144)) WHERE p.id = 1;
+         p.jump_released = 1, p.air_finished = 12, p.dmg_lava_time = 0, p.drown_dmg = 2, p.jump_flag = 0, p.impulse = 0, p.rot_time = NULL, p.weapon_sound = 0, p.items = BIN_AND(p.items, BIN_NOT(131072 + 262144)) WHERE p.id = 1;
   -- keys don't carry over; neither do dead weapons
   UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1 AND BIN_AND(p.items, p.weapon) = 0;
+  EXECUTE PROCEDURE player_current_ammo;
   EXECUTE PROCEDURE spawn_map_ents(skill);
+  -- ClientConnect's bprint, single player too (before any frame: three seconds from now)
+  UPDATE player p SET p.msg = 'player entered the game', p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 3 WHERE p.id = 1;
   -- the level name
   UPDATE player p SET p.cprint = (SELECT g.level_msg FROM game g WHERE g.id = 1), p.cprint_time = 3 WHERE p.id = 1;
 END^

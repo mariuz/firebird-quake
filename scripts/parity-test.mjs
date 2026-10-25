@@ -34,14 +34,20 @@ await loadMap(Q.db, pak, Q.res, 'e1m1', { skill: 1, seed: 1 });
 await loadProgs(Q.db, pak);
 await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
 
-for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '', '')");   // no monster joins in
+// no monster joins in or stands in the way: they wander by each game's own random numbers
+for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '', '')");
+// (after half a second, once QuakeC's items have dropped: PlaceItem runs 0.2 s in)
+for (const g of [P, Q]) await g.q1(`SELECT tic FROM ${g === P ? 'quake_tic' : 'qc_tic'}(10, 0, 0, 0, 0, 0, 0, 1, 0)`);
+await P.db.exec('UPDATE ents SET health = 0, solid = 0, nextthink = NULL, think = NULL, x = x + 50000 WHERE mtype IS NOT NULL');
+await Q.db.exec("UPDATE ents SET solid = 0, x = x + 50000 WHERE BIN_AND(flags, 32) <> 0 OR id IN (SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) STARTING WITH 'monster_')");
+for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
 
-const tic = (g, i) => g.q1(`SELECT px, py, pz, yaw, pitch - punch pitch, punch, health, armorvalue, shells, nails, rockets, weapon, weaponframe, waterlevel FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, ${i.f ?? 0}, ${i.s ?? 0}, ${i.yaw ?? 0}, ${i.pitch ?? 0}, ${i.fire ?? 0}, ${i.jump ?? 0}, ${i.run ?? 1}, ${i.imp ?? 0})`);
+const tic = (g, i) => g.q1(`SELECT px, py, pz, yaw, pitch - punch pitch, punch, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe, waterlevel, msg FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, ${i.f ?? 0}, ${i.s ?? 0}, ${i.yaw ?? 0}, ${i.pitch ?? 0}, ${i.fire ?? 0}, ${i.jump ?? 0}, ${i.run ?? 1}, ${i.imp ?? 0})`);
 const place = (x, y, z, vz = 0) => Promise.all([P, Q].map(async (g) => {
   await g.db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, vx = 0, vy = 0, vz = ${vz} WHERE id = 1`);
   await g.db.exec('EXECUTE PROCEDURE link_ent(1)');
 }));
-const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS} w ${r.WEAPON} wf ${r.WEAPONFRAME}`;
+const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} at ${r.ARMORTYPE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS}/${r.CELLS} items ${r.ITEMS} w ${r.WEAPON} wf ${r.WEAPONFRAME} msg ${JSON.stringify(r.MSG)}`;
 // the same input to both, tic by tic: the first tic where they part, or null
 const play = async (inputs) => {
   let a, b;
@@ -49,7 +55,9 @@ const play = async (inputs) => {
     a = await tic(P, inputs[k]); b = await tic(Q, inputs[k]);
     if (process.env.DBG && k >= +process.env.DBG - 4) { const sel = 'SELECT x, y, z, vx, vy, vz, flags, waterlevel wl FROM ents WHERE id = 1'; console.log('DBG', k, JSON.stringify(await P.q1(sel)), JSON.stringify(await Q.q1(sel))); }
     const near = Math.abs(a.PX - b.PX) < 0.01 && Math.abs(a.PY - b.PY) < 0.01 && Math.abs(a.PZ - b.PZ) < 0.01;
-    for (const c of ['YAW', 'PITCH', 'PUNCH', 'WATERLEVEL', 'HEALTH', 'ARMORVALUE', 'SHELLS', 'NAILS', 'ROCKETS', 'WEAPON', 'WEAPONFRAME']) if (Math.abs(a[c] - b[c]) > 1e-6) return { k, a, b, why: c };
+    if (Math.abs((((a.YAW - b.YAW) % 360) + 540) % 360 - 180) > 1e-6) return { k, a, b, why: 'YAW' };
+    for (const c of ['PITCH', 'PUNCH', 'WATERLEVEL', 'HEALTH', 'ARMORVALUE', 'ARMORTYPE', 'SHELLS', 'NAILS', 'ROCKETS', 'CELLS', 'ITEMS', 'WEAPON', 'WEAPONFRAME']) if (Math.abs(a[c] - b[c]) > 1e-6) return { k, a, b, why: c };
+    if ((a.MSG ?? '') !== (b.MSG ?? '')) return { k, a, b, why: 'MSG' };
     if (!near) return { k, a, b, why: 'position' };
   }
   return { k: inputs.length, a, b, why: null };
@@ -148,6 +156,74 @@ if (slime) {
   for (const g of [P, Q]) await g.db.query('SELECT msg FROM host_cmd(?, ?, ?)', ['give', 'h', '100']);
   await place(slime.cx, slime.cy, slime.z + 30);
   await check('into the slime', [...rep(50, {}), ...rep(20, { jump: 1, f: 1 })], (a) => a.HEALTH < 100);
+}
+
+// ── walking into things: each kind of item, a door, a button, a lift, the teleporter ──
+// a free floor spot `d` units from a point, with a clear walk to it; the player put there and turned to face it
+const approach = async (x, y, z, id = null) => {
+  for (const d of [80, 96, 64, 112, 48, 32]) for (let k = 0; k < 16; k++) {
+    const a = (k * Math.PI) / 8, sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d;
+    const fl = await q(`SELECT ez, fraction f FROM trace_move(1, -16, -16, -24, 16, 16, 32, ${sx}, ${sy}, ${z + 64}, ${sx}, ${sy}, ${z - 60}, 0)`);
+    if (fl.F === 1 || Math.abs(fl.EZ - (z + 24)) > 32) continue;
+    // free in both worlds (their monsters stand in different places)
+    if ((await q(`SELECT test_position(1, ${sx}, ${sy}, ${fl.EZ}) t FROM rdb$database`)).T !== 0) continue;
+    if ((await Q.q1(`SELECT test_position(1, ${sx}, ${sy}, ${fl.EZ}) t FROM rdb$database`)).T !== 0) continue;
+    // an item: a clear walk most of the way to it; a mover: the walk meets it (a door, a lift, a button) after a while
+    const walk = id === null
+      ? await q(`SELECT fraction f, hit_ent h FROM trace_move(1, -16, -16, -24, 16, 16, 32, ${sx}, ${sy}, ${fl.EZ}, ${sx + (x - sx) * 0.75}, ${sy + (y - sy) * 0.75}, ${fl.EZ}, 1)`)
+      : await q(`SELECT fraction f, hit_ent h FROM trace_move(1, -16, -16, -24, 16, 16, 32, ${sx}, ${sy}, ${fl.EZ}, ${x}, ${y}, ${fl.EZ}, 1)`);
+    if (id === null ? walk.F < 1 : walk.H !== id || walk.F < 0.2) continue;
+    await place(sx, sy, fl.EZ);
+    const yaw = (await tic(P, {})).YAW; await tic(Q, {});
+    let turn = (Math.atan2(y - sy, x - sx) * 180) / Math.PI - yaw;
+    turn = ((turn % 360) + 540) % 360 - 180;
+    return turn;
+  }
+  return null;
+};
+// the items of a kind still there (not taken, and in single player: not deathmatch-only)
+const spots = async (cls) => (await P.db.query(`SELECT x ox, y oy, z oz FROM ents WHERE classname = '${cls}' AND solid = 1 ORDER BY id`)).rows;
+for (const g of [P, Q]) await g.db.query('SELECT msg FROM host_cmd(?, ?, ?)', ['god', '', '']);
+for (const cls of ['item_health', 'item_shells', 'item_spikes', 'item_rockets', 'item_armor1', 'item_armor2', 'weapon_supershotgun', 'weapon_nailgun',
+  'weapon_supernailgun', 'weapon_grenadelauncher', 'weapon_rocketlauncher', 'item_artifact_envirosuit', 'item_artifact_super_damage', 'item_artifact_invulnerability']) {
+  let done = false;
+  const ms = await spots(cls);
+  if (!ms.length) { console.log(`--   no ${cls} in single player here`); continue; }
+  for (const m of ms) {
+    for (const g of [P, Q]) await g.db.exec(`UPDATE ents SET health = 60 WHERE id = 1`);
+    if (Q) await Q.db.exec("EXECUTE PROCEDURE qc_sf(1, qc_fdef('health'), 60)");
+    const mt0 = (await P.q1('SELECT msg_time t FROM player')).T;
+    const turn = await approach(m.OX + 16 * (cls.startsWith('item_') && !cls.includes('armor') && !cls.includes('artifact')), m.OY + 16 * (cls.startsWith('item_') && !cls.includes('armor') && !cls.includes('artifact')), m.OZ);
+    if (turn === null) continue;
+    // walked into it: the pickup's message printed (the PSQL game's msg_time moves on)
+    const before = failed;
+    await check(`picking up ${cls}`, [{ yaw: turn }, ...rep(14, { f: 1, run: 0 }), ...rep(cls === 'item_health' ? 160 : 6, {})]);
+    if (failed > before) { done = true; break; }       // parted: reported
+    if ((await P.q1('SELECT msg_time t FROM player')).T === mt0) continue;   // walked past it: the next one
+    done = true;
+    break;
+  }
+  if (!done) console.log(`--   no way found to walk into ${cls} (${ms.length} of them)`);
+}
+
+// doors, buttons, the lifts and the teleporter: walked into from 96 units off, and on for 3 s
+for (const cls of ['func_door', 'func_button', 'func_plat', 'trigger_teleport']) {
+  const ms = (await P.db.query(`SELECT x + (minx + maxx) / 2 ox, y + (miny + maxy) / 2 oy, z + minz oz, id FROM ents WHERE classname = '${cls}' ORDER BY id`)).rows;
+  let n = 0;
+  for (const m of ms) {
+    if (n >= 2) break;
+    const turn = await approach(m.OX, m.OY, m.OZ, cls === 'trigger_teleport' ? null : m.ID);
+    if (turn === null) continue;
+    // set off: a door or button that moves (or a lift that goes), or the teleporter that sends the player on
+    const at = async () => JSON.stringify(await P.q1(`SELECT x, y, z, mv_state FROM ents e WHERE id = ${m.ID}`));
+    const p0 = await at(), q0 = await P.q1('SELECT x, y FROM ents WHERE id = 1');
+    let moved = false;
+    const r = await check(`walking into ${cls} ${n + 1}`, [{ yaw: turn }, ...rep(30, { f: 1, run: 0 }), ...rep(30, {})], () => true);
+    moved = cls === 'trigger_teleport' ? Math.hypot(r.PX - q0.X, r.PY - q0.Y) > 300 : (await at()) !== p0;
+    if (!moved) { console.log(`--   ${cls} ${m.ID} did not move: another`); continue; }
+    n++;
+  }
+  if (!n) console.log(`--   no way found to walk into ${cls}`);
 }
 
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }

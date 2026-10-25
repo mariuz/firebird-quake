@@ -321,8 +321,33 @@ to the same behaviour, with a test of its own:
     8 × all of it, the armor and the health take its ceiling; the blasts were rounded first.
   And the PSQL game's view kick on pain (2° up) is gone: `player_pain` has none. Quake's kick on damage is the
   client's `V_ParseDamage` (`v_kickpitch`, `v_kickroll`, from the damage's direction), which the page does for
-  neither game yet. Not compared yet: monsters (their random choices draw from different generators in the two
-  games), doors and lifts under the player, teleporters, items.
+  neither game yet.
+- ~~**Items, doors, buttons, lifts and the teleporter in the parity test**~~ done (`npm run test:parity`): the player
+  walks into every kind of item E1M1 has in single player, two doors, two buttons, a lift and the teleporter, with
+  the items bitmask, the armor type and the message line compared too (the monsters are moved out of the way first:
+  they wander by each game's own random numbers). Eight more differences, fixed to id's code:
+  - An item's touch box: `SV_LinkEdict` makes every edict's absolute box a unit bigger all round and an item's
+    (`FL_ITEM`) 15 units bigger across, so items are picked up from a little way off; the PSQL game used the bare
+    boxes, so the player had to walk 16 units further into a health box or a box of shells.
+  - The health box is 56 tall like every other item (`setsize '0 0 0' '32 32 56'`), not 32.
+  - `PlaceItem`: an item drops to the floor through `MOVE_NORMAL` (monsters stop it too) once everything has
+    spawned, and one that cannot ("Bonus item fell out of level") is removed: E1M1's rotten health box under a grunt
+    at 1224 2464 is not there in id's game. And `walkmonster_start_go` lifts a monster a unit before its drop, so it
+    rests 0.03 above the floor as everything dropped does (a grunt's head was 0.03 lower to step onto).
+  - The megahealth's rot (`item_megahealth_rot`): from 5 s after the pickup, then a point a second, the item's own
+    think, then `IT_SUPERHEALTH` off (`player.rot_time`); the PSQL game rotted every whole second of the clock from
+    the moment of the pickup.
+  - `W_SetCurrentAmmo`'s bits: `IT_SHELLS`, `IT_NAILS`, `IT_ROCKETS` or `IT_CELLS` for the weapon in hand, in the
+    items bitmask (`player_current_ammo`).
+  - The artifacts' message: "You got the Quad Damage" and so on (`powerup_touch`: "You got the " and the netname).
+  - "player entered the game" on the message line at the level's start (`ClientConnect`'s `bprint`), and the
+    message line's three seconds counted from the frame's start, as QuakeC's prints are (the PSQL clock runs at the
+    frame's end, which is what makes its thinks fall on Quake's frames).
+  - In QuakeC mode, the view after a teleport: the page's `qc_tic` took the destination's angles (`fixangle`) only
+    at the start of the next tic, so the row showed the old view for one; now it takes them with the frame, as the
+    client does with `svc_setangle`.
+  Not compared: monsters (their random choices draw from different generators), the super shotgun on E1M1 (no
+  walkable spot found by the test), the deathmatch-only weapons and the Pentagram.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

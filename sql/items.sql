@@ -48,7 +48,7 @@ BEGIN
     BEGIN
       IF (hp >= 250) THEN EXIT;
       UPDATE ents e SET e.health = MINVALUE(e.health + 100, 250) WHERE e.id = :other;
-      UPDATE player p SET p.items = BIN_OR(p.items, 65536), p.dmg_time = :t WHERE p.id = 1;
+      UPDATE player p SET p.items = BIN_OR(p.items, 65536), p.dmg_time = :t, p.rot_time = :t + 5 WHERE p.id = 1;
       snd_ = 'items/r_item2.wav'; msg = 'You receive 100 health';
     END
     ELSE IF (BIN_AND(sf, 1) <> 0) THEN                          -- rotten
@@ -137,22 +137,22 @@ BEGIN
   ELSE IF (cls = 'item_artifact_invulnerability') THEN
   BEGIN
     UPDATE player p SET p.items = BIN_OR(p.items, 1048576), p.invincible_finished = :t + 30 WHERE p.id = 1;
-    msg = 'Pentagram of Protection!'; snd_ = 'items/protect.wav';
+    msg = 'You got the Pentagram of Protection'; snd_ = 'items/protect.wav';
   END
   ELSE IF (cls = 'item_artifact_invisibility') THEN
   BEGIN
     UPDATE player p SET p.items = BIN_OR(p.items, 524288), p.invisible_finished = :t + 30 WHERE p.id = 1;
-    msg = 'Ring of Shadows!'; snd_ = 'items/inv1.wav';
+    msg = 'You got the Ring of Shadows'; snd_ = 'items/inv1.wav';
   END
   ELSE IF (cls = 'item_artifact_super_damage') THEN
   BEGIN
     UPDATE player p SET p.items = BIN_OR(p.items, 4194304), p.super_damage_finished = :t + 30 WHERE p.id = 1;
-    msg = 'Quad Damage!'; snd_ = 'items/damage.wav';
+    msg = 'You got the Quad Damage'; snd_ = 'items/damage.wav';
   END
   ELSE IF (cls = 'item_artifact_envirosuit') THEN
   BEGIN
     UPDATE player p SET p.items = BIN_OR(p.items, 2097152), p.radsuit_finished = :t + 30 WHERE p.id = 1;
-    msg = 'Biosuit'; snd_ = 'items/suit.wav';
+    msg = 'You got the Biosuit'; snd_ = 'items/suit.wav';
   END
   ELSE IF (cls = 'backpack') THEN
   BEGIN

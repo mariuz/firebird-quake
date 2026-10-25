@@ -90,10 +90,23 @@ BEGIN
   UPDATE player p SET p.cprint = :msg, p.cprint_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 2 WHERE p.id = 1;
 END^
 
+-- W_SetCurrentAmmo's bits: IT_SHELLS, IT_NAILS, IT_ROCKETS or IT_CELLS for the weapon in hand (none for the axe)
+CREATE OR ALTER PROCEDURE player_current_ammo
+AS
+BEGIN
+  UPDATE player p SET p.items = BIN_OR(BIN_AND(p.items, BIN_NOT(3840)),
+      CASE WHEN BIN_AND(p.weapon, 3) <> 0 THEN 256 WHEN BIN_AND(p.weapon, 12) <> 0 THEN 512
+           WHEN BIN_AND(p.weapon, 48) <> 0 THEN 1024 WHEN p.weapon = 64 THEN 2048 ELSE 0 END)
+   WHERE p.id = 1 AND BIN_AND(p.items, 3840) <> CASE WHEN BIN_AND(p.weapon, 3) <> 0 THEN 256 WHEN BIN_AND(p.weapon, 12) <> 0 THEN 512
+           WHEN BIN_AND(p.weapon, 48) <> 0 THEN 1024 WHEN p.weapon = 64 THEN 2048 ELSE 0 END;
+END^
+
 CREATE OR ALTER PROCEDURE sprint (msg VARCHAR(200))
 AS
 BEGIN
-  UPDATE player p SET p.msg = :msg, p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 3 WHERE p.id = 1;
+  -- three seconds on the message line from the frame's start (the PSQL clock is already at the frame's end; QuakeC
+  -- prints at sv.time, the start)
+  UPDATE player p SET p.msg = :msg, p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) - 0.05e0 + 3 WHERE p.id = 1;
 END^
 
 CREATE OR ALTER FUNCTION now_ () RETURNS DOUBLE PRECISION
@@ -277,7 +290,8 @@ DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMAL
 BEGIN
   SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz FROM ents e WHERE e.id = :eid
     INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
-  EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, px, py, pz, px, py, pz - 256, 1)
+  -- PF_droptofloor: 256 down, MOVE_NORMAL (monsters stop it too); no floor, or starting inside something, leaves it
+  EXECUTE PROCEDURE trace_move(eid, mnx, mny, mnz, mxx, mxy, mxz, px, py, pz, px, py, pz - 256, 0)
     RETURNING_VALUES f, ex, ey, ez, nx, ny, nz, als, sts, io, iw, hit;
   IF (f < 1 AND als = 0) THEN
     UPDATE ents e SET e.z = :ez, e.flags = BIN_OR(e.flags, 512) WHERE e.id = :eid;

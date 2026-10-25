@@ -307,13 +307,16 @@ DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE P
 DECLARE tid INTEGER; DECLARE tcls VARCHAR(40); DECLARE tst SMALLINT; DECLARE tn VARCHAR(40); DECLARE titems INTEGER; DECLARE thp INTEGER;
 DECLARE tdm INTEGER; DECLARE tlt DOUBLE PRECISION;
 BEGIN
-  -- SV_TouchLinks: triggers and items whose box we are in
-  SELECT e.x, e.y, e.z, e.minx, e.miny, e.minz, e.maxx, e.maxy, e.maxz FROM ents e WHERE e.id = :pe INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
+  -- SV_TouchLinks: triggers and items whose box we are in, the boxes as SV_LinkEdict makes absmin and absmax: a unit
+  -- bigger all round, and an item (FL_ITEM) 15 units bigger across, so it is picked up from a little way off
+  SELECT e.x, e.y, e.z, e.minx - 1, e.miny - 1, e.minz - 1, e.maxx + 1, e.maxy + 1, e.maxz + 1 FROM ents e WHERE e.id = :pe INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz;
   FOR SELECT e.id, e.classname FROM ents e
        WHERE e.solid = 1 AND e.id <> :pe
-         AND e.x + e.maxx >= :px + :mnx AND e.x + e.minx <= :px + :mxx
-         AND e.y + e.maxy >= :py + :mny AND e.y + e.miny <= :py + :mxy
-         AND e.z + e.maxz >= :pz + :mnz AND e.z + e.minz <= :pz + :mxz
+         AND e.x + e.maxx + IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) >= :px + :mnx
+         AND e.x + e.minx - IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) <= :px + :mxx
+         AND e.y + e.maxy + IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) >= :py + :mny
+         AND e.y + e.miny - IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) <= :py + :mxy
+         AND e.z + e.maxz + 1 >= :pz + :mnz AND e.z + e.minz - 1 <= :pz + :mxz
        ORDER BY e.id INTO tid, tcls
   DO
   BEGIN
@@ -538,6 +541,7 @@ BEGIN
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
     EXECUTE PROCEDURE player_impulse_due(t);
     EXECUTE PROCEDURE player_fire(fire);
+    EXECUTE PROCEDURE player_current_ammo;
     EXIT;
   END
 
@@ -757,11 +761,18 @@ BEGIN
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(524288)) WHERE p.id = 1 AND p.invisible_finished < :t AND BIN_AND(p.items, 524288) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(4194304)) WHERE p.id = 1 AND p.super_damage_finished < :t AND BIN_AND(p.items, 4194304) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(2097152)) WHERE p.id = 1 AND p.radsuit_finished < :t AND BIN_AND(p.items, 2097152) <> 0;
-  -- item_megahealth_rot: health over 100 from a megahealth (IT_SUPERHEALTH) rots a point a second; any
-  -- other health over 100 stays
-  UPDATE ents e SET e.health = e.health - 1 WHERE e.id = :pe AND e.health > 100 AND MOD((SELECT g.tic FROM game g WHERE g.id = 1), 20) = 0
-     AND BIN_AND((SELECT p.items FROM player p WHERE p.id = 1), 65536) <> 0;
-  UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(65536)) WHERE p.id = 1 AND (SELECT e.health FROM ents e WHERE e.id = :pe) <= 100;
+  -- item_megahealth_rot: from 5 s after a megahealth, a point of health a second while over 100, then IT_SUPERHEALTH
+  -- off; the megahealth's own think, so run in the tic it falls in (due before the frame's end) and stepped from its
+  -- due time (player.rot_time)
+  IF ((SELECT p.rot_time FROM player p WHERE p.id = 1) <= t + dt + 1e-6) THEN
+  BEGIN
+    IF ((SELECT e.health FROM ents e WHERE e.id = :pe) > 100) THEN
+    BEGIN
+      UPDATE ents e SET e.health = e.health - 1 WHERE e.id = :pe;
+      UPDATE player p SET p.rot_time = p.rot_time + 1 WHERE p.id = 1;
+    END
+    ELSE UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(65536)), p.rot_time = NULL WHERE p.id = 1;
+  END
 
   -- weapon (W_WeaponFrame)
   EXECUTE PROCEDURE player_impulse_due(t);
@@ -784,6 +795,7 @@ BEGIN
   IF (BIN_AND(flags, 512) = 0) THEN jf = vz;
   UPDATE player p SET p.jump_flag = :jf WHERE p.id = 1 AND p.jump_flag <> :jf;
   IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
+  EXECUTE PROCEDURE player_current_ammo;
   -- player animation
   UPDATE ents e SET e.anim = TRIM(IIF(ABS(e.vx) + ABS(e.vy) > 10, 'rockrun', 'stand')), e.anim_frame = MOD(CAST(:t * 10 AS INTEGER), 6) WHERE e.id = :pe;
 END^
