@@ -106,6 +106,19 @@ BEGIN
       UPDATE player p SET p.armortype = 0, p.items = BIN_AND(p.items, BIN_NOT(8192 + 16384 + 32768)) WHERE p.id = 1;
     END
     UPDATE player p SET p.armorvalue = p.armorvalue - :save, p.dmg_take = p.dmg_take + CEILING(:damage - :save), p.dmg_save = p.dmg_save + :save, p.dmg_time = now_() WHERE p.id = 1;
+    -- the inflictor's middle, for the view kick (SV_WriteClientdataToMessage: dmg_inflictor's origin + its box's
+    -- middle; the world's is the level's middle)
+    IF (inflictor IS NOT NULL AND inflictor > 0 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :inflictor)) THEN
+    BEGIN
+      SELECT e.x + (e.minx + e.maxx) / 2, e.y + (e.miny + e.maxy) / 2, e.z + (e.minz + e.maxz) / 2 FROM ents e WHERE e.id = :inflictor INTO dx, dy, dz;
+      UPDATE player p SET p.dmg_ent = :inflictor, p.dmg_x = :dx, p.dmg_y = :dy, p.dmg_z = :dz WHERE p.id = 1;
+    END
+    ELSE
+    BEGIN
+      SELECT (m.minx + m.maxx) / 2, (m.miny + m.maxy) / 2, (m.minz + m.maxz) / 2 FROM models m
+       WHERE m.id = (SELECT g.world_model FROM game g WHERE g.id = 1) INTO dx, dy, dz;
+      UPDATE player p SET p.dmg_ent = 0, p.dmg_x = :dx, p.dmg_y = :dy, p.dmg_z = :dz WHERE p.id = 1;
+    END
   END
   take = CEILING(damage - save);
 
@@ -331,6 +344,12 @@ BEGIN
     -- T_MissileTouch: 100 to 120 on what it hit, and a blast of 120 on the rest
     IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(rnd() * 20));
     EXECUTE PROCEDURE t_radius_damage(e1, own, 120, e2);
+    -- then the rocket backs off 8 units along its flight before it becomes the explosion: where a hit player's view
+    -- kick comes from at the frame's end
+    UPDATE player p SET p.dmg_x = p.dmg_x - 8 * (SELECT e.vx / NULLIF(vlen(e.vx, e.vy, e.vz), 0) FROM ents e WHERE e.id = :e1),
+                        p.dmg_y = p.dmg_y - 8 * (SELECT e.vy / NULLIF(vlen(e.vx, e.vy, e.vz), 0) FROM ents e WHERE e.id = :e1),
+                        p.dmg_z = p.dmg_z - 8 * (SELECT e.vz / NULLIF(vlen(e.vx, e.vy, e.vz), 0) FROM ents e WHERE e.id = :e1)
+     WHERE p.id = 1 AND p.dmg_ent = :e1;
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
     DELETE FROM ents e WHERE e.id = :e1;

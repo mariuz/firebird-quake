@@ -592,9 +592,19 @@ function viewRoll(time) {
   return roll;
 }
 
+// V_ParseDamage's view kick: a row that took a hit carries its pitch and roll (worked out in SQL from where the hit
+// came from, DMG_PITCH and DMG_ROLL); V_CalcViewRoll adds them to the view, fading out over v_kicktime (0.5 s)
+let kick = null;
+function viewKick(time) {
+  if ((last.DMG_PITCH || last.DMG_ROLL) && kick?.at !== last.TIME_) kick = { pitch: last.DMG_PITCH, roll: last.DMG_ROLL, at: last.TIME_ };
+  const f = kick && !last.DEAD && !last.INTERMISSION ? Math.max(0, 1 - (time - kick.at) / 0.5) : 0;
+  return f > 0 ? { pitch: kick.pitch * f, roll: kick.roll * f } : { pitch: 0, roll: 0 };
+}
+
 function drawFrame(faces, ents, styles, time, dt = 0.05, overlay = null) {
   const r = renderer;
-  const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH, roll: last.DEAD ? 60 : last.INTERMISSION ? 0 : viewRoll(time), fov: settings.fov };
+  const k = viewKick(time);
+  const view = { x: last.PX, y: last.PY, z: last.VIEW_Z, yaw: last.YAW, pitch: last.PITCH + k.pitch, roll: (last.DEAD ? 60 : last.INTERMISSION ? 0 : viewRoll(time)) + k.roll, fov: settings.fov };
   r.beginFrame(view);
   const dl = r.dlights = frameDlights({ ents, models: res.models, explosions, qc: settings.logic === 'qc', time,
     player: { x: last.PX, y: last.PY, z: last.PZ, yaw: last.YAW, muzzle: muzzleUntil > time - 0.05 && !last.DEAD, glow: !!(last.QUAD || last.INVINCIBLE) } });

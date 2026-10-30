@@ -320,8 +320,15 @@ to the same behaviour, with a test of its own:
   - `T_Damage` takes the damage as a fraction (`t_damage`'s `damage` is now `DOUBLE PRECISION`): the push is
     8 × all of it, the armor and the health take its ceiling; the blasts were rounded first.
   And the PSQL game's view kick on pain (2° up) is gone: `player_pain` has none. Quake's kick on damage is the
-  client's `V_ParseDamage` (`v_kickpitch`, `v_kickroll`, from the damage's direction), which the page does for
-  neither game yet.
+  client's `V_ParseDamage`, now done for both games (below).
+- ~~**The damage kick**~~ done (`dmg_kick` in `game.sql`, `viewKick` in `src/main.js`, `npm run test:parity`): a hit
+  jolts the view as `V_ParseDamage` and `V_CalcViewRoll` do: the count (half the health and half the armor the hit
+  took, at least 10) × 0.6 × the direction from the player to the inflictor's middle (`dmg_inflictor`, the world's
+  being the level's middle) along the body's forward (pitch) and right (roll), fading out over 0.5 s. The game works
+  out the direction, so both tic rows carry `DMG_PITCH` and `DMG_ROLL` for the tic of a hit (the PSQL game keeps the
+  inflictor in `player.dmg_x/y/z`, moved back 8 units after a rocket's blast as `T_MissileTouch` moves the rocket);
+  the page adds them to the view. The parity test compares them every tic (a rocket jump kicks both alike). The
+  SQL-projected renderer (the comparison mode) takes its pitch from the tables, so there only the roll shows.
 - ~~**Items, doors, buttons, lifts and the teleporter in the parity test**~~ done (`npm run test:parity`): the player
   walks into every kind of item E1M1 has in single player, two doors, two buttons, a lift and the teleporter, with
   the items bitmask, the armor type and the message line compared too (the monsters are moved out of the way first:

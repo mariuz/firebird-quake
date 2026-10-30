@@ -76,7 +76,8 @@ RETURNS (
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
   amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
-  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT)
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT,
+  dmg_pitch DOUBLE PRECISION, dmg_roll DOUBLE PRECISION)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE r INTEGER; DECLARE fl INTEGER;
 DECLARE vyaw DOUBLE PRECISION; DECLARE vpitch DOUBLE PRECISION; DECLARE va INTEGER; DECLARE fa INTEGER;
@@ -121,10 +122,24 @@ BEGIN
   fdt = qc_fdef('dmg_take'); fds = qc_fdef('dmg_save');
   dmg_take = CAST(qc_f(1, fdt) AS INTEGER); dmg_save = CAST(qc_f(1, fds) AS INTEGER);
   SELECT g.time_ FROM game g WHERE g.id = 1 INTO time_;
+  dmg_pitch = 0; dmg_roll = 0;
   IF (dmg_take <> 0 OR dmg_save <> 0) THEN
   BEGIN
     UPDATE player p SET p.dmg_time = :time_ WHERE p.id = 1;
     EXECUTE PROCEDURE qc_sf(1, fdt, 0); EXECUTE PROCEDURE qc_sf(1, fds, 0);
+    -- V_ParseDamage's view kick, from dmg_inflictor's middle (the world's: the level's middle)
+    SELECT dmg_kick(0, :dmg_take, :dmg_save, p.pitch, :vyaw, c.x, c.y, c.z, d.x + (d.minx + d.maxx) / 2, d.y + (d.miny + d.maxy) / 2, d.z + (d.minz + d.maxz) / 2),
+           dmg_kick(1, :dmg_take, :dmg_save, p.pitch, :vyaw, c.x, c.y, c.z, d.x + (d.minx + d.maxx) / 2, d.y + (d.miny + d.maxy) / 2, d.z + (d.minz + d.maxz) / 2)
+      FROM player p CROSS JOIN ents c CROSS JOIN ents d
+     WHERE p.id = 1 AND c.id = 1 AND d.id = CAST(qc_f(1, qc_fdef('dmg_inflictor')) AS INTEGER)
+      INTO dmg_pitch, dmg_roll;
+    IF (CAST(qc_f(1, qc_fdef('dmg_inflictor')) AS INTEGER) = 0) THEN
+      SELECT dmg_kick(0, :dmg_take, :dmg_save, p.pitch, :vyaw, c.x, c.y, c.z, (m.minx + m.maxx) / 2, (m.miny + m.maxy) / 2, (m.minz + m.maxz) / 2),
+             dmg_kick(1, :dmg_take, :dmg_save, p.pitch, :vyaw, c.x, c.y, c.z, (m.minx + m.maxx) / 2, (m.miny + m.maxy) / 2, (m.minz + m.maxz) / 2)
+        FROM player p CROSS JOIN ents c CROSS JOIN models m
+       WHERE p.id = 1 AND c.id = 1 AND m.id = (SELECT g.world_model FROM game g WHERE g.id = 1)
+        INTO dmg_pitch, dmg_roll;
+    dmg_pitch = COALESCE(dmg_pitch, 0); dmg_roll = COALESCE(dmg_roll, 0);
   END
   UPDATE player p SET p.view_ofs = :vo WHERE p.id = 1;
   SELECT g.tic, CAST(qc_f(1, qc_fdef('health')) AS INTEGER), CAST(qc_f(1, qc_fdef('armorvalue')) AS INTEGER), qc_f(1, qc_fdef('armortype')),

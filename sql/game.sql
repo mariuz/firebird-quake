@@ -90,6 +90,26 @@ BEGIN
   UPDATE player p SET p.cprint = :msg, p.cprint_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 2 WHERE p.id = 1;
 END^
 
+-- V_ParseDamage's view kick: count (half the health and half the armor the hit took, at least 10) × v_kickpitch or
+-- v_kickroll (0.6) × the hit's direction from the player's origin along the body's forward (axis 0: the pitch) or right
+-- (axis 1: the roll); the body's pitch is a third of the view's, turned over (SV_ClientThink: angles = -v_angle / 3)
+CREATE OR ALTER FUNCTION dmg_kick (axis SMALLINT, take INTEGER, save INTEGER, vpitch DOUBLE PRECISION, yaw DOUBLE PRECISION,
+  px DOUBLE PRECISION, py DOUBLE PRECISION, pz DOUBLE PRECISION, fx DOUBLE PRECISION, fy DOUBLE PRECISION, fz DOUBLE PRECISION)
+RETURNS DOUBLE PRECISION
+AS
+DECLARE cnt DOUBLE PRECISION; DECLARE l DOUBLE PRECISION; DECLARE bp DOUBLE PRECISION; DECLARE y DOUBLE PRECISION;
+BEGIN
+  IF (fx IS NULL) THEN RETURN 0;
+  cnt = MAXVALUE(10, take * 0.5e0 + save * 0.5e0);
+  fx = fx - px; fy = fy - py; fz = fz - pz;
+  l = SQRT(fx * fx + fy * fy + fz * fz);
+  IF (l = 0) THEN RETURN 0;
+  fx = fx / l; fy = fy / l; fz = fz / l;
+  bp = -vpitch / 3 * 0.0174532925e0; y = yaw * 0.0174532925e0;
+  IF (axis = 0) THEN RETURN cnt * 0.6e0 * (fx * COS(bp) * COS(y) + fy * COS(bp) * SIN(y) - fz * SIN(bp));
+  RETURN cnt * 0.6e0 * (fx * SIN(y) - fy * COS(y));
+END^
+
 -- W_SetCurrentAmmo's bits: IT_SHELLS, IT_NAILS, IT_ROCKETS or IT_CELLS for the weapon in hand (none for the axe)
 CREATE OR ALTER PROCEDURE player_current_ammo
 AS

@@ -352,6 +352,7 @@ CREATE TABLE player (
   free_x DOUBLE PRECISION, free_y DOUBLE PRECISION, free_z DOUBLE PRECISION,   -- SV_CheckStuck's oldorigin: the last place a move ended free
   drown_dmg SMALLINT DEFAULT 2 NOT NULL,                  -- WaterMove's self.dmg: the next drowning bite (2, 4 ... 14, then 10)
   rot_time DOUBLE PRECISION,                              -- item_megahealth_rot's next think
+  dmg_ent INTEGER, dmg_x DOUBLE PRECISION, dmg_y DOUBLE PRECISION, dmg_z DOUBLE PRECISION,   -- the last hit's inflictor (its box's middle): the view kick's direction
   jump_flag DOUBLE PRECISION DEFAULT 0 NOT NULL,          -- PlayerPostThink's: the vertical speed the last frame in the air left
   weapon_sound    SMALLINT DEFAULT 0 NOT NULL
 );

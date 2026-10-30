@@ -42,12 +42,13 @@ await P.db.exec('UPDATE ents SET health = 0, solid = 0, nextthink = NULL, think 
 await Q.db.exec("UPDATE ents SET solid = 0, x = x + 50000 WHERE BIN_AND(flags, 32) <> 0 OR id IN (SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) STARTING WITH 'monster_')");
 for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
 
-const tic = (g, i) => g.q1(`SELECT px, py, pz, yaw, pitch - punch pitch, punch, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe, waterlevel, msg FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, ${i.f ?? 0}, ${i.s ?? 0}, ${i.yaw ?? 0}, ${i.pitch ?? 0}, ${i.fire ?? 0}, ${i.jump ?? 0}, ${i.run ?? 1}, ${i.imp ?? 0})`);
+const tic = (g, i) => g.q1(`SELECT px, py, pz, yaw, pitch - punch pitch, punch, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe, waterlevel, msg, dmg_pitch, dmg_roll FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, ${i.f ?? 0}, ${i.s ?? 0}, ${i.yaw ?? 0}, ${i.pitch ?? 0}, ${i.fire ?? 0}, ${i.jump ?? 0}, ${i.run ?? 1}, ${i.imp ?? 0})`);
 const place = (x, y, z, vz = 0) => Promise.all([P, Q].map(async (g) => {
   await g.db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, vx = 0, vy = 0, vz = ${vz} WHERE id = 1`);
   await g.db.exec('EXECUTE PROCEDURE link_ent(1)');
 }));
-const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} at ${r.ARMORTYPE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS}/${r.CELLS} items ${r.ITEMS} w ${r.WEAPON} wf ${r.WEAPONFRAME} msg ${JSON.stringify(r.MSG)}`;
+const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} at ${r.ARMORTYPE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS}/${r.CELLS} items ${r.ITEMS} w ${r.WEAPON} wf ${r.WEAPONFRAME} kick ${r.DMG_PITCH.toFixed(2)}/${r.DMG_ROLL.toFixed(2)} msg ${JSON.stringify(r.MSG)}`;
+let maxKick = 0;     // the largest view kick seen (V_ParseDamage), both games agreeing
 // the same input to both, tic by tic: the first tic where they part, or null
 const play = async (inputs) => {
   let a, b;
@@ -56,9 +57,10 @@ const play = async (inputs) => {
     if (process.env.DBG && k >= +process.env.DBG - 4) { const sel = 'SELECT x, y, z, vx, vy, vz, flags, waterlevel wl FROM ents WHERE id = 1'; console.log('DBG', k, JSON.stringify(await P.q1(sel)), JSON.stringify(await Q.q1(sel))); }
     const near = Math.abs(a.PX - b.PX) < 0.01 && Math.abs(a.PY - b.PY) < 0.01 && Math.abs(a.PZ - b.PZ) < 0.01;
     if (Math.abs((((a.YAW - b.YAW) % 360) + 540) % 360 - 180) > 1e-6) return { k, a, b, why: 'YAW' };
-    for (const c of ['PITCH', 'PUNCH', 'WATERLEVEL', 'HEALTH', 'ARMORVALUE', 'ARMORTYPE', 'SHELLS', 'NAILS', 'ROCKETS', 'CELLS', 'ITEMS', 'WEAPON', 'WEAPONFRAME']) if (Math.abs(a[c] - b[c]) > 1e-6) return { k, a, b, why: c };
+    for (const c of ['PITCH', 'PUNCH', 'WATERLEVEL', 'HEALTH', 'ARMORVALUE', 'ARMORTYPE', 'SHELLS', 'NAILS', 'ROCKETS', 'CELLS', 'ITEMS', 'WEAPON', 'WEAPONFRAME', 'DMG_PITCH', 'DMG_ROLL']) if (Math.abs(a[c] - b[c]) > 1e-6) return { k, a, b, why: c };
     if ((a.MSG ?? '') !== (b.MSG ?? '')) return { k, a, b, why: 'MSG' };
     if (!near) return { k, a, b, why: 'position' };
+    maxKick = Math.max(maxKick, Math.abs(a.DMG_PITCH), Math.abs(a.DMG_ROLL));
   }
   return { k: inputs.length, a, b, why: null };
 };
@@ -94,7 +96,8 @@ await check('firing the shotgun', [...rep(1, { fire: 1 }), ...rep(12, {}), ...re
 for (const g of [P, Q]) for (const [a1, a2] of [['4', ''], ['n', '100'], ['7', ''], ['r', '10']]) await g.db.query('SELECT msg FROM host_cmd(?, ?, ?)', ['give', a1, a2]);
 await check('a weapon change waits for the shot', [{ imp: 2 }, ...rep(3, {}), { fire: 1 }, { imp: 4 }, ...rep(14, {})], (a) => a.WEAPON === 4);
 await check('the nailgun', [{ imp: 4 }, ...rep(5, {}), ...rep(25, { fire: 1 }), ...rep(15, {})], (a) => a.NAILS < 100 && a.WEAPON === 4);
-await check('a rocket jump', [{ imp: 7 }, ...rep(5, {}), { pitch: 80 }, { fire: 1, jump: 1 }, ...rep(25, {}), { pitch: -80 }], (a) => a.ROCKETS === 9 && a.HEALTH < 100);
+maxKick = 0;
+await check('a rocket jump', [{ imp: 7 }, ...rep(5, {}), { pitch: 80 }, { fire: 1, jump: 1 }, ...rep(25, {}), { pitch: -80 }], (a) => a.ROCKETS === 9 && a.HEALTH < 100 && maxKick > 1);
 
 // ── a fall from as high as the level allows onto a dry floor (the spot with the most room above it among the
 // entities' places) ──

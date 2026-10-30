@@ -441,7 +441,7 @@ layers mapped by the pixel's direction (`skyPixel`), both as special fill modes 
 routine. Texture animation (`+0name`…, `+aname` for pressed buttons) is `animSequence`. With the eye
 under a liquid surface the page calls `warpView` after the 3D (gun and particles included) and before
 the 2D: `D_WarpScreen`'s resampling through the sine table, rows and columns shifted by up to six
-pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcRoll`). See-through liquids
+pixels. Strafing rolls the view up to 2° (`viewRoll` in `src/main.js`, `V_CalcRoll`). A hit jolts it (`viewKick`, `V_ParseDamage` and `V_CalcViewRoll`): the tic row's `DMG_PITCH` and `DMG_ROLL`, which the game works out from the inflictor's direction (`dmg_kick`), added to the view and faded out over 0.5 s. See-through liquids
 (`liquidAlpha` below 1, the **Liquids** setting) are put aside by `drawFaces` when the map was vised for
 that liquid (`Bsp.seeThrough`, from the leaves' PVS) and drawn by `drawDeferred` after the models: depth
 tested, not written, each texel mixed with what is behind through `blendTable(alpha)`, the nearest

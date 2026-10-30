@@ -1209,13 +1209,14 @@ RETURNS (
   found_secrets INTEGER, total_secrets INTEGER, waterlevel SMALLINT, watertype INTEGER, map_name VARCHAR(32),
   level_msg VARCHAR(80), invincible SMALLINT, quad SMALLINT, invisible SMALLINT, suit SMALLINT, leaf INTEGER,
   amb_water INTEGER, amb_sky INTEGER, finale SMALLINT,
-  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT)
+  intermission SMALLINT, completed_time DOUBLE PRECISION, finale_text VARCHAR(1024), cdtrack SMALLINT, skill SMALLINT,
+  dmg_pitch DOUBLE PRECISION, dmg_roll DOUBLE PRECISION)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
 DECLARE wl SMALLINT; DECLARE wt INTEGER;
 BEGIN
   EXECUTE PROCEDURE demo_note(tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp);
-  SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
+  SELECT g.tic, g.time_ FROM game g WHERE g.id = 1 INTO tic, t;
   DELETE FROM sound_events s WHERE s.tic < :tic - 40;
   DELETE FROM fx_events f WHERE f.tic < :tic - 40;
   -- a muzzle flash lasts the frame it was sent in (SV_WriteEntitiesToClient clears EF_MUZZLEFLASH)
@@ -1235,13 +1236,16 @@ BEGIN
          g.found_secrets, g.total_secrets, e.waterlevel, e.watertype, g.map_name, g.level_msg,
          IIF(p.invincible_finished > g.time_, 1, 0), IIF(p.super_damage_finished > g.time_, 1, 0),
          IIF(p.invisible_finished > g.time_, 1, 0), IIF(p.radsuit_finished > g.time_, 1, 0), e.leaf,
-         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale, g.intermission, g.completed_time, g.finale_text, g.cdtrack, g.skill
+         COALESCE(l.ambient, 0), COALESCE(l.ambient_sky, 0), g.finale, g.intermission, g.completed_time, g.finale_text, g.cdtrack, g.skill,
+         -- a hit in these tics: V_ParseDamage's view kick, which the page fades out over v_kicktime (0.5 s)
+         IIF(p.dmg_time > :t + 1e-6 AND (p.dmg_take <> 0 OR p.dmg_save <> 0), dmg_kick(0, p.dmg_take, p.dmg_save, p.pitch, e.yaw, e.x, e.y, e.z, p.dmg_x, p.dmg_y, p.dmg_z), 0),
+         IIF(p.dmg_time > :t + 1e-6 AND (p.dmg_take <> 0 OR p.dmg_save <> 0), dmg_kick(1, p.dmg_take, p.dmg_save, p.pitch, e.yaw, e.x, e.y, e.z, p.dmg_x, p.dmg_y, p.dmg_z), 0)
     FROM game g CROSS JOIN player p JOIN ents e ON e.id = p.ent_id LEFT JOIN leaves l ON l.id = e.leaf
    WHERE g.id = 1 AND p.id = 1
     INTO tic, time_, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe,
          px, py, pz, yaw, pitch, view_z, punch, msg, cprint, dmg_take, dmg_save, dmg_time, bonus_time, dead, exit_kind, next_map,
          killed, total_monsters, found_secrets, total_secrets, waterlevel, watertype, map_name, level_msg, invincible, quad, invisible, suit, leaf,
-         amb_water, amb_sky, finale, intermission, completed_time, finale_text, cdtrack, skill;
+         amb_water, amb_sky, finale, intermission, completed_time, finale_text, cdtrack, skill, dmg_pitch, dmg_roll;
   UPDATE player p SET p.dmg_take = 0, p.dmg_save = 0 WHERE p.id = 1 AND p.dmg_time < :time_ - 0.05e0;
   SUSPEND;
 END^

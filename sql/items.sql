@@ -48,7 +48,7 @@ BEGIN
     BEGIN
       IF (hp >= 250) THEN EXIT;
       UPDATE ents e SET e.health = MINVALUE(e.health + 100, 250) WHERE e.id = :other;
-      UPDATE player p SET p.items = BIN_OR(p.items, 65536), p.dmg_time = :t, p.rot_time = :t + 5 WHERE p.id = 1;
+      UPDATE player p SET p.items = BIN_OR(p.items, 65536), p.rot_time = :t + 5 WHERE p.id = 1;
       snd_ = 'items/r_item2.wav'; msg = 'You receive 100 health';
     END
     ELSE IF (BIN_AND(sf, 1) <> 0) THEN                          -- rotten
