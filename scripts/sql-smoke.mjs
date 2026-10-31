@@ -298,6 +298,18 @@ const notEverywhere = new Set(['player/slimbrn2.wav']);
 const missing2 = refs.filter((n) => !registeredOnly.test(n) && !notEverywhere.has(n) && !pak.has('sound/' + n));
 assert(missing2.length === 0, `all referenced sounds exist in the pak (${missing2.join(', ') || 'none missing'})`);
 
+// the shortcuts past the world's tree: an entity linked where it stands has its origin's leaf (water_transition reads
+// the contents there), and corners_solid (check_bottom's quick test) says what four point_contents say
+{
+  const lf = (await db.query(`SELECT COUNT(*) n, SUM(IIF((SELECT l.contents FROM leaves l WHERE l.id = d.leaf) IS DISTINCT FROM point_contents(d.x, d.y, d.z), 1, 0)) bad
+    FROM ents d WHERE d.leaf IS NOT NULL AND d.lk_x = d.x AND d.lk_y = d.y AND d.lk_z = d.z`)).rows[0];
+  assert(lf.N > 0 && lf.BAD === 0, `the leaf of each of ${lf.N} linked entities has the contents at its origin`);
+  const cs = (await db.query(`SELECT COUNT(*) n, SUM(IIF(corners_solid(x - 16, y - 16, x + 16, y + 16, z) = IIF(point_contents(x - 16, y - 16, z) = -2 AND point_contents(x - 16, y + 16, z) = -2
+      AND point_contents(x + 16, y - 16, z) = -2 AND point_contents(x + 16, y + 16, z) = -2, 1, 0), 0, 1)) bad, SUM(corners_solid(x - 16, y - 16, x + 16, y + 16, z)) solid
+    FROM (SELECT m.ox + k.dx x, m.oy + k.dy y, m.oz - 25 z FROM map_ents m CROSS JOIN (SELECT -24 dx, 8 dy FROM rdb$database UNION ALL SELECT 0, 0 FROM rdb$database UNION ALL SELECT 17, -30 FROM rdb$database) k)`)).rows[0];
+  assert(cs.N > 0 && cs.BAD === 0 && cs.SOLID > 0 && cs.SOLID < cs.N, `corners_solid agrees with four point_contents at ${cs.N} spots (${cs.SOLID} all solid)`);
+}
+
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');
 process.exit(failed ? 1 : 0);

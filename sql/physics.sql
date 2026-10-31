@@ -99,6 +99,43 @@ BEGIN
   RETURN hull_contents(0, head, px, py, pz);
 END^
 
+-- SV_CheckBottom's quick test: are the four points (x0|x1, y0|y1, z) all in solid world? The four walk down hull 0
+-- together: each lookup (two levels, as hull_contents) moves on every corner at that node, so the levels they share
+-- are read once; 0 as soon as one lands outside solid
+CREATE OR ALTER FUNCTION corners_solid (x0 DOUBLE PRECISION, y0 DOUBLE PRECISION, x1 DOUBLE PRECISION, y1 DOUBLE PRECISION,
+  z DOUBLE PRECISION)
+RETURNS SMALLINT
+AS
+DECLARE n INTEGER; DECLARE a INTEGER; DECLARE b INTEGER; DECLARE c INTEGER; DECLARE d INTEGER;
+DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION; DECLARE nd DOUBLE PRECISION;
+DECLARE fx DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION; DECLARE fd DOUBLE PRECISION; DECLARE f0 INTEGER; DECLARE f1 INTEGER;
+DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE bz DOUBLE PRECISION; DECLARE bd DOUBLE PRECISION; DECLARE b0 INTEGER; DECLARE b1 INTEGER;
+BEGIN
+  SELECT m.hull0 FROM models m JOIN game g ON g.world_model = m.id WHERE g.id = 1 INTO n;
+  a = n; b = n; c = n; d = n;
+  WHILE (a >= 0 OR b >= 0 OR c >= 0 OR d >= 0) DO
+  BEGIN
+    n = CASE WHEN a >= 0 THEN a WHEN b >= 0 THEN b WHEN c >= 0 THEN c ELSE d END;
+    nx = NULL;
+    FOR SELECT h.nx, h.ny, h.nz, h.dist, h.f_nx, h.f_ny, h.f_nz, h.f_dist, h.f0, h.f1, h.b_nx, h.b_ny, h.b_nz, h.b_dist, h.b0, h.b1
+          FROM hulls h WHERE h.hull = 0 AND h.node = :n
+          INTO nx, ny, nz, nd, fx, fy, fz, fd, f0, f1, bx, by_, bz, bd, b0, b1 DO
+    BEGIN
+      IF (a = n) THEN a = IIF(nx * x0 + ny * y0 + nz * z - nd >= 0, IIF(fx * x0 + fy * y0 + fz * z - fd >= 0, f0, f1), IIF(bx * x0 + by_ * y0 + bz * z - bd >= 0, b0, b1));
+      IF (b = n) THEN b = IIF(nx * x0 + ny * y1 + nz * z - nd >= 0, IIF(fx * x0 + fy * y1 + fz * z - fd >= 0, f0, f1), IIF(bx * x0 + by_ * y1 + bz * z - bd >= 0, b0, b1));
+      IF (c = n) THEN c = IIF(nx * x1 + ny * y0 + nz * z - nd >= 0, IIF(fx * x1 + fy * y0 + fz * z - fd >= 0, f0, f1), IIF(bx * x1 + by_ * y0 + bz * z - bd >= 0, b0, b1));
+      IF (d = n) THEN d = IIF(nx * x1 + ny * y1 + nz * z - nd >= 0, IIF(fx * x1 + fy * y1 + fz * z - fd >= 0, f0, f1), IIF(bx * x1 + by_ * y1 + bz * z - bd >= 0, b0, b1));
+    END
+    IF (nx IS NULL) THEN RETURN 0;
+    -- a corner that has just reached a leaf: outside solid ends it (leaf 0, node -1, is the solid leaf)
+    IF (a < 0 AND a > -1000000) THEN BEGIN IF ((SELECT l.contents FROM leaves l WHERE l.id = -:a - 1) <> -2) THEN RETURN 0; a = -1000000; END
+    IF (b < 0 AND b > -1000000) THEN BEGIN IF ((SELECT l.contents FROM leaves l WHERE l.id = -:b - 1) <> -2) THEN RETURN 0; b = -1000000; END
+    IF (c < 0 AND c > -1000000) THEN BEGIN IF ((SELECT l.contents FROM leaves l WHERE l.id = -:c - 1) <> -2) THEN RETURN 0; c = -1000000; END
+    IF (d < 0 AND d > -1000000) THEN BEGIN IF ((SELECT l.contents FROM leaves l WHERE l.id = -:d - 1) <> -2) THEN RETURN 0; d = -1000000; END
+  END
+  RETURN 1;
+END^
+
 -- Is leaf `leaf` in the PVS string `pvs`? ('' = everything visible)
 CREATE OR ALTER FUNCTION pvs_visible (pvs d_pvs, leaf INTEGER)
 RETURNS SMALLINT
@@ -896,8 +933,7 @@ DECLARE frac DOUBLE PRECISION; DECLARE mid DOUBLE PRECISION; DECLARE ez DOUBLE P
 DECLARE bx DOUBLE PRECISION; DECLARE by_ DOUBLE PRECISION; DECLARE k INTEGER = 0;
 BEGIN
   SELECT d.x + d.minx, d.y + d.miny, d.z + d.minz, d.x + d.maxx, d.y + d.maxy FROM ents d WHERE d.id = :eid INTO x, y, z, a, b;
-  IF (point_contents(x, y, z - 1) = -2 AND point_contents(x, b, z - 1) = -2 AND point_contents(a, y, z - 1) = -2 AND point_contents(a, b, z - 1) = -2) THEN
-    RETURN 1;
+  IF (corners_solid(x, y, a, b, z - 1) = 1) THEN RETURN 1;
   -- the real check: the middle's floor within two steps below, and no corner more than a step below it
   SELECT t.fraction, t.ez FROM trace_move(:eid, 0, 0, 0, 0, 0, 0, (:x + :a) / 2, (:y + :b) / 2, :z, (:x + :a) / 2, (:y + :b) / 2, :z - 36, 1) t INTO frac, mid;
   IF (frac = 1) THEN RETURN 0;

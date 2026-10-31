@@ -50,7 +50,11 @@ CREATE OR ALTER PROCEDURE water_transition (e INTEGER)
 AS
 DECLARE cont INTEGER; DECLARE wt INTEGER;
 BEGIN
-  SELECT point_contents(d.x, d.y, d.z), d.watertype FROM ents d WHERE d.id = :e INTO cont, wt;
+  -- the contents at the origin: its leaf's, when it is linked where it stands (link_ent keeps the origin's leaf), else
+  -- a walk down the world's tree
+  SELECT IIF(d.leaf IS NOT NULL AND d.lk_x = d.x AND d.lk_y = d.y AND d.lk_z = d.z,
+             (SELECT l.contents FROM leaves l WHERE l.id = d.leaf), point_contents(d.x, d.y, d.z)), d.watertype
+    FROM ents d WHERE d.id = :e INTO cont, wt;
   IF (cont IS NULL) THEN EXIT;
   IF (wt = 0) THEN
     UPDATE ents d SET d.watertype = :cont, d.waterlevel = 1 WHERE d.id = :e;
