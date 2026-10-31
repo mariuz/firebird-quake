@@ -500,6 +500,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `bsp2-test.mjs` | BSP2 and 2PSB: E1M1 rewritten in both (`widen`), the same parse, rows, frame query and play |
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
+| `monster-parity-test.mjs` | a grunt, then a dog, against the player in both games from one seed, compared every tic with the shared random generator's state, until the player dies |
 | `parity-test.mjs` | the two games against each other: E1M1 loaded twice with one seed, the same input to `quake_tic` and `qc_tic` tic by tic, the player compared every tic (place, view, health, armor, ammo, weapon, view weapon frame) through movement, weapons, falls, liquids, items, doors, buttons, a lift and the teleporter; a scenario that parts prints the first tic and both rows (`DBG=n` the `ents` rows) |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |
 | `levels-test.mjs` | every level of the paks it is given (shareware by default; `PAK1` adds the registered ones), in both logics: the player's footing, health and monsters, the exits, `total_monsters` equal between the PSQL game and progs.dat, no QuakeC error |

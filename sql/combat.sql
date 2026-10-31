@@ -318,6 +318,12 @@ BEGIN
     EXECUTE PROCEDURE qc_impact(e1, e2);
     EXIT;
   END
+  -- a dog or fiend in its leap: Dog_JumpTouch, Demon_JumpTouch
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.attack_state = 5 AND e.mtype IN ('dog', 'demon1') AND e.health > 0)) THEN
+  BEGIN
+    EXECUTE PROCEDURE monster_jump_touch(e1, e2);
+    EXIT;
+  END
   SELECT e.classname, e.owner_id, e.dmg, e.x, e.y, e.z, e.vz FROM ents e WHERE e.id = :e1 INTO c1, own, dmg, x, y, z, vz;
   IF (e2 > 0) THEN SELECT e.classname, e.takedamage, e.health FROM ents e WHERE e.id = :e2 INTO c2, td2, hp2;
   ELSE BEGIN c2 = 'worldspawn'; td2 = 0; END

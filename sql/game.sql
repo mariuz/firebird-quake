@@ -26,6 +26,7 @@ CREATE OR ALTER PROCEDURE train_next (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE t_radius_damage (inflictor INTEGER, attacker INTEGER, damage INTEGER, ignore INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE player_fire (btn SMALLINT) AS BEGIN END^
+CREATE OR ALTER PROCEDURE monster_jump_touch (e1 INTEGER, e2 INTEGER) AS BEGIN END^
 -- the QuakeC VM's callbacks (sql/qcvm.sql): SV_Impact and a pusher's .blocked, in QuakeC mode
 CREATE OR ALTER PROCEDURE qc_impact (e1 INTEGER, e2 INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE qc_blocked (eid INTEGER, other INTEGER) AS BEGIN END^
@@ -175,7 +176,8 @@ AS
 DECLARE a DOUBLE PRECISION;
 BEGIN
   IF (x = 0 AND y = 0) THEN RETURN 0;
-  a = ATAN2(y, x) * 57.29577951308232e0;
+  -- whole degrees, as PF_vectoyaw casts them to int (atan2 * 180 / M_PI, in that order), as QuakeC mode's builtin does
+  a = TRUNC(ATAN2(y, x) * 180 / PI());
   IF (a < 0) THEN a = a + 360;
   RETURN a;
 END^

@@ -34,16 +34,21 @@ DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PREC
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE i INTEGER = 0; DECLARE r1 DOUBLE PRECISION; DECLARE r2 DOUBLE PRECISION;
 DECLARE td SMALLINT; DECLARE hp INTEGER;
+DECLARE vp DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE fx_ DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION;
+DECLARE multi_ent INTEGER; DECLARE multi_dmg DOUBLE PRECISION;
 BEGIN
-  -- right and up perpendicular to the aim direction
-  al = vlen(dx, dy, dz);
-  IF (al = 0) THEN EXIT;
-  dx = dx / al; dy = dy / al; dz = dz / al;
-  rx = dy; ry = -dx; rz = 0;
-  al = vlen(rx, ry, rz);
-  IF (al < 1e-6) THEN BEGIN rx = 1; ry = 0; rz = 0; al = 1; END
-  rx = rx / al; ry = ry / al; rz = rz / al;
-  ux = ry * dz - rz * dy; uy = rz * dx - rx * dz; uz = rx * dy - ry * dx;
+  -- FireBullets: makevectors(self.v_angle) (the view's angles for the player; a monster never sets v_angle, so its
+  -- spread runs along the world's -y and z whatever way it shoots), the shot from origin + v_forward * 10 at 0.7 of
+  -- the box's height; each pellet's direction is dir plus crandom() * spread along v_right, then along v_up
+  vp = 0; vy = 0;
+  IF (shooter = player_ent()) THEN
+    SELECT p.pitch, e.yaw FROM player p CROSS JOIN ents e WHERE p.id = 1 AND e.id = :shooter INTO vp, vy;
+  vp = vp * 0.0174532925e0; vy = vy * 0.0174532925e0;
+  fx_ = COS(vp) * COS(vy); fy = COS(vp) * SIN(vy);
+  rx = SIN(vy); ry = -COS(vy); rz = 0;
+  ux = SIN(vp) * COS(vy); uy = SIN(vp) * SIN(vy); uz = COS(vp);
+  SELECT e.x + :fx_ * 10, e.y + :fy * 10, e.z + e.minz + (e.maxz - e.minz) * 0.7e0 FROM ents e WHERE e.id = :shooter INTO ox, oy, oz;
+  multi_ent = NULL; multi_dmg = 0;
   WHILE (i < cnt) DO
   BEGIN
     r1 = (rnd() * 2 - 1) * spread_x; r2 = (rnd() * 2 - 1) * spread_y;
@@ -52,18 +57,28 @@ BEGIN
       RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
     IF (f < 1) THEN
     BEGIN
+      -- TraceAttack: the blood's direction, crandom() along v_up then along v_right (drawn for every hit)
+      r1 = rnd(); r2 = rnd();
       td = 0;
       IF (hit > 0) THEN SELECT e.takedamage, e.health FROM ents e WHERE e.id = :hit INTO td, hp;
       IF (td > 0) THEN
       BEGIN
-        EXECUTE PROCEDURE fx(3, hx, hy, hz, 0, 0, 0, 4);
-        EXECUTE PROCEDURE t_damage(hit, shooter, shooter, 4);
+        EXECUTE PROCEDURE fx(3, hx - ax * 4, hy - ay * 4, hz - az * 4, 0, 0, 0, 4);
+        -- AddMultiDamage: a run of pellets on one target is one T_Damage (ApplyMultiDamage when the target changes)
+        IF (hit IS DISTINCT FROM multi_ent) THEN
+        BEGIN
+          IF (multi_ent IS NOT NULL AND multi_dmg > 0) THEN EXECUTE PROCEDURE t_damage(multi_ent, shooter, shooter, multi_dmg);
+          multi_ent = hit; multi_dmg = 4;
+        END
+        ELSE multi_dmg = multi_dmg + 4;
       END
       ELSE IF (point_contents(hx, hy, hz) <> -6) THEN
         EXECUTE PROCEDURE fx(1, hx - ax * 4, hy - ay * 4, hz - az * 4, 0, 0, 0, 0);
     END
     i = i + 1;
   END
+  IF (multi_ent IS NOT NULL AND multi_dmg > 0 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :multi_ent)) THEN
+    EXECUTE PROCEDURE t_damage(multi_ent, shooter, shooter, multi_dmg);
 END^
 
 -- LightningDamage: everything on the beam from p1 to p2

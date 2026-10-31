@@ -15,7 +15,7 @@
     "test:boss": "node scripts/boss-test.mjs",
     "test:registered": "node scripts/registered-test.mjs",
     "test:infight": "node scripts/infight-test.mjs",
-    "test:parity": "node scripts/parity-test.mjs",
+    "test:parity": "node scripts/parity-test.mjs && node scripts/monster-parity-test.mjs",
     "test:skill": "node scripts/skill-test.mjs",
     "test:save": "node scripts/save-test.mjs",
     "test:demo": "node scripts/demo-test.mjs",

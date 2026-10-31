@@ -42,12 +42,11 @@ async function attacks(skill, wanted) {
   const magic = await q1(`SELECT a.first_frame f FROM anims a JOIN ents e ON e.model_id = a.model_id WHERE e.id = ${sham} AND a.anim = 'magic'`);
   let lastFx = (await q1('SELECT COALESCE(MAX(id), 0) m FROM fx_events')).M;
   const seen = [];        // per attack: the magic frames shown and the frames a bolt was cast on
-  let cur = null, prev = null;
+  let cur = null;
   for (let i = 0; i < 1200 && seen.filter((a) => a.done).length < wanted; i++) {
     await tic();
     const e = await q1(`SELECT st, frame FROM ents WHERE id = ${sham}`);
-    const castOn = prev ?? e.FRAME;     // a think casts on the frame it shows, then steps to the next
-    prev = e.FRAME;
+    const castOn = e.FRAME;            // a think casts as it enters its frame (the frame function sets $magic6, then casts)
     const bolts = await qa(`SELECT id FROM fx_events WHERE kind = 4 AND n = ${sham} AND id > ${lastFx}`);
     if (bolts.length) lastFx = bolts.at(-1).ID;
     if (e.ST === 'missile') {

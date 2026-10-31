@@ -81,6 +81,14 @@ CREATE TABLE models (
 CREATE INDEX models_name ON models (name);
 
 -- Frame runs of an alias model: "run1".."run6" → ('run', first, 6).
+-- the distance each walk and run frame of a monster moves it (id's ai_walk / ai_run constants, src/gamedata.js)
+CREATE TABLE frame_moves (
+  model VARCHAR(64) NOT NULL,
+  frame INTEGER NOT NULL,
+  dist  DOUBLE PRECISION NOT NULL,
+  PRIMARY KEY (model, frame)
+);
+
 CREATE TABLE anims (
   model_id INTEGER NOT NULL,
   anim     VARCHAR(16) NOT NULL,
@@ -423,6 +431,8 @@ CREATE TABLE monster_types (
   leap_snd    VARCHAR(64),                         -- a leap's landing on the enemy (Tar_JumpTouch)
   leap_dmg    INTEGER DEFAULT 0 NOT NULL,          -- added to a leap's 10 + rnd * 10 (the fiend's 10 more)
   leap_up     DOUBLE PRECISION DEFAULT 200 NOT NULL,   -- a leap's upward velocity (the fiend's 250)
+  leap_speed  DOUBLE PRECISION DEFAULT 300 NOT NULL,
+  melee_frames VARCHAR(40),                        -- the melee's further frames that strike (the knight swings on three, the ogre's chainsaw on six)   -- and forward (dog_leap2's v_forward * 300; the fiend and the spawn 600)
   leap_min    DOUBLE PRECISION DEFAULT 100 NOT NULL,   -- no leap from closer than this (the spawn jumps from anywhere)
   gib_snd     VARCHAR(64) DEFAULT 'player/udeath.wav' NOT NULL,   -- the zombie's z_gib
   missile_frames_nm VARCHAR(40),                   -- ',' separated frames that fire only on nightmare (sham_magic11)

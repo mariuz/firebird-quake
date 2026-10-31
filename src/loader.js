@@ -14,7 +14,7 @@ import { Bsp, parseVec } from './bsp.js';
 import { Mdl, Spr } from './mdl.js';
 import { FRAME_LAYOUTS } from './framelayouts.js';
 import { Progs } from './progs.js';
-import { MONSTERS, LIGHTSTYLES } from './gamedata.js';
+import { MONSTERS, LIGHTSTYLES, FRAME_MOVES } from './gamedata.js';
 
 const CHUNK = 30000;
 export const WORLD_ID_BASE = 0;           // ids below ITEM_ID_BASE are the current map
@@ -184,7 +184,7 @@ export async function savedTablesSql(db) {
  * Returns the model registry the JS renderer needs alongside.
  */
 export async function loadResources(db, pak, { width = 320, height = 200, fov = 90 } = {}) {
-  await db.exec('DELETE FROM anims; DELETE FROM models; DELETE FROM monster_types; DELETE FROM lightstyles; DELETE FROM game; DELETE FROM player; DELETE FROM viewcfg; ' +
+  await db.exec('DELETE FROM anims; DELETE FROM models; DELETE FROM monster_types; DELETE FROM frame_moves; DELETE FROM lightstyles; DELETE FROM game; DELETE FROM player; DELETE FROM viewcfg; ' +
     'DELETE FROM face_verts; DELETE FROM faces; DELETE FROM miptex; DELETE FROM hulls; DELETE FROM leaves; DELETE FROM marksurfaces; DELETE FROM ents; DELETE FROM map_ents');
 
   const res = { models: new Map(), byName: new Map(), bsps: new Map(), nextModel: 1, pak };
@@ -241,9 +241,12 @@ async function loadMonsterTypes(db) {
     'stand_anim', 'walk_anim', 'run_anim', 'pain_anims', 'death_anims', 'melee_anim', 'melee_frame', 'melee_range', 'melee_dmg',
     'missile_anim', 'missile_frames', 'missile_kind', 'attack_chance', 'pain_chance', 'sight_snd', 'idle_snd', 'pain_snd',
     'death_snd', 'attack_snd', 'melee_snd', 'gib_health', 'drop_item',
-    'melee_start_snd', 'missile_start_snd', 'leap_snd', 'leap_dmg', 'leap_up', 'leap_min', 'gib_snd', 'missile_frames_nm', 'missile_skip'];
+    'melee_start_snd', 'missile_start_snd', 'leap_snd', 'leap_dmg', 'leap_up', 'leap_speed', 'leap_min', 'melee_frames', 'gib_snd', 'missile_frames_nm', 'missile_skip'];
   const body = MONSTERS.map((m) => `INSERT INTO monster_types (${cols.join(', ')}) VALUES (${cols.map((c) => lit(m[c] ?? null)).join(', ')});`).join('\n');
   await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${body}\nEND^\nSET TERM ; ^`);
+  const moves = Object.entries(FRAME_MOVES).flatMap(([m, t]) => Object.entries(t).map(([f, d]) => `INSERT INTO frame_moves (model, frame, dist) VALUES (${lit(m)}, ${f}, ${d});`));
+  for (let i = 0; i < moves.length; i += 200)        // (a block takes at most 256 statements' contexts)
+    await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${moves.slice(i, i + 200).join('\n')}\nEND^\nSET TERM ; ^`);
 }
 
 export async function setView(db, width, height, fov = 90) {

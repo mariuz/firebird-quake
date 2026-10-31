@@ -365,6 +365,40 @@ to the same behaviour, with a test of its own:
   sounds in ten seconds, every one from a monster standing still, against 7 from walkers now
   (`monster_idle_sound`). Both games draw from the same seeded `rnd()`, which is what would let a later parity test
   follow a monster tic by tic: their random draws must come in the same order.
+- ~~**A monster in both games, tic by tic**~~ done (`scripts/monster-parity-test.mjs`, in `npm run test:parity`): one
+  grunt, then one dog, against the player in both games from the same seed, compared every tic, the shared random
+  generator's state included, which shows the two make the same draws in the same order. The grunt fights 205 tics
+  and the dog 94 alike, to the shot or bite that kills the player (the player's death is not compared). What it took,
+  read from `progs.dat` where the numbers live (the frame functions' code and constants):
+  - **Each frame's step**: id's frame functions hand `ai_walk`, `ai_run` and `ai_charge` their own distance
+    (`army_run1` 11, `run2` 15 …, `dog_run5` 64), where the PSQL game stepped a fixed speed a monster; now
+    `frame_moves` (`FRAME_MOVES` in `src/gamedata.js`, 437 frames of 13 monsters) gives the step of the frame a think
+    enters, and the attack frames charge (`ai_charge`: the dog closes in while it bites, the knights while they swing).
+  - **The frame, then the AI**: a frame function sets its frame first (`OP_STATE`); the PSQL run advanced it last,
+    so a think that started an attack left the frame and drew the run's idle sound twice. `FoundTarget` hands over to
+    `th_run` for the next think (the PSQL monster jumped into its run at once, a frame ahead); an attack's frame acts
+    on entering it (`army_atk5` fires as it sets `$shoot5`; the PSQL game acted on leaving it, a think late), and the
+    last attack frame goes on into `run1` with its move in the same think.
+  - **The idle sound's draw** before or after `ai_run`, as each frame function has it (`army_run1` draws first, the
+    ogre's and shambler's after); the order of draws decides what each draw is used for.
+  - **`FireBullets`**: two spread draws then, for a pellet that hits, `TraceAttack`'s two blood draws; one
+    `T_Damage` for a run of pellets on one target (`AddMultiDamage`); the shot from `origin + v_forward × 10` at 0.7
+    of the box, spread along `v_angle` (a monster never sets it, so along the world's axes); the grunt aiming at the
+    enemy less 0.2 s of its velocity.
+  - **The leap** (`dog_leap2`, `demon1_jump4`): along the monster's facing (300, the fiend's 600), a unit up,
+    `MOVETYPE_STEP` still, so it flies in `SV_Physics_Step`'s fall, which runs before the think and at the frame's
+    start (the PSQL game moved it after the think, a tic early); `Dog_JumpTouch` and `Demon_JumpTouch` bite what
+    they hit faster than 300 (400) and hand over to the run once over solid ground.
+  - **The blows**: `dog_bite` (r + r + r) × 8 and the knights', ogre's, shambler's and fish's formulas, the reach (100,
+    the knights' and fish's 60), `CanDamage`, and the frames that strike (`melee_frames`: the knight's three swings,
+    the ogre's six chainsaw frames, the fiend's two claws, the fish's three bites). As compiled, `random() + random()`
+    is the second draw twice (QCC calls both into the one return slot before adding): the first is drawn and lost.
+  - **The dog is 64 units wide** (`setsize '-32 -32 -24' '32 32 40'`, the shambler's hull for the world), not 32.
+  - `vectoyaw` in whole degrees, as `PF_vectoyaw` casts it; the frames that strike, from the frame functions
+    (`dog_atta4`, `knight_atk6`, `demon1_atta5`, the fiend's leap on `jump4`, `f_attack3`, `hknight_magicc6`), where
+    the gamedata had some one off; and two of its lines had lost their attack kind to a comment.
+  Not compared yet: the other monsters (their attack choices draw too: `ogre_melee`, `sham_melee`), the meat spray's
+  draws, pain and death, the player's death.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 
