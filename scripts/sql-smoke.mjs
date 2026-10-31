@@ -310,6 +310,22 @@ assert(missing2.length === 0, `all referenced sounds exist in the pak (${missing
   assert(cs.N > 0 && cs.BAD === 0 && cs.SOLID > 0 && cs.SOLID < cs.N, `corners_solid agrees with four point_contents at ${cs.N} spots (${cs.SOLID} all solid)`);
 }
 
+// the monsters' idle sounds come from id's frames (army_walk1, dog_run1 …: entering the first frame of the walk or the
+// run, one time in five), never from standing: ten seconds of the level, each idle sound checked against its maker
+if (!process.env.PAK) {
+  await db.exec("UPDATE ents SET flags = BIN_OR(flags, 128) WHERE id = (SELECT ent_id FROM player)");   // notarget
+  let n = 0, bad = 0;
+  for (let i = 0; i < 200; i++) {
+    const tc = (await tic([1, 0, 0, 0, 0, 0, 0, 1, 0])).TIC;
+    for (const r of (await db.query(`SELECT s.snd, e.st, e.anim_frame, e.mtype FROM sound_events s JOIN ents e ON e.id = s.ent_id
+        WHERE s.tic = ${tc} AND s.snd IN ('soldier/idle.wav', 'dog/idle.wav', 'zombie/z_idle.wav', 'ogre/ogidle.wav', 'ogre/ogidle2.wav', 'knight/idle.wav')`)).rows) {
+      n++;
+      if (!((r.ST === 'walk' || r.ST === 'run') && r.ANIM_FRAME === 0) && !(r.MTYPE === 'ogre')) bad++;
+    }
+  }
+  assert(n > 0 && bad === 0, `idle sounds on entering a walk's or run's first frame only (${n} in ten seconds, ${bad} otherwise)`);
+}
+
 await db.close();
 console.log(failed ? `${failed} FAILED` : 'all good');
 process.exit(failed ? 1 : 0);

@@ -274,6 +274,7 @@ CREATE TABLE ents (
   attack_finished DOUBLE PRECISION DEFAULT 0 NOT NULL,
   pain_finished   DOUBLE PRECISION DEFAULT 0 NOT NULL,
   search_time     DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  idle_time       DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- the wizard's waitmin: its next idle sound may come after it
   attack_state    SMALLINT DEFAULT 0 NOT NULL,   -- 1 straight 2 sliding 3 melee 4 missile
   lefty      SMALLINT DEFAULT 0 NOT NULL,
   -- items carried by boxes and backpacks

@@ -623,6 +623,48 @@ BEGIN
   END
 END^
 
+-- the idle sounds, as id's frame functions make them (read from progs.dat): on entering one frame of the walk or the
+-- run (army_walk1, army_run1, dog_, demon1_, knight_, enf_, shal_, the hell knight's hk_idle_sound) one time in
+-- five; the ogre on stand5 and walk3 (ogidle) and run1 (ogidle2); the shambler on walk12 and run6 (random() > 0.8);
+-- the zombie on walk19 and run18 (z_idle, and on run18 z_idle1 too, each one time in five); the fish on run1 one time
+-- in two; the scrag on walk1 and run1 (Wiz_idlesound: random() × 5 above 4.5 or below 1.5, at most every 2 s)
+CREATE OR ALTER PROCEDURE monster_idle_sound (eid INTEGER, mt VARCHAR(16), st VARCHAR(12), af INTEGER, idle_s VARCHAR(64))
+AS
+DECLARE wr DOUBLE PRECISION;
+BEGIN
+  IF (af = 0 AND st IN ('walk', 'run') AND mt IN ('army', 'dog', 'demon1', 'knight', 'enforcer', 'shalrath', 'hell_knight')) THEN
+  BEGIN
+    IF (rnd() < 0.2e0) THEN EXECUTE PROCEDURE snd(eid, 2, idle_s, 1, 2);
+  END
+  ELSE IF (mt = 'ogre' AND ((st = 'stand' AND af = 4) OR (st = 'walk' AND af = 2) OR (st = 'run' AND af = 0))) THEN
+  BEGIN
+    IF (rnd() < 0.2e0) THEN EXECUTE PROCEDURE snd(eid, 2, IIF(st = 'run', 'ogre/ogidle2.wav', 'ogre/ogidle.wav'), 1, 2);
+  END
+  ELSE IF (mt = 'shambler' AND ((st = 'walk' AND af = 11) OR (st = 'run' AND af = 5))) THEN
+  BEGIN
+    IF (rnd() > 0.8e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'shambler/sidle.wav', 1, 2);
+  END
+  ELSE IF (mt = 'zombie' AND ((st = 'walk' AND af = 18) OR (st = 'run' AND af = 17))) THEN
+  BEGIN
+    IF (rnd() < 0.2e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/z_idle.wav', 1, 2);
+    IF (st = 'run' AND rnd() > 0.8e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/z_idle1.wav', 1, 2);
+  END
+  ELSE IF (mt = 'fish' AND st = 'run' AND af = 0) THEN
+  BEGIN
+    IF (rnd() < 0.5e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'fish/idle.wav', 1, 1);
+  END
+  ELSE IF (mt = 'wizard' AND af = 0 AND st IN ('walk', 'run')) THEN
+  BEGIN
+    wr = rnd() * 5;
+    IF ((SELECT e.idle_time FROM ents e WHERE e.id = :eid) < now_()) THEN
+    BEGIN
+      UPDATE ents e SET e.idle_time = now_() + 2 WHERE e.id = :eid;
+      IF (wr > 4.5e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'wizard/widle1.wav', 1, 2);
+      IF (wr < 1.5e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'wizard/widle2.wav', 1, 2);
+    END
+  END
+END^
+
 -- the 10 Hz monster frame: the state machine of ai.qc
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER)
 AS
@@ -649,7 +691,8 @@ BEGIN
     IF (st = 'cruc') THEN
     BEGIN
       UPDATE ents e SET e.anim_frame = MOD(e.anim_frame + 1, 6), e.frame = COALESCE((SELECT a.first_frame FROM anims a WHERE a.model_id = :mid AND a.anim = 'cruc_'), 0) + MOD(e.anim_frame + 1, 6) WHERE e.id = :eid;
-      IF (rnd() < 0.02e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
+      -- zombie_cruc1: one time in ten as the six frames come round
+      IF (MOD((SELECT e.anim_frame FROM ents e WHERE e.id = :eid), 6) = 0 AND rnd() < 0.1e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
     END
     ELSE UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid;
     EXIT;
@@ -736,7 +779,6 @@ BEGIN
       EXECUTE PROCEDURE set_anim(eid, walk_a);
       EXIT;
     END
-    IF (st = 'stand' AND rnd() < 0.02e0 AND idle_s IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 2, idle_s, 1, 1);
     -- advance the frame
     af = af + 1;
     IF (af >= fc) THEN
@@ -750,6 +792,7 @@ BEGIN
       END
     END
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, af, idle_s);
     EXIT;
   END
 
@@ -814,6 +857,7 @@ BEGIN
       IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, run_spd * 3);
       af = MOD(af + 1, fc);
       UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+      EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, af, idle_s);
       EXIT;
     END
     IF (check_attack(eid) = 1) THEN EXIT;
@@ -832,6 +876,7 @@ BEGIN
     ELSE EXECUTE PROCEDURE change_yaw(eid);
     af = MOD(af + 1, fc);
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, af, idle_s);
     EXIT;
   END
 
