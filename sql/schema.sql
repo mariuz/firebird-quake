@@ -19,6 +19,8 @@ CREATE TABLE game (
   time_          DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- seconds, tic / 20
   sight_entity   INTEGER,                               -- FoundTarget: the monster that last saw the player, and when
   sight_entity_time DOUBLE PRECISION DEFAULT -1 NOT NULL,
+  check_time     DOUBLE PRECISION,                      -- checkclient: the leaf of the player's eye, kept for 0.1 s
+  check_leaf     INTEGER,                               -- (sv.lastchecktime, the leaf of PF_newcheckclient's checkpvs)
   map_name       VARCHAR(32),
   next_map       VARCHAR(32),                           -- set by trigger_changelevel
   exit_kind      SMALLINT DEFAULT 0 NOT NULL,           -- 0 playing, 1 change level, 3 restart (player died)
@@ -432,7 +434,9 @@ CREATE TABLE monster_types (
   leap_dmg    INTEGER DEFAULT 0 NOT NULL,          -- added to a leap's 10 + rnd * 10 (the fiend's 10 more)
   leap_up     DOUBLE PRECISION DEFAULT 200 NOT NULL,   -- a leap's upward velocity (the fiend's 250)
   leap_speed  DOUBLE PRECISION DEFAULT 300 NOT NULL,
-  melee_frames VARCHAR(40),                        -- the melee's further frames that strike (the knight swings on three, the ogre's chainsaw on six)   -- and forward (dog_leap2's v_forward * 300; the fiend and the spawn 600)
+  melee_frames VARCHAR(40),
+  melee_seq   VARCHAR(160),                        -- an attack's frames when they are not its animation's in order (id's frame chain: knight_atk1
+  missile_seq VARCHAR(160),                        -- goes on to $attackb3, ogre_nail shows $shoot2 twice); the strike lists count its positions                        -- the melee's further frames that strike (the knight swings on three, the ogre's chainsaw on six)   -- and forward (dog_leap2's v_forward * 300; the fiend and the spawn 600)
   leap_min    DOUBLE PRECISION DEFAULT 100 NOT NULL,   -- no leap from closer than this (the spawn jumps from anywhere)
   gib_snd     VARCHAR(64) DEFAULT 'player/udeath.wav' NOT NULL,   -- the zombie's z_gib
   missile_frames_nm VARCHAR(40),                   -- ',' separated frames that fire only on nightmare (sham_magic11)

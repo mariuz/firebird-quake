@@ -365,11 +365,13 @@ to the same behaviour, with a test of its own:
   sounds in ten seconds, every one from a monster standing still, against 7 from walkers now
   (`monster_idle_sound`). Both games draw from the same seeded `rnd()`, which is what would let a later parity test
   follow a monster tic by tic: their random draws must come in the same order.
-- ~~**A monster in both games, tic by tic**~~ done (`scripts/monster-parity-test.mjs`, in `npm run test:parity`): one
-  grunt, then one dog, against the player in both games from the same seed, compared every tic, the shared random
-  generator's state included, which shows the two make the same draws in the same order. The grunt fights 205 tics
-  and the dog 94 alike, to the shot or bite that kills the player (the player's death is not compared). What it took,
-  read from `progs.dat` where the numbers live (the frame functions' code and constants):
+- ~~**A monster in both games, tic by tic**~~ done (`scripts/monster-parity-test.mjs`, in `npm run test:parity`): each
+  shareware monster in turn (grunt, dog, knight, ogre, fiend, scrag, shambler, zombie) against the player in both
+  games from the same seed, compared every tic, the shared random generator's state included, which shows the two
+  make the same draws in the same order. Each fights alike to the blow that kills the player (the player's death is
+  not compared): the grunt 211 tics, the dog 94, the knight 131, the ogre 83, the fiend 92, the scrag 359, the
+  shambler 49, the zombie 307. What it took, read from `progs.dat` where the numbers live (the frame functions' code
+  and constants):
   - **Each frame's step**: id's frame functions hand `ai_walk`, `ai_run` and `ai_charge` their own distance
     (`army_run1` 11, `run2` 15 …, `dog_run5` 64), where the PSQL game stepped a fixed speed a monster; now
     `frame_moves` (`FRAME_MOVES` in `src/gamedata.js`, 437 frames of 13 monsters) gives the step of the frame a think
@@ -397,8 +399,36 @@ to the same behaviour, with a test of its own:
   - `vectoyaw` in whole degrees, as `PF_vectoyaw` casts it; the frames that strike, from the frame functions
     (`dog_atta4`, `knight_atk6`, `demon1_atta5`, the fiend's leap on `jump4`, `f_attack3`, `hknight_magicc6`), where
     the gamedata had some one off; and two of its lines had lost their attack kind to a comment.
-  Not compared yet: the other monsters (their attack choices draw too: `ogre_melee`, `sham_melee`), the meat spray's
-  draws, pain and death, the player's death.
+  - **The attack choices**: `ogre_melee` (smash or chainsaw on `random() > 0.5`), `sham_melee` (smash, right or
+    left), `knight_attack` (standing swing within 80, else the running one, `knight_runatk1`'s sword sound drawn),
+    `zombie_missile` (atta, attb or attc); attacks whose frames are not one run (`melee_seq`, `missile_seq`: the
+    ogre's grenade, the knight's swing, the scrag's spell); the chainsaw's turn of up to 25° a frame, `ogre_smash11`'s
+    later think, `sham_magic3`'s held charge (0.2 s), `zombie_attb14` showing `$attb13` again (a slip in
+    `zombie.qc`), the meat spray's draws (`SpawnMeatSpray`), `Demon_Melee`'s 12 units of closing before the reach.
+  - **The run keeps its course**: `ai_run` turns to the enemy only in the melee, missile and slide branches;
+    `movetogoal` steps along the `ideal_yaw` that `HuntTarget` set (the PSQL game never set it there) or the chase
+    picked, where the PSQL run aimed at the enemy every frame. `ai_charge` faces first (`knight_runatk1`).
+  - **The fiend's landing** goes on through `leap11` and `leap12` before its run; `demon1_jump10` waits 3 s in the air.
+  - **The zombie's throw** from `origin + st_x v_forward + st_y v_right + (st_z − 24) v_up`, at 600 with `velocity_z`
+    200, with the vectors left over from `PlayerPreThink`'s `makevectors(v_angle)` (the zombie's frames call none).
+  - **The scrag**: `WizardCheckAttack` enters `wiz_side1` or `wiz_run1` at once, an `ai_run` inside the one that
+    asked (its own check, slide or step, `Wiz_IdleSound`), and the outer slide then takes its `movedist` and
+    `enemy_yaw` (globals); sliding hovers on `hover1`–`hover8`; `wiz_fast10`'s `SUB_AttackFinished(2)` and
+    `WizardAttackFinished`'s choice; the spikes come from `Wiz_StartFast`'s two shooters, by its sides, at 0.3 and
+    0.8 s, aimed 13 units off the enemy (`wiz_fastfire`).
+  - **`spike_touch`'s blood** (`spawn_touchblood`): `wall_velocity`'s two draws before the damage, the player's
+    nails too.
+  - **`checkclient` keeps the player's eye leaf 0.1 s** (`game.check_time`, `check_leaf`), as `PF_newcheckclient`
+    does: a player who has just moved is looked for where it stood.
+  - **A think runs at its own time** (`SV_RunThink`: `time` is the `nextthink` it was given, not before the frame's
+    start), so what it times from then (`attack_finished`, the next think) rounds as QuakeC mode's does.
+  The duels keep the player out of the water (bubbles, below) and off triggers (E1M6's exit pit), still E1M6's lava
+  fireballs, and put the player on whole units (the angle to a spot at exactly −30.000° truncates to either whole
+  degree, QuakeC's floats and PSQL's doubles each their own way).
+  Not compared yet: pain and death, walking a path, the player's death.
+- **Air bubbles** in the PSQL game: none (`air_bubbles` is skipped at spawn; no `DeathBubbles` from a pain or a death
+  under water), where QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s; the monster duels keep the
+  player dry for it. The scrag's walk is its `fly` frames in the PSQL game, `hover1`–`hover8` in id's (`wiz_walk`).
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

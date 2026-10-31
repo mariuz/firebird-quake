@@ -27,6 +27,7 @@ CREATE OR ALTER PROCEDURE t_radius_damage (inflictor INTEGER, attacker INTEGER, 
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE player_fire (btn SMALLINT) AS BEGIN END^
 CREATE OR ALTER PROCEDURE monster_jump_touch (e1 INTEGER, e2 INTEGER) AS BEGIN END^
+CREATE OR ALTER PROCEDURE wizard_enter_run (eid INTEGER, side SMALLINT) AS BEGIN END^
 -- the QuakeC VM's callbacks (sql/qcvm.sql): SV_Impact and a pusher's .blocked, in QuakeC mode
 CREATE OR ALTER PROCEDURE qc_impact (e1 INTEGER, e2 INTEGER) AS BEGIN END^
 CREATE OR ALTER PROCEDURE qc_blocked (eid INTEGER, other INTEGER) AS BEGIN END^
@@ -93,6 +94,14 @@ CREATE OR ALTER PROCEDURE cprint (msg VARCHAR(200))
 AS
 BEGIN
   UPDATE player p SET p.cprint = :msg, p.cprint_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 2 WHERE p.id = 1;
+END^
+
+-- how far the frame a think enters moves the monster (its frame function's ai_walk or ai_run constant, frame_moves);
+-- a monster or model the table lacks steps by its type's speed
+CREATE OR ALTER FUNCTION frame_move (mid INTEGER, frame INTEGER, dflt DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+AS
+BEGIN
+  RETURN COALESCE((SELECT f.dist FROM models m JOIN frame_moves f ON f.model = m.name WHERE m.id = :mid AND f.frame = :frame), dflt);
 END^
 
 -- V_ParseDamage's view kick: count (half the health and half the armor the hit took, at least 10) × v_kickpitch or

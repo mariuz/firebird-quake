@@ -311,7 +311,7 @@ END^
 CREATE OR ALTER PROCEDURE impact (e1 INTEGER, e2 INTEGER)
 AS
 DECLARE c1 VARCHAR(40); DECLARE c2 VARCHAR(40); DECLARE own INTEGER; DECLARE dmg INTEGER; DECLARE td2 SMALLINT;
-DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE hp2 INTEGER;
+DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE hp2 INTEGER; DECLARE dmg2 DOUBLE PRECISION;
 BEGIN
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN
   BEGIN
@@ -334,6 +334,8 @@ BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END   -- sky
     IF (td2 > 0 AND hp2 > 0) THEN
     BEGIN
+      -- spawn_touchblood: wall_velocity's two random()s (the blood's spread), before the damage
+      dmg2 = rnd(); dmg2 = rnd();
       EXECUTE PROCEDURE fx(3, x, y, z, 0, 0, 0, dmg);
       EXECUTE PROCEDURE t_damage(e2, e1, own, dmg);
     END

@@ -130,10 +130,11 @@ CREATE OR ALTER FUNCTION find_target (eid INTEGER) RETURNS INTEGER
 AS
 DECLARE pe INTEGER; DECLARE r INTEGER; DECLARE inv DOUBLE PRECISION; DECLARE sh DOUBLE PRECISION;
 DECLARE client INTEGER; DECLARE se INTEGER; DECLARE set_ DOUBLE PRECISION; DECLARE sf INTEGER; DECLARE en INTEGER;
-DECLARE cen INTEGER; DECLARE cfl INTEGER; DECLARE t DOUBLE PRECISION; DECLARE pvs VARCHAR(8192) CHARACTER SET OCTETS;
+DECLARE cen INTEGER; DECLARE cfl INTEGER; DECLARE t DOUBLE PRECISION; DECLARE pvs VARCHAR(8192) CHARACTER SET OCTETS; DECLARE cl INTEGER;
 BEGIN
   -- FindTarget: the monster that saw the player in the last 0.1 s (sight_entity), unless this one waits in ambush
-  -- (spawnflags & 3); else the player, if this monster's leaf is in the PVS of the player's (checkclient)
+  -- (spawnflags & 3); else the player, if this monster's leaf is in the PVS of the player's eye (checkclient: that leaf
+  -- is found every 0.1 s, so a player who has just moved is seen from where it stood)
   t = now_();
   pe = player_ent();
   SELECT g.sight_entity, g.sight_entity_time FROM game g WHERE g.id = 1 INTO se, set_;
@@ -146,7 +147,13 @@ BEGIN
   END
   ELSE
   BEGIN
-    SELECT l.pvs FROM leaves l WHERE l.id = (SELECT e.leaf FROM ents e WHERE e.id = :pe) INTO pvs;
+    SELECT g.check_time, g.check_leaf FROM game g WHERE g.id = 1 INTO sh, cl;
+    IF (sh IS NULL OR t - sh >= 0.1e0 OR t < sh) THEN
+    BEGIN
+      SELECT point_leaf(e.x, e.y, e.z + p.view_ofs) FROM ents e CROSS JOIN player p WHERE e.id = :pe AND p.id = 1 INTO cl;
+      UPDATE game g SET g.check_time = :t, g.check_leaf = :cl WHERE g.id = 1;
+    END
+    SELECT l.pvs FROM leaves l WHERE l.id = :cl INTO pvs;
     IF (pvs_visible(pvs, (SELECT e.leaf FROM ents e WHERE e.id = :eid)) = 0) THEN RETURN 0;
     IF ((SELECT e.health FROM ents e WHERE e.id = :pe) <= 0) THEN RETURN 0;
     client = pe;
@@ -185,7 +192,9 @@ BEGIN
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
   UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5,
          e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
-  -- HuntTarget: think = th_run, so the run's first frame comes with the next think; until then the frame stays
+  -- HuntTarget: ideal_yaw toward the enemy (the run's movetogoal steps that way), think = th_run, so the run's first
+  -- frame comes with the next think; until then the frame stays
+  UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
   SELECT e.frame FROM ents e WHERE e.id = :eid INTO fr;
   EXECUTE PROCEDURE set_anim(eid, run_);
   UPDATE ents e SET e.frame = :fr, e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_), 0) WHERE e.id = :eid;
@@ -195,13 +204,76 @@ END^
 -- starting sound, without waiting to face the enemy as ai_run_melee and ai_run_missile do
 CREATE OR ALTER PROCEDURE start_attack (eid INTEGER, melee SMALLINT)
 AS
-DECLARE a VARCHAR(16); DECLARE ss VARCHAR(64);
+DECLARE a VARCHAR(16); DECLARE ss VARCHAR(64); DECLARE mt VARCHAR(16); DECLARE mid INTEGER; DECLARE fmv DOUBLE PRECISION;
+DECLARE r DOUBLE PRECISION; DECLARE hp INTEGER;
 BEGIN
-  SELECT IIF(:melee = 1, t.melee_anim, t.missile_anim), IIF(:melee = 1, t.melee_start_snd, t.missile_start_snd)
-    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO a, ss;
-  UPDATE ents e SET e.st = IIF(:melee = 1, 'melee', 'missile'), e.attack_state = 1 WHERE e.id = :eid;
+  SELECT IIF(:melee = 1, t.melee_anim, t.missile_anim), IIF(:melee = 1, t.melee_start_snd, t.missile_start_snd), e.mtype, e.model_id, e.health
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO a, ss, mt, mid, hp;
+  -- th_melee's choice: ogre_melee smashes when random() > 0.5, else swings; sham_melee smashes above 0.6 (or at full
+  -- health), swings right above 0.3, else left
+  IF (melee = 1 AND mt = 'ogre') THEN a = TRIM(IIF(rnd() > 0.5e0, 'smash', 'swing'));
+  ELSE IF (melee = 1 AND mt = 'shambler') THEN
+  BEGIN
+    r = rnd();
+    a = TRIM(IIF(r > 0.6e0 OR hp = 600, 'smash', IIF(r > 0.3e0, 'swingr', 'swingl')));
+  END
+  -- zombie_missile: random() below 0.3 throws from atta, below 0.6 from attb, else from attc
+  ELSE IF (melee = 0 AND mt = 'zombie') THEN
+  BEGIN
+    r = rnd();
+    a = TRIM(IIF(r < 0.3e0, 'atta', IIF(r < 0.6e0, 'attb', 'attc')));
+  END
+  -- knight_attack: closer than 80 eye to eye it stands and swings (knight_atk1), else it runs at the enemy, swinging as
+  -- it passes (knight_runatk1, whose sword sound is the first random draw)
+  ELSE IF (melee = 1 AND mt = 'knight') THEN
+  BEGIN
+    SELECT vlen(b.x - a.x, b.y - a.y, b.z + eye_height(b.id) - a.z - eye_height(a.id)) FROM ents a JOIN ents b ON b.id = a.enemy_id WHERE a.id = :eid INTO r;
+    IF (r >= 80) THEN
+    BEGIN
+      a = 'runattack';
+      ss = TRIM(IIF(rnd() > 0.5e0, 'knight/sword2.wav', 'knight/sword1.wav'));
+    END
+  END
+  UPDATE ents e SET e.st = TRIM(IIF(:melee = 1, 'melee', 'missile')), e.attack_state = 1 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, a);
   IF (ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, ss, 1, 1);
+  -- Wiz_StartFast (wiz_fast1): two shooters by its sides, 30 up and 14 ahead (makevectors(self.angles)), the left one
+  -- firing in 0.3 s, the right one in 0.8 s (wiz_fastfire); each aims 13 units off the enemy, to its own side
+  IF (melee = 0 AND mt = 'wizard') THEN
+  BEGIN
+    SELECT e.yaw * 0.0174532925e0 FROM ents e WHERE e.id = :eid INTO r;
+    INSERT INTO ents (id, classname, x, y, z, owner_id, enemy_id, dstx, dsty, think, nextthink)
+      SELECT NEXT VALUE FOR ent_seq, 'wiz_fastfire', e.x + COS(:r) * 14 + SIN(:r) * 14, e.y + SIN(:r) * 14 - COS(:r) * 14, e.z + 30, e.id, e.enemy_id,
+             SIN(:r), -COS(:r), 'wiz_fastfire', now_() + 0.8e0 FROM ents e WHERE e.id = :eid;
+    INSERT INTO ents (id, classname, x, y, z, owner_id, enemy_id, dstx, dsty, think, nextthink)
+      SELECT NEXT VALUE FOR ent_seq, 'wiz_fastfire', e.x + COS(:r) * 14 - SIN(:r) * 14, e.y + SIN(:r) * 14 + COS(:r) * 14, e.z + 30, e.id, e.enemy_id,
+             -SIN(:r), COS(:r), 'wiz_fastfire', now_() + 0.3e0 FROM ents e WHERE e.id = :eid;
+  END
+  -- the first frame's function runs now (th_melee calls it): its ai_charge, ai_face then the step
+  fmv = frame_move(mid, (SELECT e.frame FROM ents e WHERE e.id = :eid), NULL);
+  IF (fmv IS NOT NULL) THEN
+  BEGIN
+    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = e.enemy_id) - e.x, (SELECT n.y FROM ents n WHERE n.id = e.enemy_id) - e.y)
+     WHERE e.id = :eid AND e.enemy_id IS NOT NULL;
+    EXECUTE PROCEDURE change_yaw(eid);
+    EXECUTE PROCEDURE move_to_goal(eid, fmv);
+  END
+END^
+
+-- ai_run_slide: face the enemy (ideal_yaw = enemy_yaw, as the last ai_run worked it out), then walkmove(ideal_yaw ± 90,
+-- movedist), the other way if that side is blocked
+CREATE OR ALTER PROCEDURE ai_run_slide (eid INTEGER, dist DOUBLE PRECISION, ey DOUBLE PRECISION)
+AS
+DECLARE d DOUBLE PRECISION; DECLARE l SMALLINT; DECLARE ok SMALLINT;
+BEGIN
+  UPDATE ents e SET e.ideal_yaw = :ey WHERE e.id = :eid;
+  EXECUTE PROCEDURE change_yaw(eid);
+  SELECT e.ideal_yaw, e.lefty FROM ents e WHERE e.id = :eid INTO d, l;
+  IF (move_step(eid, COS((d + IIF(l = 1, 90, -90)) * 0.0174532925e0) * dist, SIN((d + IIF(l = 1, 90, -90)) * 0.0174532925e0) * dist, 0) = 0) THEN
+  BEGIN
+    UPDATE ents e SET e.lefty = 1 - e.lefty WHERE e.id = :eid;
+    ok = move_step(eid, COS((d - IIF(l = 1, 90, -90)) * 0.0174532925e0) * dist, SIN((d - IIF(l = 1, 90, -90)) * 0.0174532925e0) * dist, 0);
+  END
 END^
 
 -- CheckAnyAttack (ai.qc): nothing without sight of the enemy; then the monster's own check: SoldierCheckAttack,
@@ -275,10 +347,17 @@ BEGIN
   END
   IF (mt = 'wizard') THEN
   BEGIN
+    -- WizardCheckAttack: out of reach or without a clear shot it goes straight at the enemy, near it slides; each
+    -- change of mind enters its run (wiz_run1, wiz_side1) at once
     IF (t < af) THEN RETURN 0;
+    SELECT e.attack_state FROM ents e WHERE e.id = :eid INTO nm;
     IF (r = 3 OR (f < 1 AND hit IS DISTINCT FROM enemy)) THEN
     BEGIN
-      UPDATE ents e SET e.attack_state = 1 WHERE e.id = :eid;
+      IF (nm <> 1) THEN
+      BEGIN
+        UPDATE ents e SET e.attack_state = 1 WHERE e.id = :eid;
+        EXECUTE PROCEDURE wizard_enter_run(eid, 0);
+      END
       RETURN 0;
     END
     chance = DECODE(r, 0, 0.9e0, 1, 0.6e0, 2, 0.2e0, 0);
@@ -287,7 +366,16 @@ BEGIN
       UPDATE ents e SET e.attack_state = 4 WHERE e.id = :eid;
       RETURN 1;
     END
-    UPDATE ents e SET e.attack_state = IIF(:r = 2, 1, 2) WHERE e.id = :eid;
+    IF (r = 2 AND nm <> 1) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 1 WHERE e.id = :eid;
+      EXECUTE PROCEDURE wizard_enter_run(eid, 0);
+    END
+    ELSE IF (r <> 2 AND nm <> 2) THEN
+    BEGIN
+      UPDATE ents e SET e.attack_state = 2 WHERE e.id = :eid;
+      EXECUTE PROCEDURE wizard_enter_run(eid, 1);
+    END
     RETURN 0;
   END
   -- CheckAttack
@@ -342,7 +430,8 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
     dx = x2 - x1; dy = y2 - y1; dz = z2 - z1; dl = vlen(dx, dy, dz);
     IF (dl = 0) THEN EXIT;
-    EXECUTE PROCEDURE launch_grenade(eid, x1, y1, z1 + 16, dx / dl * 600, dy / dl * 600, dz / dl * 600 + 200, 40, 'progs/grenade.mdl', 2.5e0);
+    -- OgreFireGrenade: normalize(enemy - origin) * 600 with velocity_z then set to 200, from the ogre's origin
+    EXECUTE PROCEDURE launch_grenade(eid, x1, y1, z1, dx / dl * 600, dy / dl * 600, 200, 40, 'progs/grenade.mdl', 2.5e0);
   END
   ELSE IF (mk = 'wspike') THEN
   BEGIN
@@ -353,11 +442,20 @@ BEGIN
   ELSE IF (mk = 'gib') THEN
   BEGIN
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
-    dx = x2 - x1; dy = y2 - y1; dz = z2 - z1; dl = vlen(dx, dy, dz);
+    -- ZombieFireGrenade(st): from origin + st_x v_forward + st_y v_right + (st_z - 24) v_up (atta13 '-10 -22 30', attb14
+    -- '-10 -24 29', attc12 '-12 -19 29'), normalize(enemy - org) * 600 with velocity_z then set to 200. Its makevectors
+    -- comes after the origin is worked out, so the vectors are the ones left over: PlayerPreThink's makevectors(v_angle),
+    -- the player's view (the zombie's attack frames call none)
+    SELECT IIF(e.anim = 'attc', -12, -10), DECODE(e.anim, 'attb', -24, 'attc', -19, -22), IIF(e.anim = 'atta', 6, 5) FROM ents e WHERE e.id = :eid INTO f, nx, nz;
+    SELECT p.pitch * 0.0174532925e0, e.yaw * 0.0174532925e0 FROM player p CROSS JOIN ents e WHERE p.id = 1 AND e.id = player_ent() INTO ny, yaw;
+    hx = x1 + COS(ny) * COS(yaw) * f + SIN(yaw) * nx + SIN(ny) * COS(yaw) * nz;
+    hy = y1 + COS(ny) * SIN(yaw) * f - COS(yaw) * nx + SIN(ny) * SIN(yaw) * nz;
+    hz = z1 - SIN(ny) * f + COS(ny) * nz;
+    dx = x2 - hx; dy = y2 - hy; dz = z2 - hz; dl = vlen(dx, dy, dz);
     IF (dl = 0) THEN EXIT;
-    EXECUTE PROCEDURE spawn_ent('zombie_gib', x1, y1, z1 + 24) RETURNING_VALUES g;
+    EXECUTE PROCEDURE spawn_ent('zombie_gib', hx, hy, hz) RETURNING_VALUES g;
     EXECUTE PROCEDURE set_model(g, 'progs/zom_gib.mdl');
-    UPDATE ents e SET e.owner_id = :eid, e.movetype = 10, e.solid = 2, e.vx = :dx / :dl * 600, e.vy = :dy / :dl * 600, e.vz = :dz / :dl * 600 + 200,
+    UPDATE ents e SET e.owner_id = :eid, e.movetype = 10, e.solid = 2, e.vx = :dx / :dl * 600, e.vy = :dy / :dl * 600, e.vz = 200,
            e.avel_yaw = 300, e.think = 'remove', e.nextthink = now_() + 2.5e0 WHERE e.id = :g;
   END
   ELSE IF (mk = 'lavaball') THEN
@@ -442,6 +540,12 @@ BEGIN
     END
     EXIT;
   END
+  -- the fiend: think = demon1_jump11, the leap's last two frames before the run
+  IF (mt = 'demon1') THEN
+  BEGIN
+    UPDATE ents e SET e.st = 'missile', e.attack_state = 1, e.vx = 0, e.vy = 0, e.vz = 0, e.anim_frame = 9, e.nextthink = now_() + 0.1e0 WHERE e.id = :e1;
+    EXIT;
+  END
   -- think = dog_run1, the touch spent
   UPDATE ents e SET e.st = 'run', e.attack_state = 1, e.vx = 0, e.vy = 0, e.vz = 0, e.nextthink = now_() + 0.1e0 WHERE e.id = :e1;
   SELECT e.frame FROM ents e WHERE e.id = :e1 INTO fr;
@@ -449,11 +553,32 @@ BEGIN
   UPDATE ents e SET e.frame = :fr, e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_), 0) WHERE e.id = :e1;
 END^
 
+-- ai_charge_side: face the enemy, then walkmove 20 toward a point 30 units to its left (v_right of the monster's
+-- angles); ai_melee_side swings after it: within 60 and CanDamage, (random() + random() + random()) × 3 (2 r2 + r3)
+CREATE OR ALTER PROCEDURE knight_charge_side (eid INTEGER, swing SMALLINT)
+AS
+DECLARE enemy INTEGER; DECLARE yaw DOUBLE PRECISION; DECLARE h DOUBLE PRECISION; DECLARE ok SMALLINT; DECLARE r DOUBLE PRECISION;
+DECLARE d DOUBLE PRECISION;
+BEGIN
+  SELECT e.enemy_id FROM ents e WHERE e.id = :eid INTO enemy;
+  IF (enemy IS NULL) THEN EXIT;
+  UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+  EXECUTE PROCEDURE change_yaw(eid);
+  SELECT e.yaw * 0.0174532925e0 FROM ents e WHERE e.id = :eid INTO yaw;
+  SELECT vectoyaw(n.x - 30 * SIN(:yaw) - e.x, n.y + 30 * COS(:yaw) - e.y) FROM ents e CROSS JOIN ents n WHERE e.id = :eid AND n.id = :enemy INTO h;
+  ok = move_step(eid, COS(h * 0.0174532925e0) * 20, SIN(h * 0.0174532925e0) * 20, 0);
+  IF (swing = 0) THEN EXIT;
+  SELECT vlen(n.x - e.x, n.y - e.y, n.z - e.z) FROM ents e CROSS JOIN ents n WHERE e.id = :eid AND n.id = :enemy INTO d;
+  IF (d > 60 OR can_damage(enemy, eid) = 0) THEN EXIT;
+  r = rnd(); r = rnd(); r = r + r + rnd();
+  EXECUTE PROCEDURE t_damage(enemy, eid, eid, r * 3);
+END^
+
 -- ai_melee at the frame that hits
 CREATE OR ALTER PROCEDURE monster_melee (eid INTEGER)
 AS
 DECLARE enemy INTEGER; DECLARE d DOUBLE PRECISION; DECLARE dmg DOUBLE PRECISION; DECLARE ms VARCHAR(64); DECLARE mrange DOUBLE PRECISION; DECLARE mt VARCHAR(16);
-DECLARE r DOUBLE PRECISION;
+DECLARE r DOUBLE PRECISION; DECLARE k INTEGER;
 BEGIN
   SELECT e.enemy_id, t.melee_dmg, t.melee_snd, t.melee_range, e.mtype FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid
     INTO enemy, dmg, ms, mrange, mt;
@@ -464,19 +589,64 @@ BEGIN
   -- × 4, sham_smash10 × 40, fish_melee (random() + random()) × 3, Demon_Melee 10 + 5 random(). As compiled: QCC calls
   -- both randoms of a sum into the one return slot before adding it, so the first is drawn and lost, and the sum is
   -- the second twice (plus the third): 2 r2 + r3
+  IF (mt = 'ogre') THEN
+  BEGIN
+    -- chainsaw: CanDamage, its own ai_charge(10), then the reach
+    IF (can_damage(enemy, eid) = 0) THEN EXIT;
+    EXECUTE PROCEDURE move_to_goal(eid, 10);
+    SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
+  END
+  IF (mt = 'demon1') THEN
+  BEGIN
+    -- Demon_Melee: ai_face, then walkmove(ideal_yaw, 12), a little closing, before the reach
+    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+    EXECUTE PROCEDURE change_yaw(eid);
+    SELECT e.ideal_yaw * 0.0174532925e0 FROM ents e WHERE e.id = :eid INTO r;
+    k = move_step(eid, COS(r) * 12, SIN(r) * 12, 0);
+    SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
+  END
   IF (d IS NULL OR d > IIF(mt IN ('knight', 'hell_knight', 'fish'), 60, 100)) THEN EXIT;
-  IF (mt IN ('dog', 'demon1', 'ogre') AND can_damage(enemy, eid) = 0) THEN EXIT;
+  IF (mt IN ('dog', 'demon1') AND can_damage(enemy, eid) = 0) THEN EXIT;
   IF (ms IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, ms, 1, 1);
   IF (mt IN ('dog', 'knight', 'hell_knight', 'ogre', 'shambler', 'fish')) THEN
   BEGIN
     r = rnd(); r = rnd(); r = r + r;
     IF (mt <> 'fish') THEN r = r + rnd();
     dmg = r * DECODE(mt, 'dog', 8, 'knight', 3, 'hell_knight', 3, 'ogre', 4, 'shambler', 40, 3);
+    IF (mt = 'shambler' AND (SELECT e.anim FROM ents e WHERE e.id = :eid) <> 'smash') THEN dmg = r * 20;   -- ShamClaw
   END
   ELSE IF (mt = 'demon1') THEN dmg = 10 + 5 * rnd();
   ELSE dmg = dmg * (0.5e0 + rnd());
   EXECUTE PROCEDURE t_damage(enemy, eid, eid, dmg);
+  -- the meat sprays (SpawnMeatSpray: velocity_z + 250 + 50 random()), drawn as id draws them: the chainsaw on its side
+  -- frames (swing6, swing10: one; smash10: crandom() and one), ShamClaw and Demon_Melee (one), sham_smash10 (two
+  -- crandom()s and two)
+  SELECT e.anim, e.anim_frame FROM ents e WHERE e.id = :eid INTO ms, k;
+  IF (mt = 'ogre' AND ms = 'swing' AND k IN (5, 9)) THEN r = rnd();
+  ELSE IF (mt = 'ogre' AND ms = 'smash' AND k = 9) THEN BEGIN r = rnd(); r = rnd(); END
+  ELSE IF ((mt = 'shambler' AND ms IN ('swingl', 'swingr')) OR mt = 'demon1') THEN r = rnd();
+  ELSE IF (mt = 'shambler' AND ms = 'smash') THEN BEGIN r = rnd(); r = rnd(); r = rnd(); r = rnd(); END
   EXECUTE PROCEDURE fx(3, (SELECT e.x FROM ents e WHERE e.id = :enemy), (SELECT e.y FROM ents e WHERE e.id = :enemy), (SELECT e.z + 10 FROM ents e WHERE e.id = :enemy), 0, 0, 0, dmg);
+END^
+
+-- Wiz_FastFire: if the wizard still lives, a spike at 600 from the shooter toward the enemy's origin less 13 × movedir
+CREATE OR ALTER PROCEDURE wiz_fastfire (eid INTEGER)
+AS
+DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE mx DOUBLE PRECISION; DECLARE my DOUBLE PRECISION;
+DECLARE own INTEGER; DECLARE en INTEGER; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+BEGIN
+  SELECT e.x, e.y, e.z, e.dstx, e.dsty, e.owner_id, e.enemy_id FROM ents e WHERE e.id = :eid INTO x, y, z, mx, my, own, en;
+  IF (EXISTS (SELECT 1 FROM ents o WHERE o.id = :own AND o.health > 0)) THEN
+  BEGIN
+    UPDATE ents o SET o.effects = BIN_OR(o.effects, 2) WHERE o.id = :own;
+    SELECT n.x - 13 * :mx, n.y - 13 * :my, n.z FROM ents n WHERE n.id = :en INTO ex, ey, ez;
+    IF (ex IS NOT NULL) THEN
+    BEGIN
+      EXECUTE PROCEDURE snd_at(x, y, z, 'wizard/wattack.wav', 1, 1);
+      EXECUTE PROCEDURE launch_spike(own, x, y, z, ex - x, ey - y, ez - z, 600, 'wizspike');
+    END
+  END
+  DELETE FROM ents e WHERE e.id = :eid;
 END^
 
 -- ShalMissileHome: the vore's pod turns toward its target every 0.1 s
@@ -675,12 +845,21 @@ BEGIN
   END
 END^
 
--- how far the frame a think enters moves the monster (its frame function's ai_walk or ai_run constant, frame_moves);
--- a monster or model the table lacks steps by its type's speed
-CREATE OR ALTER FUNCTION frame_move (mid INTEGER, frame INTEGER, dflt DOUBLE PRECISION) RETURNS DOUBLE PRECISION
+-- the pos-th (from 0) number of a comma list, and how many it holds
+CREATE OR ALTER FUNCTION seq_at (seq VARCHAR(160), pos INTEGER) RETURNS INTEGER
+AS
+DECLARE p INTEGER = 1; DECLARE q INTEGER; DECLARE k INTEGER = 0;
+BEGIN
+  seq = seq || ',';
+  WHILE (k < pos) DO BEGIN p = POSITION(',', seq, p) + 1; k = k + 1; END
+  q = POSITION(',', seq, p);
+  RETURN CAST(SUBSTRING(seq FROM p FOR q - p) AS INTEGER);
+END^
+
+CREATE OR ALTER FUNCTION seq_len (seq VARCHAR(160)) RETURNS INTEGER
 AS
 BEGIN
-  RETURN COALESCE((SELECT f.dist FROM models m JOIN frame_moves f ON f.model = m.name WHERE m.id = :mid AND f.frame = :frame), dflt);
+  RETURN CHAR_LENGTH(seq) - CHAR_LENGTH(REPLACE(seq, ',', '')) + 1;
 END^
 
 -- the idle sounds, as id's frame functions make them (read from progs.dat): on entering one frame of the walk or the
@@ -740,25 +919,45 @@ BEGIN
 END^
 
 -- the 10 Hz monster frame: the state machine of ai.qc
+-- wiz_side1 and wiz_run1 called at once by WizardCheckAttack: the frame (hover1, fly1), then ai_run(8) or ai_run(16)
+-- inside the ai_run that asked (its own CheckAnyAttack, then the slide or movetogoal), then Wiz_IdleSound. The slide
+-- after it, in the ai_run that asked, takes this one's movedist and enemy_yaw (globals): monster_think reads them back
+CREATE OR ALTER PROCEDURE wizard_enter_run (eid INTEGER, side SMALLINT)
+AS
+DECLARE dist DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ctx INTEGER;
+BEGIN
+  EXECUTE PROCEDURE set_anim(eid, TRIM(IIF(side = 1, 'hover', 'fly')));
+  dist = IIF(side = 1, 8, 16);
+  SELECT vectoyaw(n.x - e.x, n.y - e.y) FROM ents e JOIN ents n ON n.id = e.enemy_id WHERE e.id = :eid INTO ey;
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'MOVEDIST', dist);
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'ENEMYYAW', ey);
+  IF (check_attack(eid) = 0) THEN
+  BEGIN
+    IF ((SELECT e.attack_state FROM ents e WHERE e.id = :eid) = 2) THEN EXECUTE PROCEDURE ai_run_slide(eid, dist, ey);
+    ELSE EXECUTE PROCEDURE move_to_goal(eid, dist);
+  END
+  EXECUTE PROCEDURE monster_idle_sound(eid, 'wizard', 'run', 0, NULL, 0);
+END^
+
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER)
 AS
 DECLARE st VARCHAR(12); DECLARE anim VARCHAR(16); DECLARE af INTEGER; DECLARE mid INTEGER; DECLARE enemy INTEGER; DECLARE flags INTEGER;
-DECLARE mt VARCHAR(16); DECLARE ehp INTEGER; DECLARE t DOUBLE PRECISION;
+DECLARE mt VARCHAR(16); DECLARE ehp INTEGER; DECLARE t DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ctx INTEGER;
 DECLARE ff INTEGER; DECLARE fc INTEGER; DECLARE atkst SMALLINT; DECLARE tgt VARCHAR(40); DECLARE goal INTEGER;
 DECLARE run_spd DOUBLE PRECISION; DECLARE walk_spd DOUBLE PRECISION; DECLARE stand_a VARCHAR(16); DECLARE walk_a VARCHAR(16); DECLARE run_a VARCHAR(16);
 DECLARE melee_a VARCHAR(16); DECLARE melee_f INTEGER; DECLARE missile_a VARCHAR(16); DECLARE missile_f VARCHAR(40); DECLARE idle_s VARCHAR(64);
 DECLARE melee_ss VARCHAR(64); DECLARE missile_ss VARCHAR(64); DECLARE leap_s VARCHAR(64); DECLARE leap_d INTEGER; DECLARE missile_nm VARCHAR(40); DECLARE missile_sk VARCHAR(40);
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE gx DOUBLE PRECISION; DECLARE gy DOUBLE PRECISION; DECLARE gz DOUBLE PRECISION;
 DECLARE d DOUBLE PRECISION; DECLARE gt VARCHAR(40); DECLARE gw DOUBLE PRECISION; DECLARE pvs d_pvs; DECLARE lf INTEGER; DECLARE ex DOUBLE PRECISION;
-DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE k SMALLINT; DECLARE melee_fs VARCHAR(40); DECLARE fmv DOUBLE PRECISION;
+DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE k SMALLINT; DECLARE melee_fs VARCHAR(40); DECLARE fmv DOUBLE PRECISION; DECLARE mseq VARCHAR(160); DECLARE sseq VARCHAR(160); DECLARE aseq VARCHAR(160); DECLARE afr INTEGER;
 BEGIN
   t = now_();
   SELECT e.st, e.anim, e.anim_frame, e.model_id, e.enemy_id, e.flags, e.mtype, e.attack_state, e.target, e.goal_id, e.x, e.y, e.z, e.leaf
     FROM ents e WHERE e.id = :eid INTO st, anim, af, mid, enemy, flags, mt, atkst, tgt, goal, x, y, z, lf;
   SELECT t.run_speed, t.walk_speed, t.stand_anim, t.walk_anim, t.run_anim, t.melee_anim, t.melee_frame, t.missile_anim, t.missile_frames, t.idle_snd,
-         t.melee_start_snd, t.missile_start_snd, t.leap_snd, t.leap_dmg, t.missile_frames_nm, t.missile_skip, t.melee_frames
+         t.melee_start_snd, t.missile_start_snd, t.leap_snd, t.leap_dmg, t.missile_frames_nm, t.missile_skip, t.melee_frames, t.melee_seq, t.missile_seq
     FROM monster_types t WHERE t.name = :mt INTO run_spd, walk_spd, stand_a, walk_a, run_a, melee_a, melee_f, missile_a, missile_f, idle_s,
-         melee_ss, missile_ss, leap_s, leap_d, missile_nm, missile_sk, melee_fs;
+         melee_ss, missile_ss, leap_s, leap_d, missile_nm, missile_sk, melee_fs, mseq, sseq;
   UPDATE ents e SET e.nextthink = :t + 0.1e0 WHERE e.id = :eid;
   IF (st = 'dead' OR st = 'cruc') THEN
   BEGIN
@@ -779,6 +978,7 @@ BEGIN
   END
   SELECT a.first_frame, a.frame_count FROM anims a WHERE a.model_id = :mid AND a.anim = :anim INTO ff, fc;
   IF (ff IS NULL) THEN BEGIN ff = 0; fc = 12; END   -- no such animation (model missing): a typical run length, so attack frames still come
+  IF (mt = 'wizard' AND anim = 'hover' AND st = 'run') THEN fc = 8;                -- wiz_side1..8: hover1..8
 
   -- the enemy died?
   IF (enemy IS NOT NULL) THEN
@@ -912,15 +1112,16 @@ BEGIN
       END
       LEAVE;
     END
-    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+    -- enemy_yaw: the melee, missile and slide branches turn to it; movetogoal keeps the ideal_yaw it has (FoundTarget's
+    -- or the chase's)
+    SELECT vectoyaw(n.x - e.x, n.y - e.y) FROM ents e CROSS JOIN ents n WHERE e.id = :eid AND n.id = :enemy INTO ey;
+    IF (atkst = 3 OR atkst = 4) THEN UPDATE ents e SET e.ideal_yaw = :ey WHERE e.id = :eid;
     IF (atkst = 3) THEN                                    -- ai_run_melee
     BEGIN
       EXECUTE PROCEDURE change_yaw(eid);
       IF (facing_ideal(eid) = 1) THEN
       BEGIN
-        UPDATE ents e SET e.st = 'melee', e.attack_state = 1 WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, melee_a);
-        IF (melee_ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, melee_ss, 1, 1);
+        EXECUTE PROCEDURE start_attack(eid, 1);
       END
       LEAVE;
     END
@@ -929,9 +1130,10 @@ BEGIN
       EXECUTE PROCEDURE change_yaw(eid);
       IF (facing_ideal(eid) = 1) THEN
       BEGIN
-        UPDATE ents e SET e.st = 'missile', e.attack_state = 1 WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, missile_a);
-        IF (missile_ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, missile_ss, 1, 1);
+        -- (the wizard's WizardAttackFinished, at the attack's end, reads enemy_range and enemy_vis as this ai_run left
+        -- them: near and in sight it will slide, else go straight; kept in count_)
+        IF (mt = 'wizard') THEN UPDATE ents e SET e.count_ = IIF(ent_range(:eid, :enemy) < 2 AND visible(:eid, :enemy) = 1, 2, 1) WHERE e.id = :eid;
+        EXECUTE PROCEDURE start_attack(eid, 0);
       END
       LEAVE;
     END
@@ -943,18 +1145,14 @@ BEGIN
       IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + af, run_spd) * 3);
       LEAVE;
     END
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'MOVEDIST', NULL);
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'ENEMYYAW', NULL);
     IF (check_attack(eid) = 1) THEN LEAVE;
     IF ((SELECT e.attack_state FROM ents e WHERE e.id = :eid) = 2) THEN
     BEGIN
-      -- ai_run_slide: face the enemy and step sideways, the other way if that side is blocked
-      EXECUTE PROCEDURE change_yaw(eid);
-      SELECT e.ideal_yaw, e.lefty FROM ents e WHERE e.id = :eid INTO d, flags;
-      ex = frame_move(mid, ff + af, run_spd);
-      IF (move_step(eid, COS((d + IIF(flags = 1, 90, -90)) * 0.0174532925e0) * ex, SIN((d + IIF(flags = 1, 90, -90)) * 0.0174532925e0) * ex, 0) = 0) THEN
-      BEGIN
-        UPDATE ents e SET e.lefty = 1 - e.lefty WHERE e.id = :eid;
-        d = move_step(eid, COS((d - IIF(flags = 1, 90, -90)) * 0.0174532925e0) * ex, SIN((d - IIF(flags = 1, 90, -90)) * 0.0174532925e0) * ex, 0);
-      END
+      -- ai_run_slide, by movedist: this frame's, or a wiz_side1 or wiz_run1 entered inside check_attack's
+      EXECUTE PROCEDURE ai_run_slide(eid, COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'MOVEDIST') AS DOUBLE PRECISION), frame_move(mid, ff + af, run_spd)),
+        COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'ENEMYYAW') AS DOUBLE PRECISION), ey));
     END
     ELSE IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + af, run_spd));
     ELSE EXECUTE PROCEDURE change_yaw(eid);
@@ -972,24 +1170,53 @@ BEGIN
       EXECUTE PROCEDURE change_yaw(eid);
     END
     -- the next frame, as the frame function that sets it acts (army_atk5 fires on entering $shoot5), over the frames
-    -- never shown (sham_magic6 goes on to sham_magic9)
+    -- never shown (sham_magic6 goes on to sham_magic9); an attack with its own sequence of frames counts positions in it
+    aseq = IIF(st = 'melee', mseq, sseq);
+    IF (aseq IS NOT NULL AND anim = IIF(st = 'melee', melee_a, missile_a)) THEN fc = seq_len(aseq); ELSE aseq = NULL;
     af = af + 1;
     WHILE (st = 'missile' AND missile_sk IS NOT NULL AND POSITION(',' || af || ',', ',' || missile_sk || ',') > 0) DO af = af + 1;
     IF (af >= fc) THEN
     BEGIN
-      -- the last frame's function goes on to th_run: run1 comes now, with its think (the run's move)
+      -- the last frame's function goes on to th_run: run1 comes now, with its think (the run's move); the wizard's to
+      -- wiz_side1 or wiz_run1, as WizardAttackFinished chose
       UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;
+      IF (mt = 'wizard') THEN
+      BEGIN
+        UPDATE ents e SET e.attack_state = e.count_ WHERE e.id = :eid;
+        run_a = TRIM(IIF((SELECT e.count_ FROM ents e WHERE e.id = :eid) = 2, 'hover', 'fly'));
+      END
       EXECUTE PROCEDURE set_anim(eid, run_a);
-      UPDATE ents e SET e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0) WHERE e.id = :eid;
+      UPDATE ents e SET e.anim_frame = IIF(:run_a = 'hover', 7, COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0)) WHERE e.id = :eid;
       EXECUTE PROCEDURE monster_think(eid);
       EXIT;
     END
-    UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    afr = IIF(aseq IS NULL, ff + af, seq_at(aseq, af));
+    IF (mt = 'zombie' AND anim = 'attb' AND af = 13) THEN afr = afr - 1;    -- zombie_attb14 shows $attb13 again (zombie.qc)
+    UPDATE ents e SET e.anim_frame = :af, e.frame = :afr WHERE e.id = :eid;
+    -- demon1_jump10: in the air, the next think 3 s off (stuck, it leaps again from demon1_jump1); landing comes first
+    IF (st = 'missile' AND mt = 'demon1' AND anim = missile_a AND af = 9) THEN UPDATE ents e SET e.anim_frame = -1, e.nextthink = :t + 3 WHERE e.id = :eid;
     -- ai_charge(n): the frame's step at the enemy (movetogoal), before its blow
-    fmv = frame_move(mid, ff + af, NULL);
+    fmv = frame_move(mid, afr, NULL);
     IF (fmv IS NOT NULL AND enemy IS NOT NULL) THEN EXECUTE PROCEDURE move_to_goal(eid, fmv);
-    IF (st = 'melee' AND (af = melee_f OR POSITION(',' || af || ',', ',' || COALESCE(melee_fs, '') || ',') > 0)) THEN EXECUTE PROCEDURE monster_melee(eid);
-    IF (st = 'missile' AND POSITION(',' || af || ',', ',' || missile_f || ',') > 0) THEN EXECUTE PROCEDURE monster_missile(eid);
+    -- knight_runatk2..10: ai_charge_side (a pass to the enemy's left), the middle five swinging (ai_melee_side)
+    IF (st = 'melee' AND mt = 'knight' AND anim = 'runattack' AND af BETWEEN 1 AND 9 AND enemy IS NOT NULL) THEN
+      EXECUTE PROCEDURE knight_charge_side(eid, IIF(af BETWEEN 4 AND 8, 1, 0));
+    IF (st = 'melee' AND anim = melee_a AND (af = melee_f OR POSITION(',' || af || ',', ',' || COALESCE(melee_fs, '') || ',') > 0)) THEN EXECUTE PROCEDURE monster_melee(eid);
+    -- the other blows: ogre_swing5..11 (the chainsaw; the ogre turns up to 25 degrees on each), sham_swingl7, swingr7
+    IF (st = 'melee' AND mt = 'ogre' AND anim = 'swing' AND af BETWEEN 4 AND 10) THEN
+    BEGIN
+      EXECUTE PROCEDURE monster_melee(eid);
+      UPDATE ents e SET e.yaw = e.yaw + rnd() * 25 WHERE e.id = :eid;
+    END
+    IF (st = 'melee' AND mt = 'shambler' AND anim IN ('swingl', 'swingr') AND af = 6) THEN EXECUTE PROCEDURE monster_melee(eid);
+    -- wiz_fast10: SUB_AttackFinished(2)
+    IF (st = 'missile' AND mt = 'wizard' AND anim = missile_a AND af = 9 AND nightmare() = 0) THEN UPDATE ents e SET e.attack_finished = :t + 2 WHERE e.id = :eid;
+    -- sham_magic3: the next think 0.2 s later (the charge held)
+    IF (st = 'missile' AND mt = 'shambler' AND anim = 'magic' AND af = 2) THEN UPDATE ents e SET e.nextthink = e.nextthink + 0.2e0 WHERE e.id = :eid;
+    -- ogre_smash11: the next think up to 0.2 s later
+    IF (st = 'melee' AND mt = 'ogre' AND anim = 'smash' AND af = 10) THEN UPDATE ents e SET e.nextthink = e.nextthink + rnd() * 0.2e0 WHERE e.id = :eid;
+    -- (the zombie throws on its throw's last frame: atta13, attb14, attc12)
+    IF (st = 'missile' AND POSITION(',' || af || ',', ',' || missile_f || ',') > 0 AND (mt <> 'zombie' OR af = fc - 1)) THEN EXECUTE PROCEDURE monster_missile(eid);
     -- the frames that fire only on nightmare (shambler.qc: sham_magic11 casts a fourth bolt)
     IF (st = 'missile' AND missile_nm IS NOT NULL AND nightmare() = 1 AND POSITION(',' || af || ',', ',' || missile_nm || ',') > 0) THEN EXECUTE PROCEDURE monster_missile(eid);
     EXIT;
@@ -1248,6 +1475,7 @@ BEGIN
   ELSE IF (think = 'delayed_use') THEN EXECUTE PROCEDURE delayed_use(eid);
   ELSE IF (think = 'grenade_explode') THEN EXECUTE PROCEDURE grenade_explode(eid);
   ELSE IF (think = 'vore_track') THEN EXECUTE PROCEDURE vore_track(eid);
+  ELSE IF (think = 'wiz_fastfire') THEN EXECUTE PROCEDURE wiz_fastfire(eid);
   ELSE IF (think = 'teleporttrain_next') THEN EXECUTE PROCEDURE teleporttrain_next(eid);
   ELSE IF (think = 'remove') THEN DELETE FROM ents e WHERE e.id = :eid;
   ELSE IF (think = 'monster_think') THEN EXECUTE PROCEDURE monster_think(eid);
@@ -1289,10 +1517,14 @@ BEGIN
   END
   -- thinks that are due (non-pushers)
   -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
-  FOR SELECT e.id, e.think FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY e.id INTO eid, think DO
+  -- (SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what
+  -- it times from then, attack_finished, pain_finished, its next think, counts from there, as in QuakeC mode)
+  FOR SELECT e.id, e.think, e.nextthink FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY e.id INTO eid, think, nt DO
   BEGIN
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
+    IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
     EXECUTE PROCEDURE run_think(eid, think);
+    IF (nt <> t) THEN UPDATE game g SET g.time_ = :t WHERE g.id = 1;
     -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
     IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.movetype IN (4, 5) AND e.health > 0)) THEN
       EXECUTE PROCEDURE water_transition(eid);
@@ -1401,7 +1633,7 @@ BEGIN
   UPDATE demo d SET d.recording = 0 WHERE d.id = 1;      -- a demo is one level
   -- the edicts are numbered from 1 again (loadMap emptied ents), so a replay makes the same ids
   i = GEN_ID(ent_seq, -GEN_ID(ent_seq, 0));
-  UPDATE game g SET g.tic = 0, g.time_ = 0, g.sight_entity = NULL, g.sight_entity_time = -1, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
+  UPDATE game g SET g.tic = 0, g.time_ = 0, g.sight_entity = NULL, g.sight_entity_time = -1, g.check_time = NULL, g.check_leaf = NULL, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
          g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
          g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1,
          g.gravity = IIF(LOWER(:map_name) = 'e1m8', 100, 800) WHERE g.id = 1;   -- worldspawn: Ziggurat Vertigo has low gravity

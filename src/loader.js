@@ -241,7 +241,7 @@ async function loadMonsterTypes(db) {
     'stand_anim', 'walk_anim', 'run_anim', 'pain_anims', 'death_anims', 'melee_anim', 'melee_frame', 'melee_range', 'melee_dmg',
     'missile_anim', 'missile_frames', 'missile_kind', 'attack_chance', 'pain_chance', 'sight_snd', 'idle_snd', 'pain_snd',
     'death_snd', 'attack_snd', 'melee_snd', 'gib_health', 'drop_item',
-    'melee_start_snd', 'missile_start_snd', 'leap_snd', 'leap_dmg', 'leap_up', 'leap_speed', 'leap_min', 'melee_frames', 'gib_snd', 'missile_frames_nm', 'missile_skip'];
+    'melee_start_snd', 'missile_start_snd', 'leap_snd', 'leap_dmg', 'leap_up', 'leap_speed', 'leap_min', 'melee_frames', 'melee_seq', 'missile_seq', 'gib_snd', 'missile_frames_nm', 'missile_skip'];
   const body = MONSTERS.map((m) => `INSERT INTO monster_types (${cols.join(', ')}) VALUES (${cols.map((c) => lit(m[c] ?? null)).join(', ')});`).join('\n');
   await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${body}\nEND^\nSET TERM ; ^`);
   const moves = Object.entries(FRAME_MOVES).flatMap(([m, t]) => Object.entries(t).map(([f, d]) => `INSERT INTO frame_moves (model, frame, dist) VALUES (${lit(m)}, ${f}, ${d});`));
