@@ -84,7 +84,8 @@ assert(m?.ST === 'run', 'the death knight charges');
 let spikes = 0;
 for (let i = 0; i < 160 && !spikes; i++) { await tic(); spikes = await count('kspike'); }
 assert(spikes > 0, `the death knight threw flame spikes (${spikes} in the air)`);
-await db.exec(`UPDATE ents SET x = 160 - 70, y = 576, z = 48 WHERE id = ${id}`);
+// within ai_melee's reach (60) of where the player stands now (without pak1 there is no model, so no frames to charge on)
+await db.exec(`UPDATE ents SET x = (SELECT x - 50 FROM ents WHERE id = ${pe}), y = (SELECT y FROM ents WHERE id = ${pe}), z = 48 WHERE id = ${id}`);
 await db.exec(`EXECUTE PROCEDURE link_ent(${id})`);
 let sliced = 0;
 for (let i = 0; i < 120 && !sliced; i++) { await tic(); sliced = await sounds('hknight/slash1.wav'); }
