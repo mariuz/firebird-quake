@@ -980,8 +980,8 @@ BEGIN
   IF (ff IS NULL) THEN BEGIN ff = 0; fc = 12; END   -- no such animation (model missing): a typical run length, so attack frames still come
   IF (mt = 'wizard' AND anim = 'hover' AND st = 'run') THEN fc = 8;                -- wiz_side1..8: hover1..8
 
-  -- the enemy died?
-  IF (enemy IS NOT NULL) THEN
+  -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end)
+  IF (enemy IS NOT NULL AND st NOT IN ('melee', 'missile')) THEN
   BEGIN
     SELECT e.health FROM ents e WHERE e.id = :enemy INTO ehp;
     IF (ehp IS NULL OR ehp <= 0) THEN
@@ -1163,12 +1163,6 @@ BEGIN
 
   IF (st = 'melee' OR st = 'missile') THEN
   BEGIN
-    -- ai_face each frame; act on the key frames
-    IF (enemy IS NOT NULL) THEN
-    BEGIN
-      UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
-      EXECUTE PROCEDURE change_yaw(eid);
-    END
     -- the next frame, as the frame function that sets it acts (army_atk5 fires on entering $shoot5), over the frames
     -- never shown (sham_magic6 goes on to sham_magic9); an attack with its own sequence of frames counts positions in it
     aseq = IIF(st = 'melee', mseq, sseq);
@@ -1189,6 +1183,12 @@ BEGIN
       UPDATE ents e SET e.anim_frame = IIF(:run_a = 'hover', 7, COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0)) WHERE e.id = :eid;
       EXECUTE PROCEDURE monster_think(eid);
       EXIT;
+    END
+    -- ai_face each attack frame (not the think that goes on into the run); act on the key frames
+    IF (enemy IS NOT NULL) THEN
+    BEGIN
+      UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+      EXECUTE PROCEDURE change_yaw(eid);
     END
     afr = IIF(aseq IS NULL, ff + af, seq_at(aseq, af));
     IF (mt = 'zombie' AND anim = 'attb' AND af = 13) THEN afr = afr - 1;    -- zombie_attb14 shows $attb13 again (zombie.qc)
@@ -1475,6 +1475,10 @@ BEGIN
   ELSE IF (think = 'delayed_use') THEN EXECUTE PROCEDURE delayed_use(eid);
   ELSE IF (think = 'grenade_explode') THEN EXECUTE PROCEDURE grenade_explode(eid);
   ELSE IF (think = 'vore_track') THEN EXECUTE PROCEDURE vore_track(eid);
+  ELSE IF (think = 'bubble_bob') THEN EXECUTE PROCEDURE bubble_bob(eid);
+  ELSE IF (think = 'make_bubbles') THEN EXECUTE PROCEDURE make_bubbles(eid);
+  ELSE IF (think = 'death_bubbles') THEN EXECUTE PROCEDURE death_bubbles_spawn(eid);
+  ELSE IF (think = 'play_teleport') THEN EXECUTE PROCEDURE play_teleport(eid);
   ELSE IF (think = 'wiz_fastfire') THEN EXECUTE PROCEDURE wiz_fastfire(eid);
   ELSE IF (think = 'teleporttrain_next') THEN EXECUTE PROCEDURE teleporttrain_next(eid);
   ELSE IF (think = 'remove') THEN DELETE FROM ents e WHERE e.id = :eid;
@@ -1490,7 +1494,7 @@ DECLARE eid INTEGER; DECLARE mt SMALLINT; DECLARE think VARCHAR(24); DECLARE nt 
 DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE pe INTEGER;
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
 DECLARE tdm INTEGER;
-DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE hitsound SMALLINT;
+DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE hitsound SMALLINT; DECLARE ctx INTEGER; DECLARE lag VARCHAR(255);
 BEGIN
   t = now_();
   pe = player_ent();
@@ -1501,6 +1505,8 @@ BEGIN
   UPDATE game g SET g.time_ = g.time_ - :dt WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 AND e.st <> 'dead');
   IF (ROW_COUNT > 0) THEN
   BEGIN
+  lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);         -- (the clock reads the start already)
   FOR SELECT e.id FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 AND e.st <> 'dead' ORDER BY e.id INTO eid DO
   BEGIN
     hitsound = IIF((SELECT e.vz FROM ents e WHERE e.id = :eid) < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
@@ -1514,6 +1520,7 @@ BEGIN
     EXECUTE PROCEDURE link_ent(eid);
   END
   UPDATE game g SET g.time_ = g.time_ + :dt WHERE g.id = 1;
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
   END
   -- thinks that are due (non-pushers)
   -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
@@ -1523,7 +1530,10 @@ BEGIN
   BEGIN
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
     IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
+    lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);
     EXECUTE PROCEDURE run_think(eid, think);
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
     IF (nt <> t) THEN UPDATE game g SET g.time_ = :t WHERE g.id = 1;
     -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
     IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.movetype IN (4, 5) AND e.health > 0)) THEN
@@ -1535,6 +1545,12 @@ BEGIN
   BEGIN
     IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN CONTINUE;      -- resting
     EXECUTE PROCEDURE toss_move(eid, dt);
+  END
+  -- SV_Physics_Noclip: the bubbles drift through everything
+  FOR SELECT e.id FROM ents e WHERE e.movetype = 8 AND e.id <> :pe INTO eid DO
+  BEGIN
+    UPDATE ents e SET e.x = e.x + e.vx * :dt, e.y = e.y + e.vy * :dt, e.z = e.z + e.vz * :dt WHERE e.id = :eid;
+    EXECUTE PROCEDURE link_ent(eid);
   END
   -- monsters touching teleporters / monster jumps
   FOR SELECT m.id, m.x, m.y, m.z FROM ents m WHERE BIN_AND(m.flags, 32) <> 0 AND m.health > 0 AND m.st IN ('run', 'walk') INTO eid, px, py, pz DO
@@ -1585,7 +1601,7 @@ RETURNS (
   dmg_pitch DOUBLE PRECISION, dmg_roll DOUBLE PRECISION)
 AS
 DECLARE i INTEGER = 0; DECLARE t DOUBLE PRECISION; DECLARE pe INTEGER;
-DECLARE wl SMALLINT; DECLARE wt INTEGER;
+DECLARE wl SMALLINT; DECLARE wt INTEGER; DECLARE ctx INTEGER;
 BEGIN
   EXECUTE PROCEDURE demo_note(tics, fwd, side, yaw_d, pitch_d, fire, jump, run, imp);
   SELECT g.tic, g.time_ FROM game g WHERE g.id = 1 INTO tic, t;
@@ -1596,11 +1612,15 @@ BEGIN
   WHILE (i < tics) DO
   BEGIN
     UPDATE game g SET g.tic = g.tic + 1, g.time_ = g.time_ + 0.05e0 WHERE g.id = 1;
+    -- (the frame runs on its end's clock, where QuakeC's runs at its start, sv.time, but for the thinks: what is
+    -- scheduled for another entity's think counts from QuakeC's time, think_base())
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', 0.05e0);
     EXECUTE PROCEDURE player_think(0.05e0, fwd, side, yaw_d / tics, pitch_d / tics, fire, jump, run, IIF(i = 0, imp, 0));
     EXECUTE PROCEDURE run_pushers(0.05e0);
     EXECUTE PROCEDURE run_physics(0.05e0);
     i = i + 1;
   END
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);
   SELECT g.tic, g.time_, e.health, p.armorvalue, p.armortype, p.shells, p.nails, p.rockets, p.cells, p.items, p.weapon, p.weaponframe,
          e.x, e.y, e.z, e.yaw, p.pitch + p.punchangle, e.z + p.view_ofs - p.stepz, p.punchangle,
          IIF(p.msg_time > g.time_, p.msg, NULL), IIF(p.cprint_time > g.time_, p.cprint, NULL),

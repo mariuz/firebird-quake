@@ -40,7 +40,13 @@ BEGIN
     UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0,
            e.anim = 'death' || SUBSTRING('abcde' FROM 1 + FLOOR(rnd() * 5) FOR 1), e.anim_frame = 0 WHERE e.id = :targ;
     UPDATE player p SET p.dead_time = now_(), p.view_ofs = -8, p.weapon = 0, p.items = BIN_AND(p.items, BIN_NOT(1048576 + 524288 + 4194304 + 2097152)) WHERE p.id = 1;
-    EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
+    -- DeathSound: under water five bubbles and h2odeath
+    IF ((SELECT e.waterlevel FROM ents e WHERE e.id = :targ) = 3) THEN
+    BEGIN
+      EXECUTE PROCEDURE death_bubbles(targ, 5);
+      EXECUTE PROCEDURE snd(targ, 2, 'player/h2odeath.wav', 1, 0);
+    END
+    ELSE EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
     EXIT;
   END
   IF (BIN_AND(flags, 32) <> 0) THEN
@@ -84,7 +90,7 @@ DECLARE td SMALLINT; DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp 
 DECLARE save INTEGER; DECLARE take INTEGER; DECLARE av INTEGER; DECLARE atype DOUBLE PRECISION; DECLARE inv DOUBLE PRECISION;
 DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION; DECLARE dl DOUBLE PRECISION;
 DECLARE mt SMALLINT; DECLARE acls VARCHAR(40); DECLARE pe INTEGER; DECLARE sdf DOUBLE PRECISION; DECLARE pf DOUBLE PRECISION;
-DECLARE cur INTEGER;
+DECLARE cur INTEGER; DECLARE pwf INTEGER; DECLARE pinv DOUBLE PRECISION; DECLARE paxe SMALLINT; DECLARE pwl SMALLINT; DECLARE pwt INTEGER;
 BEGIN
   SELECT e.takedamage, e.classname, e.flags, e.health, e.movetype FROM ents e WHERE e.id = :targ INTO td, cls, flags, hp, mt;
   IF (td IS NULL OR td = 0 OR hp <= 0 AND cls <> 'player') THEN EXIT;
@@ -153,11 +159,33 @@ BEGIN
   END
   IF (cls = 'player') THEN
   BEGIN
-    SELECT p.pain_finished FROM player p WHERE p.id = 1 INTO pf;
-    IF (pf < now_() AND take > 0) THEN
+    -- player_pain: nothing while the weapon's frames run or while invisible; else PainSound: under water a bubble
+    -- (DeathBubbles(1)) and drown1 or drown2, in slime or lava lburn1 or lburn2, each hurt; else at most every 0.5 s
+    -- (pain_finished), the axe's thud if a grunt's axe hit (axhitme), else pain1 to pain6 by rint(random() × 5 + 1).
+    -- (No view kick: player_pain has none)
+    SELECT p.pain_finished, p.weaponframe, p.invisible_finished, p.axhitme FROM player p WHERE p.id = 1 INTO pf, pwf, pinv, paxe;
+    SELECT e.waterlevel, e.watertype FROM ents e WHERE e.id = :targ INTO pwl, pwt;
+    IF (pwf = 0 AND pinv <= now_()) THEN
     BEGIN
-      EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(1 + FLOOR(rnd() * 6) AS INTEGER) || '.wav', 1, 1);
-      UPDATE player p SET p.pain_finished = now_() + 0.5e0 WHERE p.id = 1;   -- (no view kick: player_pain has none)
+      IF (pwt = -3 AND pwl = 3) THEN
+      BEGIN
+        EXECUTE PROCEDURE death_bubbles(targ, 1);
+        EXECUTE PROCEDURE snd(targ, 2, TRIM(IIF(rnd() > 0.5e0, 'player/drown1.wav', 'player/drown2.wav')), 1, 1);
+      END
+      ELSE IF (pwt = -4 OR pwt = -5) THEN
+        EXECUTE PROCEDURE snd(targ, 2, TRIM(IIF(rnd() > 0.5e0, 'player/lburn1.wav', 'player/lburn2.wav')), 1, 1);
+      ELSE IF (pf > now_()) THEN
+        UPDATE player p SET p.axhitme = 0 WHERE p.id = 1 AND p.axhitme <> 0;
+      ELSE
+      BEGIN
+        UPDATE player p SET p.pain_finished = now_() + 0.5e0 WHERE p.id = 1;
+        IF (paxe = 1) THEN
+        BEGIN
+          UPDATE player p SET p.axhitme = 0 WHERE p.id = 1;
+          EXECUTE PROCEDURE snd(targ, 2, 'player/axhit1.wav', 1, 1);
+        END
+        ELSE EXECUTE PROCEDURE snd(targ, 2, 'player/pain' || CAST(ROUND(rnd() * 5 + 1) AS INTEGER) || '.wav', 1, 1);
+      END
     END
     -- (T_Damage after th_pain: on nightmare the player's next pain waits 5 s too)
     IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = now_() + 5 WHERE p.id = 1;
@@ -350,7 +378,9 @@ BEGIN
   BEGIN
     IF (point_contents(x, y, z) = -6) THEN BEGIN DELETE FROM ents e WHERE e.id = :e1; EXIT; END
     -- T_MissileTouch: 100 to 120 on what it hit, and a blast of 120 on the rest
-    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(rnd() * 20));
+    -- (its random() drawn whatever it hit)
+    dmg2 = rnd();
+    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(dmg2 * 20));
     EXECUTE PROCEDURE t_radius_damage(e1, own, 120, e2);
     -- then the rocket backs off 8 units along its flight before it becomes the explosion: where a hit player's view
     -- kick comes from at the frame's end

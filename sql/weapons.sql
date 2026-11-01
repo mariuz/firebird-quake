@@ -566,7 +566,8 @@ BEGIN
   SELECT e.waterlevel, e.watertype FROM ents e WHERE e.id = :pe INTO owl, wt;
   wl = owl;
   -- WaterMove: out of the water a gasp after a long breath held, and the air back to 12 s; under it, past the air,
-  -- a bite each second that grows by 2 (2, 4 ... 14, then 10 again), the drowning sound for its pain
+  -- a bite each second that grows by 2 (2, 4 ... 14, then 10 again); its pain (PainSound) is the drowning sound and a
+  -- bubble
   IF (wl <> 3) THEN
   BEGIN
     IF (afin < t) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp2.wav', 1, 1);
@@ -577,7 +578,6 @@ BEGIN
   BEGIN
     UPDATE player p SET p.drown_dmg = IIF(p.drown_dmg + 2 > 15, 10, p.drown_dmg + 2) WHERE p.id = 1;
     EXECUTE PROCEDURE t_damage(pe, 0, 0, (SELECT p.drown_dmg FROM player p WHERE p.id = 1));
-    EXECUTE PROCEDURE snd(pe, 2, 'player/drown' || CAST(1 + FLOOR(rnd() * 2) AS INTEGER) || '.wav', 1, 1);
     UPDATE player p SET p.pain_finished = :t + 1 WHERE p.id = 1;
   END
   -- lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel every second (not at

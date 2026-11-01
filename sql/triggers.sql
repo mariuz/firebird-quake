@@ -169,12 +169,10 @@ BEGIN
   SELECT FIRST 1 e.x, e.y, e.z, e.yaw FROM ents e WHERE e.targetname = :tgt AND e.classname = 'info_teleport_destination'
     INTO dx, dy, dz, dyaw;
   IF (dx IS NULL) THEN EXIT;
-  IF (BIN_AND(sf, 2) = 0) THEN
-  BEGIN
-    EXECUTE PROCEDURE snd(other, 0, 'misc/r_tele' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
-    EXECUTE PROCEDURE fx(5, (SELECT e.x FROM ents e WHERE e.id = :other), (SELECT e.y FROM ents e WHERE e.id = :other),
-      (SELECT e.z FROM ents e WHERE e.id = :other), 0, 0, 0, 0);
-  END
+  -- spawn_tfog where it stood, and 32 ahead of the destination (its origin is raised 27 at spawn)
+  EXECUTE PROCEDURE spawn_tfog((SELECT e.x FROM ents e WHERE e.id = :other), (SELECT e.y FROM ents e WHERE e.id = :other),
+    (SELECT e.z FROM ents e WHERE e.id = :other));
+  EXECUTE PROCEDURE spawn_tfog(dx + 32 * COS(dyaw * 0.0174532925e0), dy + 32 * SIN(dyaw * 0.0174532925e0), dz + 27);
   -- telefrag anything at the destination
   FOR SELECT e.id FROM ents e JOIN ents o ON o.id = :other
        WHERE e.id <> :other AND e.takedamage > 0 AND e.health > 0
@@ -194,8 +192,6 @@ BEGIN
    WHERE e.id = :other;
   IF (ocls = 'player') THEN UPDATE player p SET p.pitch = 0 WHERE p.id = 1;
   EXECUTE PROCEDURE link_ent(other);
-  EXECUTE PROCEDURE snd_at(dx, dy, dz, 'misc/r_tele' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
-  EXECUTE PROCEDURE fx(5, dx, dy, dz + 27, 0, 0, 0, 0);
 END^
 
 SET TERM ; ^

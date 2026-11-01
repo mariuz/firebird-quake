@@ -422,13 +422,29 @@ to the same behaviour, with a test of its own:
     does: a player who has just moved is looked for where it stood.
   - **A think runs at its own time** (`SV_RunThink`: `time` is the `nextthink` it was given, not before the frame's
     start), so what it times from then (`attack_finished`, the next think) rounds as QuakeC mode's does.
-  The duels keep the player out of the water (bubbles, below) and off triggers (E1M6's exit pit), still E1M6's lava
-  fireballs, and put the player on whole units (the angle to a spot at exactly −30.000° truncates to either whole
+  The duels keep the player off triggers (E1M6's exit pit), still E1M6's lava fireballs, and put the player on whole units (the angle to a spot at exactly −30.000° truncates to either whole
   degree, QuakeC's floats and PSQL's doubles each their own way).
   Not compared yet: pain and death, walking a path, the player's death.
-- **Air bubbles** in the PSQL game: none (`air_bubbles` is skipped at spawn; no `DeathBubbles` from a pain or a death
-  under water), where QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s; the monster duels keep the
-  player dry for it. The scrag's walk is its `fly` frames in the PSQL game, `hover1`–`hover8` in id's (`wiz_walk`).
+- ~~**Air bubbles**~~ done: the PSQL game had none (`air_bubbles` was skipped at spawn, no `DeathBubbles`), where
+  QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s. Now `air_bubbles` lets out a bubble every 0.5 to
+  1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water five; a bubble
+  (`s_bubble.spr`, `MOVETYPE_NOCLIP`) bobs up, splits on its fourth bob (the first then gone: nothing works out a
+  noclip thing's water level) and ends on its twentieth, as `misc.qc` has it. The monster duels play in the water
+  again (the zombie's, in E1M3's flooded hall), and a new one sets E1M4's two bubble makers going on the same tic in
+  both games: 300 tics alike, up to 17 bubbles at once. On the way, the player parity test compares the random
+  generator and the bubbles every tic too, which found:
+  - **PainSound**: under water `DeathBubbles(1)` and drown1 or drown2 (the PSQL game drew a pain sound and then a
+    drown sound, two draws for one); in slime or lava lburn1 or lburn2 on every bite; none while the weapon's frames
+    run or while invisible (`player_pain`); the axe's thud on `axhitme`; `rint(random() × 5 + 1)` for pain1 to 6.
+  - **`T_MissileTouch`** draws its `100 + random() × 20` whatever the rocket hit, the floor of a rocket jump too.
+  - **The teleport's sound** is `spawn_tfog`'s `play_teleport` 0.2 s later, one where the traveller stood and one 32
+    ahead of the destination, each drawing; the PSQL game played two at once.
+  - **QuakeC's time**: what a frame schedules for another entity's think counts from the frame's start (`sv.time`)
+    outside a think, where the PSQL game's clock reads the frame's end (`think_base()`, `CLOCK_LAG`).
+  - The parity test's QuakeC monsters were moved away but still thinking, drawing for their walks and idle sounds.
+  And in the duels: an attack's frames play on to its end when the enemy dies (only `ai_run` notices), and the think
+  that goes on into the run does not face the enemy first.
+- The scrag's walk is its `fly` frames in the PSQL game, `hover1`–`hover8` in id's (`wiz_walk`).
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

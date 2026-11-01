@@ -34,7 +34,7 @@ BEGIN
       UPDATE game g SET g.world_type = COALESCE(:wtype, 0), g.level_msg = :msg WHERE g.id = 1;
       CONTINUE;
     END
-    IF (cls IN ('light', 'info_intermission', 'info_player_deathmatch', 'info_player_coop', 'light_fluoro', 'light_fluorospark', 'air_bubbles',
+    IF (cls IN ('light', 'info_intermission', 'info_player_deathmatch', 'info_player_coop', 'light_fluoro', 'light_fluorospark',
                 'ambient_comp_hum', 'ambient_drip', 'ambient_drone', 'ambient_swamp1', 'ambient_swamp2', 'trigger_onlyregistered')) THEN
     BEGIN
       IF (cls = 'light' AND tn IS NOT NULL AND tn <> '' AND sty IS NOT NULL) THEN
@@ -288,6 +288,8 @@ BEGIN
       END
     END
     -- ── decorations and traps ──
+    ELSE IF (cls = 'air_bubbles') THEN                 -- make_bubbles a second in, then every 0.5 to 1.5 s
+      UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = now_() + 1 WHERE e.id = :eid;
     ELSE IF (cls = 'light_torch_small_walltorch') THEN
     BEGIN
       EXECUTE PROCEDURE set_model(eid, 'progs/flame.mdl');

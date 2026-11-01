@@ -355,4 +355,111 @@ BEGIN
    WHERE e.id = :eid;
 END^
 
+-- ── bubbles and teleport fog (misc.qc, player.qc, triggers.qc) ─────────────────────────────────────
+-- the time a think scheduled now counts from, QuakeC's time: inside a think the think's own (run_physics sets the
+-- clock to it), elsewhere in a frame its start, sv.time (the client's think and move, the touches in the physics),
+-- where the PSQL game's clock already reads the frame's end; quake_tic keeps the difference in CLOCK_LAG
+CREATE OR ALTER FUNCTION think_base () RETURNS DOUBLE PRECISION
+AS
+BEGIN
+  RETURN now_() - COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG') AS DOUBLE PRECISION), 0);
+END^
+
+-- A bubble (make_bubbles, bubble_split, DeathBubblesSpawn): s_bubble.spr, MOVETYPE_NOCLIP, not solid, bobbing every
+-- 0.5 s (bubble_bob); cnt counts its bobs
+CREATE OR ALTER PROCEDURE spawn_bubble (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION,
+  vx DOUBLE PRECISION, vy DOUBLE PRECISION, vz DOUBLE PRECISION, fr SMALLINT, cnt INTEGER)
+AS
+DECLARE b INTEGER;
+BEGIN
+  EXECUTE PROCEDURE spawn_ent('bubble', x, y, z) RETURNING_VALUES b;
+  EXECUTE PROCEDURE set_model(b, 'progs/s_bubble.spr');
+  UPDATE ents e SET e.movetype = 8, e.solid = 0, e.vx = :vx, e.vy = :vy, e.vz = :vz, e.frame = :fr, e.count_ = :cnt,
+         e.minx = -8, e.miny = -8, e.minz = -8, e.maxx = 8, e.maxy = 8, e.maxz = 8, e.think = 'bubble_bob', e.nextthink = now_() + 0.5e0
+   WHERE e.id = :b;
+  EXECUTE PROCEDURE link_ent(b);
+END^
+
+-- bubble_bob: the fourth bob splits it (bubble_split: a second bubble with its velocity, both on frame 1 and cnt 10,
+-- and the first gone, its waterlevel never being 3: nothing works out a noclip thing's), the twentieth ends it; each
+-- bob drifts it by three random()s (drawn by a bubble just removed too), kept within ±10 across and 10 to 30 up
+CREATE OR ALTER PROCEDURE bubble_bob (eid INTEGER)
+AS
+DECLARE c INTEGER; DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
+DECLARE r1 DOUBLE PRECISION; DECLARE r2 DOUBLE PRECISION; DECLARE r3 DOUBLE PRECISION;
+BEGIN
+  UPDATE ents e SET e.count_ = e.count_ + 1 WHERE e.id = :eid RETURNING e.count_, e.vx, e.vy, e.vz INTO c, vx, vy, vz;
+  IF (c = 4) THEN
+  BEGIN
+    EXECUTE PROCEDURE spawn_bubble((SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid),
+      (SELECT e.z FROM ents e WHERE e.id = :eid), vx, vy, vz, 1, 10);
+    UPDATE ents e SET e.frame = 1, e.count_ = 10 WHERE e.id = :eid;
+    c = 10;
+    DELETE FROM ents e WHERE e.id = :eid AND e.waterlevel <> 3;
+  END
+  IF (c = 20) THEN DELETE FROM ents e WHERE e.id = :eid;
+  r1 = vx + (-10 + rnd() * 20);
+  r2 = vy + (-10 + rnd() * 20);
+  r3 = vz + 10 + rnd() * 10;
+  IF (r1 > 10) THEN r1 = 5;
+  IF (r1 < -10) THEN r1 = -5;
+  IF (r2 > 10) THEN r2 = 5;
+  IF (r2 < -10) THEN r2 = -5;
+  IF (r3 < 10) THEN r3 = 15;
+  IF (r3 > 30) THEN r3 = 25;
+  UPDATE ents e SET e.vx = :r1, e.vy = :r2, e.vz = :r3, e.think = 'bubble_bob', e.nextthink = now_() + 0.5e0 WHERE e.id = :eid;
+END^
+
+-- make_bubbles (air_bubbles): a bubble rising at 15, the next 0.5 to 1.5 s later
+CREATE OR ALTER PROCEDURE make_bubbles (eid INTEGER)
+AS
+BEGIN
+  EXECUTE PROCEDURE spawn_bubble((SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid),
+    (SELECT e.z FROM ents e WHERE e.id = :eid), 0, 0, 15, 0, 0);
+  UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = now_() + rnd() + 0.5e0 WHERE e.id = :eid;
+END^
+
+-- DeathBubbles(n): a spawner at the player that, every 0.1 s while the player is under water, lets out a bubble 24
+-- above its origin, n in all (count_ the bubbles let out, dmg how many)
+CREATE OR ALTER PROCEDURE death_bubbles (owner INTEGER, n INTEGER)
+AS
+DECLARE s INTEGER;
+BEGIN
+  EXECUTE PROCEDURE spawn_ent('bubble_spawner', (SELECT e.x FROM ents e WHERE e.id = :owner), (SELECT e.y FROM ents e WHERE e.id = :owner),
+    (SELECT e.z FROM ents e WHERE e.id = :owner)) RETURNING_VALUES s;
+  UPDATE ents e SET e.owner_id = :owner, e.count_ = 0, e.dmg = :n, e.think = 'death_bubbles', e.nextthink = think_base() + 0.1e0 WHERE e.id = :s;
+END^
+
+-- DeathBubblesSpawn: none once the player is out of the water (and the spawner then waits for good)
+CREATE OR ALTER PROCEDURE death_bubbles_spawn (eid INTEGER)
+AS
+DECLARE own INTEGER; DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
+BEGIN
+  SELECT o.id, o.x, o.y, o.z FROM ents e JOIN ents o ON o.id = e.owner_id WHERE e.id = :eid AND o.waterlevel = 3 INTO own, x, y, z;
+  IF (own IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE spawn_bubble(x, y, z + 24, 0, 0, 15, 0, 0);
+  UPDATE ents e SET e.think = 'death_bubbles', e.nextthink = now_() + 0.1e0, e.count_ = e.count_ + 1 WHERE e.id = :eid;
+  DELETE FROM ents e WHERE e.id = :eid AND e.count_ >= e.dmg;
+END^
+
+-- spawn_tfog: the teleport's flash now (TE_TELEPORT), its sound 0.2 s later (play_teleport: random() × 5 picks one
+-- of r_tele1 to r_tele5)
+CREATE OR ALTER PROCEDURE spawn_tfog (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION)
+AS
+DECLARE s INTEGER;
+BEGIN
+  EXECUTE PROCEDURE spawn_ent('tfog', x, y, z) RETURNING_VALUES s;
+  UPDATE ents e SET e.think = 'play_teleport', e.nextthink = think_base() + 0.2e0 WHERE e.id = :s;
+  EXECUTE PROCEDURE fx(5, x, y, z, 0, 0, 0, 0);
+END^
+
+CREATE OR ALTER PROCEDURE play_teleport (eid INTEGER)
+AS
+DECLARE v DOUBLE PRECISION;
+BEGIN
+  v = rnd() * 5;
+  EXECUTE PROCEDURE snd(eid, 2, 'misc/r_tele' || CAST(MINVALUE(1 + FLOOR(v), 5) AS INTEGER) || '.wav', 1, 1);
+  DELETE FROM ents e WHERE e.id = :eid;
+END^
+
 SET TERM ; ^

@@ -3,7 +3,8 @@
 // to both, tic by tic. The PSQL game is a rewrite of progs.dat, so the player must come out the same in both: its
 // place to a hundredth, its view, health, armor, ammo, weapon and the view weapon's frame, every tic. Walking,
 // a ramp, strafing, wall slides, the shotgun, the nailgun held, a rocket jump, falls and a hard landing, swimming,
-// drowning and slime. A scenario that parts reports the first tic and both rows.
+// drowning and slime; the random generator and the bubbles alike every tic too. A scenario that parts reports the
+// first tic and both rows.
 //
 //   node scripts/parity-test.mjs          (DBG=n prints both players' ents rows from tic n-4 of each scenario)
 
@@ -40,20 +41,31 @@ for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '
 for (const g of [P, Q]) await g.q1(`SELECT tic FROM ${g === P ? 'quake_tic' : 'qc_tic'}(10, 0, 0, 0, 0, 0, 0, 1, 0)`);
 await P.db.exec('UPDATE ents SET health = 0, solid = 0, nextthink = NULL, think = NULL, x = x + 50000 WHERE mtype IS NOT NULL');
 await Q.db.exec("UPDATE ents SET solid = 0, x = x + 50000 WHERE BIN_AND(flags, 32) <> 0 OR id IN (SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) STARTING WITH 'monster_')");
-for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
+for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) {
+  await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
+  // (in QuakeC still and dead too: their walks and idle sounds draw at random, and a trigger's monster_use wakes none)
+  if (g === Q) for (const f of ['nextthink', 'health', 'takedamage']) await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${r.ID}, qc_fdef('${f}'), 0)`);
+}
 
 const tic = (g, i) => g.q1(`SELECT px, py, pz, yaw, pitch - punch pitch, punch, health, armorvalue, armortype, shells, nails, rockets, cells, items, weapon, weaponframe, waterlevel, msg, dmg_pitch, dmg_roll FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, ${i.f ?? 0}, ${i.s ?? 0}, ${i.yaw ?? 0}, ${i.pitch ?? 0}, ${i.fire ?? 0}, ${i.jump ?? 0}, ${i.run ?? 1}, ${i.imp ?? 0})`);
 const place = (x, y, z, vz = 0) => Promise.all([P, Q].map(async (g) => {
   await g.db.exec(`UPDATE ents SET x = ${x}, y = ${y}, z = ${z}, vx = 0, vy = 0, vz = ${vz} WHERE id = 1`);
   await g.db.exec('EXECUTE PROCEDURE link_ent(1)');
 }));
-const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} at ${r.ARMORTYPE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS}/${r.CELLS} items ${r.ITEMS} w ${r.WEAPON} wf ${r.WEAPONFRAME} kick ${r.DMG_PITCH.toFixed(2)}/${r.DMG_ROLL.toFixed(2)} msg ${JSON.stringify(r.MSG)}`;
-let maxKick = 0;     // the largest view kick seen (V_ParseDamage), both games agreeing
+const fmt = (r) => `${r.PX.toFixed(2)} ${r.PY.toFixed(2)} ${r.PZ.toFixed(2)} yaw ${r.YAW} pitch ${r.PITCH.toFixed(3)} punch ${r.PUNCH} wl ${r.WATERLEVEL} hp ${r.HEALTH} ap ${r.ARMORVALUE} at ${r.ARMORTYPE} ammo ${r.SHELLS}/${r.NAILS}/${r.ROCKETS}/${r.CELLS} items ${r.ITEMS} w ${r.WEAPON} wf ${r.WEAPONFRAME} kick ${r.DMG_PITCH.toFixed(2)}/${r.DMG_ROLL.toFixed(2)} msg ${JSON.stringify(r.MSG)} seed ${r.SEED} bubbles ${r.BUBBLES}`;
+let maxKick = 0, maxBubbles = 0;     // the largest view kick seen (V_ParseDamage), both games agreeing
 // the same input to both, tic by tic: the first tic where they part, or null
+// (both games draw from the one seeded rnd(): the generator, set alike at a scenario's start, must stay alike, and
+// so must the bubbles in the water, whose drift draws)
+const extras = (g) => g.q1("SELECT (SELECT seed FROM rng) seed, (SELECT COUNT(*) FROM ents e JOIN models m ON m.id = e.model_id WHERE m.name = 'progs/s_bubble.spr') bubbles FROM rdb$database");
 const play = async (inputs) => {
   let a, b;
+  for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
   for (let k = 0; k < inputs.length; k++) {
     a = await tic(P, inputs[k]); b = await tic(Q, inputs[k]);
+    Object.assign(a, await extras(P)); Object.assign(b, await extras(Q));
+    if (a.SEED !== b.SEED) return { k, a, b, why: 'random draws' };
+    if (a.BUBBLES !== b.BUBBLES) return { k, a, b, why: 'bubbles' };
     if (process.env.DBG && k >= +process.env.DBG - 4) { const sel = 'SELECT x, y, z, vx, vy, vz, flags, waterlevel wl FROM ents WHERE id = 1'; console.log('DBG', k, JSON.stringify(await P.q1(sel)), JSON.stringify(await Q.q1(sel))); }
     const near = Math.abs(a.PX - b.PX) < 0.01 && Math.abs(a.PY - b.PY) < 0.01 && Math.abs(a.PZ - b.PZ) < 0.01;
     if (Math.abs((((a.YAW - b.YAW) % 360) + 540) % 360 - 180) > 1e-6) return { k, a, b, why: 'YAW' };
@@ -61,6 +73,7 @@ const play = async (inputs) => {
     if ((a.MSG ?? '') !== (b.MSG ?? '')) return { k, a, b, why: 'MSG' };
     if (!near) return { k, a, b, why: 'position' };
     maxKick = Math.max(maxKick, Math.abs(a.DMG_PITCH), Math.abs(a.DMG_ROLL));
+    maxBubbles = Math.max(maxBubbles, a.BUBBLES);
   }
   return { k: inputs.length, a, b, why: null };
 };
@@ -149,7 +162,9 @@ if (pool) {
 if (pool) {
   for (const g of [P, Q]) await g.db.query('SELECT msg FROM host_cmd(?, ?, ?)', ['give', 'h', '100']);
   await place(pool.cx, pool.cy, pool.z - 20);
-  await check('drowning', [...rep(3, { pitch: 30 }), ...rep(300, { f: 0.2, run: 0 }), ...rep(3, { pitch: -30 }), ...rep(30, { jump: 1 })], (a) => a.HEALTH < 100);
+  // (each drowning bite's pain lets out a bubble, DeathBubbles(1), which bobs up drawing at random)
+  maxBubbles = 0;
+  await check('drowning', [...rep(3, { pitch: 30 }), ...rep(300, { f: 0.2, run: 0 }), ...rep(3, { pitch: -30 }), ...rep(30, { jump: 1 })], (a) => a.HEALTH < 100 && maxBubbles > 0);
 }
 
 // ── into the slime: a bite going in, another the frame after (WaterMove clears dmgtime), then one a second ──

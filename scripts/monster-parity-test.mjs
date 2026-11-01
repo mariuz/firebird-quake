@@ -1,7 +1,7 @@
 // monster-parity-test.mjs – a monster in both games, tic by tic: its level loaded twice with one seed, every monster
 // moved out of the way but one (each shareware kind in turn: grunt, dog, knight, ogre, fiend, scrag, shambler,
-// zombie), the random generator set to the same seed in both, the player put on a free spot in its sight (out of the
-// water and away from triggers), and the monster compared every tic until it has killed the player: its place, frame,
+// zombie), the random generator set to the same seed in both, the player put on a free spot in its sight (away from
+// triggers), and the monster compared every tic until it has killed the player: its place, frame,
 // health, the player's health and the generator itself (both games draw from the seeded rnd(), so its state shows
 // that the two make the same random draws in the same order). A monster that parts reports the first tic and both rows.
 // Each duel runs in a process of its own (two engines a duel).
@@ -49,9 +49,9 @@ async function duel(map, mtype, mx, my, D = 300, N = 400) {
     // floor or a step up), in sight
     search: for (const da of [0, 20, -20, 40, -40, 60, -60, 90, -90, 120, -120, 150, -150, 180]) for (let dz = 0; dz <= 48; dz += 8) for (let d = D; d >= 64; d -= 16) {
       const a = ((c.YAW + da) * Math.PI) / 180, fx = Math.round(c.X + Math.cos(a) * d), fy = Math.round(c.Y + Math.sin(a) * d), fz = c.Z + dz;   // whole units: QuakeC's floats see the angle to them as PSQL's doubles do
-      const ok = await P.q1(`SELECT test_position(${P.pid}, ${fx}, ${fy}, ${fz}) t, (SELECT fraction FROM trace_move(${c.ID}, 0, 0, 0, 0, 0, 0, ${c.X}, ${c.Y}, ${c.Z + 22}, ${fx}, ${fy}, ${fz + 22}, 1)) f , (SELECT COUNT(*) FROM ents t WHERE t.solid = 1 AND t.x + t.minx < ${fx} + 64 AND t.x + t.maxx > ${fx} - 64 AND t.y + t.miny < ${fy} + 64 AND t.y + t.maxy > ${fy} - 64 AND t.z + t.minz < ${fz} + 64 AND t.z + t.maxz > ${fz} - 256) tr, point_contents(${fx}, ${fy}, ${fz}) w, point_contents(${c.X}, ${c.Y}, ${c.Z}) mw FROM rdb$database`);
-      // (out of the water, both: PSQL has no air bubbles yet, whose drift QuakeC draws at random; and away from triggers)
-      if (ok.T === 0 && ok.F === 1 && ok.W === -1 && ok.MW === -1 && ok.TR === 0) { M = { ...c, YAW: (c.YAW + da + 360) % 360, PX: fx, PY: fy, PZ: fz }; break search; }
+      const ok = await P.q1(`SELECT test_position(${P.pid}, ${fx}, ${fy}, ${fz}) t, (SELECT fraction FROM trace_move(${c.ID}, 0, 0, 0, 0, 0, 0, ${c.X}, ${c.Y}, ${c.Z + 22}, ${fx}, ${fy}, ${fz + 22}, 1)) f , (SELECT COUNT(*) FROM ents t WHERE t.solid = 1 AND t.x + t.minx < ${fx} + 64 AND t.x + t.maxx > ${fx} - 64 AND t.y + t.miny < ${fy} + 64 AND t.y + t.maxy > ${fy} - 64 AND t.z + t.minz < ${fz} + 64 AND t.z + t.maxz > ${fz} - 256) tr FROM rdb$database`);
+      // (away from triggers: E1M6's exit pit)
+      if (ok.T === 0 && ok.F === 1 && ok.TR === 0) { M = { ...c, YAW: (c.YAW + da + 360) % 360, PX: fx, PY: fy, PZ: fz }; break search; }
     }
     if (M) break;
   }
@@ -93,8 +93,8 @@ async function duel(map, mtype, mx, my, D = 300, N = 400) {
   for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
   // checkclient's leaf found afresh in both at the first think (the last one was found when other monsters looked)
   await P.db.exec('UPDATE game SET check_time = NULL'); await Q.db.exec('UPDATE qc_vm SET check_time = NULL');
-  const row = (g) => g.q1(`SELECT e.x, e.y, e.z, e.frame, ${g === P ? 'e.health' : `CAST(qc_f(${qid}, qc_fdef('health')) AS INTEGER) health`}, (SELECT seed FROM rng) seed, e.yaw, e.ideal_yaw FROM ents e WHERE e.id = ${g === P ? M.ID : qid}`);
-  const fmt = (r, h) => (process.env.DBGM ? `yaw ${r.YAW} iy ${r.IDEAL_YAW} ` : "") + `${r.X.toFixed(2)} ${r.Y.toFixed(2)} ${r.Z.toFixed(2)} frame ${r.FRAME} hp ${r.HEALTH} seed ${r.SEED} player ${h}`;
+  const row = (g) => g.q1(`SELECT e.x, e.y, e.z, e.frame, ${g === P ? 'e.health' : `CAST(qc_f(${qid}, qc_fdef('health')) AS INTEGER) health`}, (SELECT seed FROM rng) seed, e.yaw, e.ideal_yaw, (SELECT p.x || ' ' || p.y || ' ' || p.z FROM ents p WHERE p.id = ${g.pid}) ppos FROM ents e WHERE e.id = ${g === P ? M.ID : qid}`);
+  const fmt = (r, h) => (process.env.DBGM ? `yaw ${r.YAW} iy ${r.IDEAL_YAW} player at ${r.PPOS} ` : '') + `${r.X.toFixed(2)} ${r.Y.toFixed(2)} ${r.Z.toFixed(2)} frame ${r.FRAME} hp ${r.HEALTH} seed ${r.SEED} player ${h}`;
   let k = 0, parted = null, last = null, moved = 0, hurt = false;
   for (; k < N; k++) {
     const a = await tic(P), b = await tic(Q);
@@ -112,15 +112,55 @@ async function duel(map, mtype, mx, my, D = 300, N = 400) {
   await P.db.close(); await Q.db.close();
 }
 
+// E1M4's air_bubbles, in both games: every monster away, the bubble makers started on the same tic from one seed
+// (their bubbles so far gone), then the generator and the bubbles compared every tic: make_bubbles's next bubble 0.5
+// to 1.5 s on, bubble_bob's three draws a bob, the split on the fourth bob, the end on the twentieth
+async function bubbles(map, N = 300) {
+  const P = await open('pbub'); await loadMap(P.db, pak, P.res, map, { skill: 1, seed: 1 });
+  const Q = await open('qbub'); await loadMap(Q.db, pak, Q.res, map, { skill: 1, seed: 1 });
+  await loadProgs(Q.db, pak); await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
+  for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '', '')");
+  const tic = (g) => g.q1(`SELECT health FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, 0, 0, 0, 0, 1, 0)`);
+  for (const g of [P, Q]) for (let k = 0; k < 10; k++) await tic(g);
+  await P.db.exec('UPDATE ents SET health = 0, solid = 0, nextthink = NULL, think = NULL, x = x + 50000 WHERE mtype IS NOT NULL');
+  await Q.db.exec("UPDATE ents SET solid = 0, x = x + 50000 WHERE BIN_AND(flags, 32) <> 0 OR id IN (SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) STARTING WITH 'monster_')");
+  for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) {
+    await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
+    if (g === Q) for (const f of ['nextthink', 'health', 'takedamage']) await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${r.ID}, qc_fdef('${f}'), 0)`);
+  }
+  const bub = "(SELECT m.id FROM models m WHERE m.name = 'progs/s_bubble.spr')";
+  await P.db.exec(`DELETE FROM ents WHERE model_id = ${bub}`);
+  const pt = (await P.q1('SELECT time_ t FROM game')).T;
+  await P.db.exec(`UPDATE ents SET nextthink = ${pt} + 0.05 WHERE think = 'make_bubbles'`);
+  for (const r of (await Q.db.query(`SELECT id FROM ents WHERE model_id = ${bub}`)).rows) await Q.db.exec(`EXECUTE PROCEDURE qc_free(${r.ID})`);
+  const qt = (await Q.q1('SELECT time_ t FROM game')).T;
+  const makers = (await Q.db.query("SELECT e.id FROM ents e WHERE qc_f(e.id, qc_fdef('think')) = qc_fn('make_bubbles')")).rows;
+  for (const r of makers) await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${r.ID}, qc_fdef('nextthink'), ${qt + 0.05})`);
+  const pm = (await P.q1("SELECT COUNT(*) n FROM ents WHERE think = 'make_bubbles'")).N;
+  for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
+  const row = (g) => g.q1(`SELECT (SELECT seed FROM rng) seed, (SELECT COUNT(*) FROM ents WHERE model_id = ${bub}) n FROM rdb$database`);
+  let parted = null, most = 0, k = 0;
+  for (; k < N && !parted; k++) {
+    await tic(P); await tic(Q);
+    const a = await row(P), b = await row(Q);
+    if (a.SEED !== b.SEED || a.N !== b.N) parted = `tic ${k}: PSQL seed ${a.SEED} bubbles ${a.N} | QuakeC seed ${b.SEED} bubbles ${b.N}`;
+    most = Math.max(most, a.N);
+  }
+  assert(!parted && pm > 0 && pm === makers.length && most > 2, parted ? `${map} air_bubbles: parted at ${parted}`
+    : `${map} air_bubbles: ${pm} bubble makers, ${N} tics the same, every random draw too (up to ${most} bubbles at once)`);
+  await P.db.close(); await Q.db.close();
+}
+
 const DUELS = [['e1m1', 'army', 0, 576], ['e1m1', 'dog', 88, 1520], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'wizard'], ['e1m6', 'shambler'], ['e1m3', 'zombie']];
 const only = process.env.DUEL;
 if (!only) {
-  for (const [, mtype] of DUELS) {
+  for (const mtype of [...DUELS.map((d) => d[1]), 'bubbles']) {
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, DUEL: mtype } });
     if (r.status !== 0) failed++;
   }
 } else {
   for (const [map, mtype, mx, my] of DUELS) if (only.split(',').includes(mtype)) await duel(map, mtype, mx, my);
+  if (only.split(',').includes('bubbles')) await bubbles('e1m4');
   if (!failed) process.exit(0);
 }
 
