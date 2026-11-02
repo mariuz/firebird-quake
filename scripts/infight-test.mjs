@@ -335,7 +335,8 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
     `CheckAnyAttack: the ogre throws ${ogreHits} of 20, the shambler casts ${shamNear} of 20 at 400 and ${shamFar} past 600, the dog leaps ${dogNear} of 20 at 120 and ${dogFar} at 250, the soldier fires at once (${fired?.ST}), the scrag slides (attack_state ${slid}, ${side.toFixed(1)} across, ${toward.toFixed(1)} towards)`);
 }
 
-// DropBackpack and BackpackTouch: a grunt killed in a regular death throws a backpack (300 up, a toss) with 5
+// DropBackpack and BackpackTouch: a grunt killed in a regular death throws a backpack on its third death frame
+// (300 up, a toss) with 5
 // shells, a gibbed one leaves none; and picking it up with the axe in hand keeps the axe (single player:
 // self.weapon = new, the player's own weapon)
 {
@@ -344,6 +345,7 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
   const p0 = await packs();
   const g1 = await spawn('army', 150);
   await db.exec(`EXECUTE PROCEDURE t_damage(${g1}, ${pe6}, ${pe6}, 40)`);
+  for (let k = 0; k < 2; k++) await db.exec(`EXECUTE PROCEDURE monster_think(${g1})`);   // the pack comes on army_die3
   const bp = await q1("SELECT FIRST 1 id, vz, movetype mt, ammo_shells sh FROM ents WHERE classname = 'backpack' ORDER BY id DESC");
   const p1 = await packs();
   const g2 = await spawn('army', 150);

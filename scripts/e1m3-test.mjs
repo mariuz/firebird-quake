@@ -64,7 +64,11 @@ const moved = await qa("SELECT id, mv_state, CAST(z AS INTEGER) z, CAST(y AS INT
 assert(moved.some((d, i) => d.Z !== doors[i].Z || d.Y !== doors[i].Y || d.MV_STATE !== doors[i].MV_STATE), 'the pit doors start to move');
 
 // ── zombies die hard ───────────────────────────────────────────────────
-const z1 = pit[2];   // the one under the trapdoor, in the pit beneath the key
+// one with room over it: knocked down, a zombie gets up only where nothing overlaps it (zombie_paine12's walkmove(0,
+// 0)), and the trapdoor closing over the one beneath the key would keep it down for good
+let z1 = null;
+for (const c of pit) if (!z1 && (await q1(`SELECT COUNT(*) n FROM ents d WHERE d.classname = 'func_door' AND d.targetname = 't83' AND d.x + d.minx < ${c.X} + 40 AND d.x + d.maxx > ${c.X} - 40 AND d.y + d.miny < ${c.Y} + 40 AND d.y + d.maxy > ${c.Y} - 40`)).N === 0) z1 = c;
+assert(!!z1, `a pit zombie with no trapdoor over it (${z1?.ID})`);
 let z = await zombie(z1.ID);
 assert(z.HEALTH === 60, 'a zombie has 60 health');
 for (let i = 0; i < 10; i++) await db.exec(`EXECUTE PROCEDURE t_damage(${z1.ID}, ${pe}, ${pe}, 4)`);
@@ -75,9 +79,16 @@ await db.exec(`EXECUTE PROCEDURE t_damage(${z1.ID}, ${pe}, ${pe}, 30)`);
 z = await zombie(z1.ID);
 assert(z.ST === 'pain' && z.ANIM === 'paine' && z.HEALTH === 60, `a hard hit knocks it down (${z.ANIM}) but does not kill it`);
 assert((await sounds('zombie/z_pain.wav')) > 0, 'with a groan');
-s = await run(70);
+// (zombie_paine: three seconds of falling and rising, five of them lying on the ground at zombie_paine11; it gets up
+// only where there is room, zombie_paine12's walkmove(0, 0), so the other zombies are taken out of its way)
+await db.exec(`UPDATE ents SET x = x + 50000 WHERE mtype = 'zombie' AND id <> ${z1.ID}`);
+for (const r of await qa('SELECT id FROM ents WHERE x > 40000')) await db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
+s = await run(150);
 z = await zombie(z1.ID);
-assert((z.ST === 'run' || z.ST === 'missile') && z.HEALTH === 60, `three seconds later it is up and after the player again (${z.ST})`);
+assert(z.ST === 'pain' && z.HEALTH === 60, `seven and a half seconds later it still lies there (${z.ST})`);
+let up = 0;
+for (; up < 40 && !['run', 'missile'].includes((z = await zombie(z1.ID)).ST); up++) s = await run(1);
+assert((z.ST === 'run' || z.ST === 'missile') && z.HEALTH === 60, `about eight seconds after the hit it is up and after the player again (${z.ST}, ${(150 + up) / 20} s)`);
 // it throws its own flesh
 await teleport(z.X + 160, z.Y, z.Z + 24, 180);
 let gib = null;
