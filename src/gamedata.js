@@ -170,3 +170,17 @@ export const FRAME_MOVES = {
   'progs/shalrath.mdl': { 23: 5, 24: 6, 25: 4, 26: 0, 27: 0, 28: 0, 29: 0, 30: 5, 31: 6, 32: 5, 33: 0, 34: 4 },
   'progs/enforcer.mdl': { 7: 2, 8: 4, 9: 4, 10: 3, 11: 1, 12: 2, 13: 2, 14: 1, 15: 2, 16: 4, 17: 4, 18: 1, 19: 2, 20: 3, 21: 4, 22: 2, 23: 18, 24: 14, 25: 7, 26: 12, 27: 14, 28: 14, 29: 7, 30: 11 },
 };
+
+// The steps of the pain and death frames (ai_pain and ai_back: walkmove(angles_y + 180), ai_forward: along the facing,
+// ai_painforward: along ideal_yaw), read out of progs.dat 1.06 the same way: model → { frame: kind and distance },
+// b back, f forward, i toward ideal_yaw (army_painb2 { ai_painforward(13); } → 47: 'i13').
+export const STEP_MOVES = {
+  'progs/ogre.mdl': { 82: 'b10', 83: 'b9', 84: 'b4', 98: 'b10', 99: 'b9', 100: 'b4', 127: 'f5', 129: 'f1', 130: 'f3', 131: 'f7', 132: 'f25' },
+  'progs/knight.mdl': { 31: 'i0', 32: 'i3', 35: 'i2', 36: 'i4', 37: 'i2', 38: 'i5', 39: 'i5', 40: 'i0' },
+  'progs/soldier.mdl': { 19: 'b5', 20: 'b4', 21: 'b13', 22: 'b3', 23: 'b4', 45: 'b1', 47: 'i13', 48: 'i9', 57: 'b2', 61: 'b1', 64: 'i1', 65: 'i1', 67: 'b1', 68: 'i4', 69: 'i3', 70: 'i6', 71: 'i8' },
+  'progs/dog.mdl': { 34: 'b4', 35: 'b12', 36: 'b12', 37: 'b2', 39: 'b4', 41: 'b10' },
+  'progs/zombie.mdl': { 92: 'i3', 93: 'i1', 94: 'b1', 95: 'b3', 96: 'b1', 104: 'b2', 105: 'b8', 106: 'b6', 107: 'b2', 127: 'i1', 133: 'b3', 134: 'b1', 141: 'i1', 142: 'i1', 157: 'b1', 163: 'b8', 164: 'b5', 165: 'b3', 166: 'b1', 167: 'b2', 168: 'b1', 169: 'b1', 170: 'b2', 186: 'i5', 187: 'i3', 188: 'i1', 189: 'b1' },
+  'progs/hknight.mdl': { 42: 'f10', 43: 'f8', 44: 'f7', 49: 'f10', 50: 'f11' },
+  'progs/fish.mdl': { 58: 'b6', 59: 'b6', 60: 'b6', 61: 'b6', 62: 'b6', 63: 'b6', 64: 'b6', 65: 'b6' },
+  'progs/enforcer.mdl': { 44: 'f14', 45: 'f2', 49: 'f3', 50: 'f5', 51: 'f5', 52: 'f5', 86: 'i2', 87: 'i1', 93: 'i1', 94: 'i1', 95: 'i1', 98: 'b1', 99: 'b1' },
+};

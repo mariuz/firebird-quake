@@ -4,7 +4,9 @@
 // triggers), and the monster compared every tic until it has killed the player: its place, frame,
 // health, the player's health and the generator itself (both games draw from the seeded rnd(), so its state shows
 // that the two make the same random draws in the same order). A monster that parts reports the first tic and both rows.
-// Each duel runs in a process of its own (two engines a duel).
+// Then each the other way round: the player, in god mode, shoots it every 0.6 s (the zombie with rockets) until it
+// lies dead, its pains and death compared the same way (DUEL=army:fight). Each duel runs in a process of its own (two
+// engines a duel).
 //
 //   node scripts/monster-parity-test.mjs
 //   DUEL=wizard TRACE=0 DBGM=1 node scripts/monster-parity-test.mjs     one duel, every tic of it, the yaws too
@@ -32,7 +34,7 @@ const open = async (name) => {
 };
 
 // one monster (its mtype and its place on E1M1) against the player, D units in front of it
-async function duel(map, mtype, mx, my, D = 300, N = 400) {
+async function duel(map, mtype, mx, my, fight = false, D = 300, N = 400) {
   const P = await open(`p${mtype}`); await loadMap(P.db, pak, P.res, map, { skill: 1, seed: 1 });
   const Q = await open(`q${mtype}`); await loadMap(Q.db, pak, Q.res, map, { skill: 1, seed: 1 });
   await loadProgs(Q.db, pak); await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
@@ -95,9 +97,32 @@ async function duel(map, mtype, mx, my, D = 300, N = 400) {
   await P.db.exec('UPDATE game SET check_time = NULL'); await Q.db.exec('UPDATE qc_vm SET check_time = NULL');
   const row = (g) => g.q1(`SELECT e.x, e.y, e.z, e.frame, ${g === P ? 'e.health' : `CAST(qc_f(${qid}, qc_fdef('health')) AS INTEGER) health`}, (SELECT seed FROM rng) seed, e.yaw, e.ideal_yaw, (SELECT p.x || ' ' || p.y || ' ' || p.z FROM ents p WHERE p.id = ${g.pid}) ppos FROM ents e WHERE e.id = ${g === P ? M.ID : qid}`);
   const fmt = (r, h) => (process.env.DBGM ? `yaw ${r.YAW} iy ${r.IDEAL_YAW} player at ${r.PPOS} ` : '') + `${r.X.toFixed(2)} ${r.Y.toFixed(2)} ${r.Z.toFixed(2)} frame ${r.FRAME} hp ${r.HEALTH} seed ${r.SEED} player ${h}`;
-  let k = 0, parted = null, last = null, moved = 0, hurt = false;
+  // fighting back: in god mode (the player's pains are not drawn: T_Damage leaves before th_pain), shells to spare, the
+  // view turned to the monster's middle every tic in each game (the same turn while the two agree), a shot every 0.6 s
+  // (held, the next shot falls exactly 0.5 s on, where each game's clock rounds its own way)
+  // (the zombie takes rockets: its health is back to 60 at every hit, and only 60 at once gibs it)
+  const rl = mtype === 'zombie';
+  if (fight) for (const g of [P, Q]) {
+    await g.db.query("SELECT msg FROM host_cmd('god', '', '')"); await g.db.query("SELECT msg FROM host_cmd('give', 's', '100')");
+    if (rl) { await g.db.query("SELECT msg FROM host_cmd('give', '7', '')"); await g.db.query("SELECT msg FROM host_cmd('give', 'r', '20')"); }
+  }
+    const aim = async (g) => {
+    const v = await g.q1(`SELECT p.x px, p.y py, p.z pz, m.x mx, m.y my, m.z + (m.minz + m.maxz) / 2 mz FROM ents p, ents m WHERE p.id = ${g.pid} AND m.id = ${g === P ? M.ID : qid}`);
+    const yaw = (Math.atan2(v.MY - v.PY, v.MX - v.PX) * 180) / Math.PI, pitch = (-Math.atan2(v.MZ - (v.PZ + 22), Math.hypot(v.MX - v.PX, v.MY - v.PY)) * 180) / Math.PI;
+    const cur = g.view ?? { yaw: 0, pitch: 0 };
+    return { yd: ((((yaw - cur.yaw) % 360) + 540) % 360) - 180, pd: pitch - cur.pitch };
+  };
+  const ftic = async (g, k) => {
+    const t = await aim(g);
+    const r = await g.q1(`SELECT health, yaw, pitch - punch pitch FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, ${t.yd}, ${t.pd}, ${k % 12 === 0 ? 1 : 0}, 0, 1, 0)`);
+    g.view = { yaw: r.YAW, pitch: r.PITCH };
+    return r;
+  };
+  if (fight) for (const g of [P, Q]) g.view = await g.q1(`SELECT yaw, pitch - punch pitch FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, 0, 0, 0, 0, 1, ${rl ? 7 : 0})`).then((r) => ({ yaw: r.YAW, pitch: r.PITCH }));
+  if (fight) for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
+  let k = 0, parted = null, last = null, moved = 0, hurt = false, still = 0;
   for (; k < N; k++) {
-    const a = await tic(P), b = await tic(Q);
+    const a = await (fight ? ftic(P, k) : tic(P)), b = await (fight ? ftic(Q, k) : tic(Q));
     const ma = await row(P), mb = await row(Q);
     const dead = a.HEALTH <= 0 && b.HEALTH <= 0;      // the killing blow: the same, but the deaths draw their own
     if ((ma.SEED !== mb.SEED && !dead) || Math.abs(ma.X - mb.X) > 0.01 || Math.abs(ma.Y - mb.Y) > 0.01 || Math.abs(ma.Z - mb.Z) > 0.01 || ma.FRAME !== mb.FRAME
@@ -105,10 +130,13 @@ async function duel(map, mtype, mx, my, D = 300, N = 400) {
     if (process.env.TRACE && k >= +process.env.TRACE) console.log('T', k, fmt(ma, a.HEALTH), '|', fmt(mb, b.HEALTH));
     if (last) moved += Math.hypot(ma.X - last.X, ma.Y - last.Y);
     if (a.HEALTH < 100) hurt = true;
+    still = last && ma.HEALTH <= 0 && ma.FRAME === last.FRAME ? still + 1 : 0;
     last = ma;
     if (a.HEALTH <= 0) break;            // the player's death is not compared
+    if (fight && still >= 20) break;     // the monster dead, its last frame shown a second
   }
-  assert(!parted && hurt, parted ? `${map} ${mtype}: parted at ${parted}` : `${map} ${mtype}: ${k + 1} tics the same, every random draw too, until the player ${last && (await P.q1(`SELECT health FROM ents WHERE id = ${P.pid}`)).HEALTH <= 0 ? 'died' : 'had had enough'} (moved ${moved.toFixed(0)} units)`);
+  if (fight) assert(!parted && last && last.HEALTH <= 0, parted ? `${map} ${mtype} shot at: parted at ${parted}` : `${map} ${mtype} shot at: ${k + 1} tics the same, every random draw too, until it lay dead (${last ? `hp ${last.HEALTH}, frame ${last.FRAME}` : ''})`);
+  else assert(!parted && hurt, parted ? `${map} ${mtype}: parted at ${parted}` : `${map} ${mtype}: ${k + 1} tics the same, every random draw too, until the player ${last && (await P.q1(`SELECT health FROM ents WHERE id = ${P.pid}`)).HEALTH <= 0 ? 'died' : 'had had enough'} (moved ${moved.toFixed(0)} units)`);
   await P.db.close(); await Q.db.close();
 }
 
@@ -154,12 +182,15 @@ async function bubbles(map, N = 300) {
 const DUELS = [['e1m1', 'army', 0, 576], ['e1m1', 'dog', 88, 1520], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'wizard'], ['e1m6', 'shambler'], ['e1m3', 'zombie']];
 const only = process.env.DUEL;
 if (!only) {
-  for (const mtype of [...DUELS.map((d) => d[1]), 'bubbles']) {
+  for (const mtype of [...DUELS.map((d) => d[1]), ...DUELS.map((d) => `${d[1]}:fight`), 'bubbles']) {
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, DUEL: mtype } });
     if (r.status !== 0) failed++;
   }
 } else {
-  for (const [map, mtype, mx, my] of DUELS) if (only.split(',').includes(mtype)) await duel(map, mtype, mx, my);
+  for (const [map, mtype, mx, my] of DUELS) {
+    if (only.split(',').includes(mtype)) await duel(map, mtype, mx, my);
+    if (only.split(',').includes(`${mtype}:fight`)) await duel(map, mtype, mx, my, true);
+  }
   if (only.split(',').includes('bubbles')) await bubbles('e1m4');
   if (!failed) process.exit(0);
 }

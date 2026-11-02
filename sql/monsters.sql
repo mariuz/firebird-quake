@@ -596,6 +596,14 @@ BEGIN
     EXECUTE PROCEDURE move_to_goal(eid, 10);
     SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
   END
+  IF (mt = 'shambler' AND (SELECT e.anim FROM ents e WHERE e.id = :eid) IN ('swingl', 'swingr')) THEN
+  BEGIN
+    -- ShamClaw: its own ai_charge(10) (ai_face, then the step), then the reach
+    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+    EXECUTE PROCEDURE change_yaw(eid);
+    EXECUTE PROCEDURE move_to_goal(eid, 10);
+    SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
+  END
   IF (mt = 'demon1') THEN
   BEGIN
     -- Demon_Melee: ai_face, then walkmove(ideal_yaw, 12), a little closing, before the reach
@@ -677,40 +685,117 @@ BEGIN
   DELETE FROM ents e WHERE e.id = :eid;
 END^
 
--- th_pain
+-- th_pain, each monster's own (T_Damage hands it the damage taken): army_pain picks by random() (pain1 for 0.6 s
+-- below 0.2, painb or painc for 1.1 s), dog_pain one of two on random() > 0.5 with no wait, ogre_pain five by
+-- random() (the last two for 2 s), knight_pain pain below 0.85 else painb, demon1_pain (not mid-leap) flinches when
+-- random() × 200 is not over the damage, wiz_pain when random() × 70 is not, sham_pain when random() × 400 is not and
+-- 2 s have passed, the Enforcer's four by random(); the zombie (zombie_pain) ignores less than 9, goes down from 25
+-- or from a second hit within 3 s, else one of four quick pains. Its health is always back to 60. The others: a chance
+-- (pain_chance) and one of their pain animations
 CREATE OR ALTER PROCEDURE monster_pain (eid INTEGER, attacker INTEGER, damage INTEGER)
 AS
 DECLARE st VARCHAR(12); DECLARE pf DOUBLE PRECISION; DECLARE pc DOUBLE PRECISION; DECLARE anims VARCHAR(80); DECLARE ps VARCHAR(64); DECLARE n INTEGER; DECLARE pick VARCHAR(16);
-DECLARE p INTEGER; DECLARE q INTEGER; DECLARE i INTEGER; DECLARE mt VARCHAR(16); DECLARE hp INTEGER;
+DECLARE p INTEGER; DECLARE q INTEGER; DECLARE i INTEGER; DECLARE mt VARCHAR(16); DECLARE hp INTEGER; DECLARE r DOUBLE PRECISION; DECLARE wait_ DOUBLE PRECISION;
+DECLARE t DOUBLE PRECISION; DECLARE ip SMALLINT; DECLARE anim VARCHAR(16); DECLARE af INTEGER; DECLARE missile_a VARCHAR(16);
 BEGIN
-  SELECT e.st, e.pain_finished, t.pain_chance, t.pain_anims, t.pain_snd, e.mtype, e.health FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid
-    INTO st, pf, pc, anims, ps, mt, hp;
+  SELECT e.st, e.pain_finished, t.pain_chance, t.pain_anims, t.pain_snd, e.mtype, e.health, e.inpain, e.anim, e.anim_frame, t.missile_anim
+    FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid
+    INTO st, pf, pc, anims, ps, mt, hp, ip, anim, af, missile_a;
   IF (st IN ('die', 'dead', 'cruc', 'asleep')) THEN EXIT;
+  t = now_();
+  wait_ = NULL;
   IF (mt = 'zombie') THEN
   BEGIN
-    -- zombies only go down from a big hit, and always get back up
     UPDATE ents e SET e.health = 60 WHERE e.id = :eid;
-    IF (damage < 9) THEN EXIT;
-    IF (pf > now_()) THEN EXIT;
-    EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
-    IF (damage >= 25) THEN pick = 'paine'; ELSE pick = IIF(rnd() < 0.5e0, 'paina', IIF(rnd() < 0.5e0, 'painb', IIF(rnd() < 0.5e0, 'painc', 'paind')));
-    UPDATE ents e SET e.st = 'pain', e.pain_finished = now_() + IIF(:pick = 'paine', 3, 1) WHERE e.id = :eid;
+    IF (damage < 9 OR ip = 2) THEN EXIT;
+    IF (damage >= 25) THEN pick = 'paine';
+    ELSE IF (ip = 1) THEN
+    BEGIN
+      UPDATE ents e SET e.pain_finished = :t + 3 WHERE e.id = :eid;
+      EXIT;
+    END
+    ELSE IF (pf > t) THEN pick = 'paine';
+    ELSE
+    BEGIN
+      r = rnd();
+      pick = TRIM(IIF(r < 0.25e0, 'paina', IIF(r < 0.5e0, 'painb', IIF(r < 0.75e0, 'painc', 'paind'))));
+    END
+    UPDATE ents e SET e.st = 'pain', e.inpain = IIF(:pick = 'paine', 2, 1), e.nextthink = think_base() + 0.1e0 WHERE e.id = :eid;
+    EXECUTE PROCEDURE snd(eid, 2, TRIM(IIF(:pick IN ('painb', 'paind'), 'zombie/z_pain1.wav', 'zombie/z_pain.wav')), 1, 1);
     EXECUTE PROCEDURE set_anim(eid, pick);
     EXIT;
   END
-  IF (pf > now_()) THEN EXIT;
-  IF (rnd() > pc) THEN EXIT;
-  IF (mt = 'boss') THEN EXIT;
-  EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
-  -- pick one of the pain animations
-  n = 1; p = 1;
-  WHILE (POSITION(',', anims, p) > 0) DO BEGIN n = n + 1; p = POSITION(',', anims, p) + 1; END
-  i = FLOOR(rnd() * n); p = 1;
-  WHILE (i > 0) DO BEGIN p = POSITION(',', anims, p) + 1; i = i - 1; END
-  q = POSITION(',', anims, p);
-  pick = IIF(q = 0, SUBSTRING(anims FROM p), SUBSTRING(anims FROM p FOR q - p));
-  UPDATE ents e SET e.st = 'pain', e.pain_finished = now_() + 1, e.vx = 0, e.vy = 0 WHERE e.id = :eid;
+  IF (mt = 'army') THEN
+  BEGIN
+    IF (pf > t) THEN EXIT;
+    r = rnd();
+    pick = TRIM(IIF(r < 0.2e0, 'pain', IIF(r < 0.6e0, 'painb', 'painc')));
+    wait_ = IIF(r < 0.2e0, 0.6e0, 1.1e0);
+    ps = TRIM(IIF(r < 0.2e0, 'soldier/pain1.wav', 'soldier/pain2.wav'));
+  END
+  ELSE IF (mt = 'dog') THEN
+    pick = TRIM(IIF(rnd() > 0.5e0, 'pain', 'painb'));
+  ELSE IF (mt = 'ogre') THEN
+  BEGIN
+    IF (pf > t) THEN EXIT;
+    r = rnd();
+    pick = TRIM(IIF(r < 0.25e0, 'pain', IIF(r < 0.5e0, 'painb', IIF(r < 0.75e0, 'painc', IIF(r < 0.88e0, 'paind', 'paine')))));
+    wait_ = IIF(r < 0.75e0, 1, 2);
+  END
+  ELSE IF (mt = 'knight') THEN
+  BEGIN
+    IF (pf > t) THEN EXIT;
+    pick = TRIM(IIF(rnd() < 0.85e0, 'pain', 'painb'));
+    wait_ = 1;
+  END
+  ELSE IF (mt = 'demon1') THEN
+  BEGIN
+    IF (st = 'missile' AND anim = missile_a AND af >= 3 AND BIN_AND((SELECT e.flags FROM ents e WHERE e.id = :eid), 512) = 0) THEN EXIT;   -- mid-leap (Demon_JumpTouch set)
+    IF (pf > t) THEN EXIT;
+    UPDATE ents e SET e.pain_finished = :t + 1 WHERE e.id = :eid;
+    EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
+    IF (rnd() * 200 > damage) THEN EXIT;
+    ps = NULL; pick = 'pain';
+  END
+  ELSE IF (mt = 'wizard') THEN
+  BEGIN
+    EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
+    IF (rnd() * 70 > damage) THEN EXIT;
+    ps = NULL; pick = 'pain';
+  END
+  ELSE IF (mt = 'shambler') THEN
+  BEGIN
+    EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
+    IF (hp <= 0 OR rnd() * 400 > damage OR pf > t) THEN EXIT;
+    ps = NULL; pick = 'pain'; wait_ = 2;
+  END
+  ELSE IF (mt = 'enforcer') THEN
+  BEGIN
+    r = rnd();
+    IF (pf > t) THEN EXIT;
+    ps = TRIM(IIF(r < 0.5e0, 'enforcer/pain1.wav', 'enforcer/pain2.wav'));
+    pick = TRIM(IIF(r < 0.2e0, 'paina', IIF(r < 0.4e0, 'painb', IIF(r < 0.7e0, 'painc', 'paind'))));
+    wait_ = IIF(r < 0.7e0, 1, 2);
+  END
+  ELSE
+  BEGIN
+    IF (pf > t) THEN EXIT;
+    IF (rnd() > pc) THEN EXIT;
+    IF (mt = 'boss') THEN EXIT;
+    -- one of the pain animations
+    n = 1; p = 1;
+    WHILE (POSITION(',', anims, p) > 0) DO BEGIN n = n + 1; p = POSITION(',', anims, p) + 1; END
+    i = FLOOR(rnd() * n); p = 1;
+    WHILE (i > 0) DO BEGIN p = POSITION(',', anims, p) + 1; i = i - 1; END
+    q = POSITION(',', anims, p);
+    pick = IIF(q = 0, SUBSTRING(anims FROM p), SUBSTRING(anims FROM p FOR q - p));
+    wait_ = 1;
+  END
+  IF (ps IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 2, ps, 1, 1);
+  -- (the pain's first frame function: its frame, its next think 0.1 s on from QuakeC's time)
+  UPDATE ents e SET e.st = 'pain', e.pain_finished = COALESCE(:t + :wait_, e.pain_finished), e.vx = 0, e.vy = 0, e.nextthink = think_base() + 0.1e0 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, pick);
+  EXECUTE PROCEDURE step_move(eid);                -- (the first pain frame's function runs now)
 END^
 
 -- th_die
@@ -754,18 +839,6 @@ BEGIN
   END
   UPDATE game g SET g.killed = g.killed + 1 WHERE g.id = 1;
   IF (attacker = player_ent()) THEN UPDATE player p SET p.kills = p.kills + 1 WHERE p.id = 1;
-  -- DropBackpack, in a regular death only (army_die3, ogre_die3, enf_die3: a gibbed body drops nothing): from 24
-  -- below the origin, thrown 300 up and up to 100 each way across, a trigger, gone after two minutes
-  IF (drop_ IS NOT NULL AND hp >= gh) THEN
-  BEGIN
-    EXECUTE PROCEDURE spawn_ent('backpack', x, y, z - 24) RETURNING_VALUES bp;
-    EXECUTE PROCEDURE set_model(bp, 'progs/backpack.mdl');
-    UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
-           e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.ammo_cells = IIF(:drop_ = 'cells', 5, 0),
-           e.vx = -100 + rnd() * 200, e.vy = -100 + rnd() * 200, e.vz = 300,
-           e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
-    EXECUTE PROCEDURE link_ent(bp);
-  END
   IF (mt = 'boss') THEN
   BEGIN
     EXECUTE PROCEDURE snd(eid, 2, ds, 1, 1);
@@ -774,25 +847,55 @@ BEGIN
     EXECUTE PROCEDURE use_targets(eid, player_ent());
     EXIT;
   END
-  -- gib? (a zombie's gib_health is 1: it has no death but the gib)
+  -- gib? (a zombie's gib_health is 1: it has no death but the gib) The head first and then three gibs (the dog's
+  -- three gibs and then its head), each drawing as ThrowHead and ThrowGib do
   IF (hp < gh) THEN
   BEGIN
     EXECUTE PROCEDURE snd(eid, 2, gs, 1, 1);
+    IF (mt <> 'dog') THEN EXECUTE PROCEDURE throw_head(eid, hm, -hp);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib1.mdl', -hp);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib2.mdl', -hp);
     EXECUTE PROCEDURE throw_gib(eid, 'progs/gib3.mdl', -hp);
-    IF (hm IS NOT NULL) THEN EXECUTE PROCEDURE throw_head(eid, hm, -hp);
-    ELSE DELETE FROM ents e WHERE e.id = :eid;
+    IF (mt = 'dog') THEN EXECUTE PROCEDURE throw_head(eid, hm, -hp);
+    IF (hm IS NULL) THEN DELETE FROM ents e WHERE e.id = :eid;
     EXIT;
   END
   EXECUTE PROCEDURE snd(eid, 2, ds, 1, 1);
+  -- which death: army_die, ogre_die and knight_die take the first on random() < 0.5, dog_die and the Enforcer's on
+  -- random() > 0.5; wiz_death1 throws the body by three random()s
   q = POSITION(',', anims);
-  IF (q > 0 AND rnd() < 0.5e0) THEN pick = SUBSTRING(anims FROM q + 1); ELSE pick = IIF(q > 0, SUBSTRING(anims FROM 1 FOR q - 1), anims);
+  pick = IIF(q > 0, SUBSTRING(anims FROM 1 FOR q - 1), anims);
+  IF (q > 0) THEN
+  BEGIN
+    hp = IIF(rnd() < 0.5e0, 1, 0);
+    IF (IIF(mt IN ('dog', 'enforcer'), 1 - hp, hp) = 0) THEN pick = SUBSTRING(anims FROM q + 1);
+  END
+  IF (mt = 'wizard') THEN
+    UPDATE ents e SET e.vx = -200 + 400 * rnd(), e.vy = -200 + 400 * rnd(), e.vz = 100 + 100 * rnd(), e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
   q = POSITION(',', pick);
   IF (q > 0) THEN pick = SUBSTRING(pick FROM 1 FOR q - 1);
-  UPDATE ents e SET e.st = 'die', e.solid = 0, e.movetype = 6, e.vx = 0, e.vy = 0, e.flags = BIN_AND(e.flags, BIN_NOT(1 + 2)),
+  -- (still MOVETYPE_STEP, as id leaves it: a body in the air falls by SV_Physics_Step and slides along what it hits)
+  UPDATE ents e SET e.st = 'die', e.solid = 0, e.nextthink = think_base() + 0.1e0, e.vx = IIF(:mt = 'wizard', e.vx, 0), e.vy = IIF(:mt = 'wizard', e.vy, 0), e.flags = BIN_AND(e.flags, BIN_NOT(1 + 2)),
          e.minz = -24, e.maxz = -8 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, pick);
+  EXECUTE PROCEDURE step_move(eid);
+END^
+
+-- DropBackpack, on the third frame of a regular death (army_die3, ogre_die3, enf_die3 and their other deaths'): from
+-- 24 below the origin, thrown 300 up and up to 100 each way across, a trigger, gone after two minutes
+CREATE OR ALTER PROCEDURE drop_backpack (eid INTEGER)
+AS
+DECLARE drop_ VARCHAR(16); DECLARE bp INTEGER; DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
+BEGIN
+  SELECT t.drop_item, e.x, e.y, e.z FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO drop_, x, y, z;
+  IF (drop_ IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE spawn_ent('backpack', x, y, z - 24) RETURNING_VALUES bp;
+  EXECUTE PROCEDURE set_model(bp, 'progs/backpack.mdl');
+  UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
+         e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.ammo_cells = IIF(:drop_ = 'cells', 5, 0),
+         e.vx = -100 + rnd() * 200, e.vy = -100 + rnd() * 200, e.vz = 300,
+         e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
+  EXECUTE PROCEDURE link_ent(bp);
 END^
 
 -- the boss: rises out of the lava when the level triggers it
@@ -1171,6 +1274,15 @@ BEGIN
     WHILE (st = 'missile' AND missile_sk IS NOT NULL AND POSITION(',' || af || ',', ',' || missile_sk || ',') > 0) DO af = af + 1;
     IF (af >= fc) THEN
     BEGIN
+      -- the shambler's swing into its other swing, its first frame now (its sound, its charge)
+      IF (mt = 'shambler' AND st = 'melee' AND anim IN ('swingl', 'swingr') AND (SELECT e.count_ FROM ents e WHERE e.id = :eid) = 1) THEN
+      BEGIN
+        EXECUTE PROCEDURE set_anim(eid, TRIM(IIF(anim = 'swingl', 'swingr', 'swingl')));
+        UPDATE ents e SET e.anim_frame = -1, e.count_ = 0 WHERE e.id = :eid;
+        IF (melee_ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 2, melee_ss, 1, 1);
+        EXECUTE PROCEDURE monster_think(eid);
+        EXIT;
+      END
       -- the last frame's function goes on to th_run: run1 comes now, with its think (the run's move); the wizard's to
       -- wiz_side1 or wiz_run1, as WizardAttackFinished chose
       UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;
@@ -1209,6 +1321,18 @@ BEGIN
       UPDATE ents e SET e.yaw = e.yaw + rnd() * 25 WHERE e.id = :eid;
     END
     IF (st = 'melee' AND mt = 'shambler' AND anim IN ('swingl', 'swingr') AND af = 6) THEN EXECUTE PROCEDURE monster_melee(eid);
+    -- sham_swingr9 charges twice (1, then 10); both last swing frames go on into the other swing one time in two
+    -- (random() < 0.5: the next think is sham_swingl1 or sham_swingr1, kept in count_)
+    IF (st = 'melee' AND mt = 'shambler' AND anim IN ('swingl', 'swingr') AND af = 8) THEN
+    BEGIN
+      IF (anim = 'swingr' AND enemy IS NOT NULL) THEN
+      BEGIN
+        UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+        EXECUTE PROCEDURE change_yaw(eid);
+        EXECUTE PROCEDURE move_to_goal(eid, 10);
+      END
+      UPDATE ents e SET e.count_ = IIF(rnd() < 0.5e0, 1, 0) WHERE e.id = :eid;
+    END
     -- wiz_fast10: SUB_AttackFinished(2)
     IF (st = 'missile' AND mt = 'wizard' AND anim = missile_a AND af = 9 AND nightmare() = 0) THEN UPDATE ents e SET e.attack_finished = :t + 2 WHERE e.id = :eid;
     -- sham_magic3: the next think 0.2 s later (the charge held)
@@ -1233,11 +1357,32 @@ BEGIN
         EXECUTE PROCEDURE set_anim(eid, 'walk');
         EXIT;
       END
-      UPDATE ents e SET e.st = TRIM(IIF(e.enemy_id IS NULL, 'stand', 'run')) WHERE e.id = :eid;   -- TRIM: IIF pads to the longer literal
+      -- the last pain frame goes on into th_run (army_pain6 → army_run1): run1 comes now, with its think; the
+      -- zombie's run1 clears inpain
+      UPDATE ents e SET e.st = TRIM(IIF(e.enemy_id IS NULL, 'stand', 'run')), e.inpain = 0 WHERE e.id = :eid;   -- TRIM: IIF pads to the longer literal
       EXECUTE PROCEDURE set_anim(eid, IIF(enemy IS NULL, stand_a, run_a));
+      IF (enemy IS NOT NULL) THEN
+      BEGIN
+        UPDATE ents e SET e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0) WHERE e.id = :eid;
+        EXECUTE PROCEDURE monster_think(eid);
+      END
       EXIT;
     END
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    EXECUTE PROCEDURE step_move(eid);
+    -- the zombie down (zombie_paine10..12): not solid on the ground, lying 5 s (health back to 60), then up only where
+    -- there is room (walkmove(0, 0)), else down again for another 5 s
+    IF (mt = 'zombie' AND anim = 'paine') THEN
+    BEGIN
+      IF (af = 9) THEN UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
+      ELSE IF (af = 10) THEN UPDATE ents e SET e.nextthink = e.nextthink + 5, e.health = 60 WHERE e.id = :eid;
+      ELSE IF (af = 11) THEN
+      BEGIN
+        EXECUTE PROCEDURE snd(eid, 2, 'zombie/z_idle.wav', 1, 2);
+        UPDATE ents e SET e.health = 60, e.solid = 3 WHERE e.id = :eid;
+        IF (move_step(eid, 0, 0, 0) = 0) THEN UPDATE ents e SET e.anim_frame = 9, e.solid = 0 WHERE e.id = :eid;
+      END
+    END
     EXIT;
   END
 
@@ -1251,6 +1396,8 @@ BEGIN
       EXIT;
     END
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    IF (af = 2) THEN EXECUTE PROCEDURE drop_backpack(eid);
+    EXECUTE PROCEDURE step_move(eid);
     EXIT;
   END
 END^
@@ -1502,12 +1649,12 @@ BEGIN
   -- flies from the next frame); landing from a real fall (faster than a tenth of gravity) thuds. The physics run at
   -- the frame's start (sv.time), so the clock is put back a tic for them: what they touch happens then (a dog's leap
   -- bites at that time, and the bitten one's pain_finished counts from it)
-  UPDATE game g SET g.time_ = g.time_ - :dt WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 AND e.st <> 'dead');
+  UPDATE game g SET g.time_ = g.time_ - :dt WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0);
   IF (ROW_COUNT > 0) THEN
   BEGIN
   lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
   ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);         -- (the clock reads the start already)
-  FOR SELECT e.id FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 AND e.st <> 'dead' ORDER BY e.id INTO eid DO
+  FOR SELECT e.id FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 ORDER BY e.id INTO eid DO
   BEGIN
     hitsound = IIF((SELECT e.vz FROM ents e WHERE e.id = :eid) < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
     UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;

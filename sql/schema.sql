@@ -83,11 +83,13 @@ CREATE TABLE models (
 CREATE INDEX models_name ON models (name);
 
 -- Frame runs of an alias model: "run1".."run6" → ('run', first, 6).
--- the distance each walk and run frame of a monster moves it (id's ai_walk / ai_run constants, src/gamedata.js)
+-- the distance each walk and run frame of a monster moves it (id's ai_walk / ai_run constants, src/gamedata.js); a
+-- pain or death frame's step has its kind: b back, f forward, i toward ideal_yaw (STEP_MOVES)
 CREATE TABLE frame_moves (
   model VARCHAR(64) NOT NULL,
   frame INTEGER NOT NULL,
   dist  DOUBLE PRECISION NOT NULL,
+  kind  CHAR(1),
   PRIMARY KEY (model, frame)
 );
 
@@ -304,6 +306,7 @@ CREATE TABLE ents (
   teleport_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
   show_hostile  DOUBLE PRECISION DEFAULT 0 NOT NULL,     -- a monster's (FoundTarget sets it a second on: FindTarget's near test)
   spawn_x DOUBLE PRECISION DEFAULT 0 NOT NULL, spawn_y DOUBLE PRECISION DEFAULT 0 NOT NULL, spawn_z DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  inpain     SMALLINT DEFAULT 0 NOT NULL,   -- the zombie's: 1 in a quick pain, 2 down on the ground
   mtype      VARCHAR(16),                  -- monster_types.name
   alpha      SMALLINT DEFAULT 0 NOT NULL   -- 1 = draw translucent (ghostly)
 );

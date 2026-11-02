@@ -424,7 +424,26 @@ to the same behaviour, with a test of its own:
     start), so what it times from then (`attack_finished`, the next think) rounds as QuakeC mode's does.
   The duels keep the player off triggers (E1M6's exit pit), still E1M6's lava fireballs, and put the player on whole units (the angle to a spot at exactly −30.000° truncates to either whole
   degree, QuakeC's floats and PSQL's doubles each their own way).
-  Not compared yet: pain and death, walking a path, the player's death.
+- ~~**Pain and death, tic by tic**~~ done: each duel again the other way round (`DUEL=army:fight`): the player, in
+  god mode, turns to the monster every tic and shoots every 0.6 s (the zombie with rockets: its health is back to 60
+  at every hit) until it lies dead, every draw compared; all eight die alike (the shambler after 328 tics). What it
+  took, from `progs.dat`:
+  - **Each monster's `th_pain`**: `army_pain`, `dog_pain`, `ogre_pain`, `knight_pain`, `demon1_pain`, `wiz_pain`,
+    `sham_pain`, `zombie_pain` and the Enforcer's, their draws, waits and conditions (the fiend's flinch when
+    `random() × 200` is not over the damage, none mid-leap; the zombie's `inpain`, `ents.inpain`), where the PSQL game
+    had one rule for all; the pain's first frame and its next think at once, the last into `run1` with its move.
+  - **The pain and death frames' steps** (`STEP_MOVES`: `ai_pain` and `ai_back` back, `ai_forward` forward,
+    `ai_painforward` toward `ideal_yaw`, 110 frames read out of `progs.dat`).
+  - **Death**: `ClientObituary`'s `random()`, drawn for any victim before it asks whether it was a player; the death
+    picked by `random()` against 0.5 each monster its own way round; `ThrowHead` before the three `ThrowGib`s (the
+    dog's after), with `VelocityForDamage`'s and the spins' draws (seven a gib, four a head); `DropBackpack` on the
+    third death frame; `wiz_death1` throwing the body; a dying monster still `MOVETYPE_STEP`, falling and sliding as
+    one; its next think 0.1 s from QuakeC's time.
+  - **The shambler's swings**: `sham_swingr9` charges twice and either swing goes on into the other one time in two;
+    `ShamClaw` charges 10 before its reach. **The zombie down**: not solid, 5 s on the ground, up only where there is
+    room. **The rocket**: `100 + random() × 20` with its fraction (half on a shambler).
+  Held, the trigger's next shot falls exactly 0.5 s on (`attack_finished`), which each game's clock rounds its own way:
+  the duels fire every 0.6 s. Not compared yet: walking a path, the player's death.
 - ~~**Air bubbles**~~ done: the PSQL game had none (`air_bubbles` was skipped at spawn, no `DeathBubbles`), where
   QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s. Now `air_bubbles` lets out a bubble every 0.5 to
   1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water five; a bubble

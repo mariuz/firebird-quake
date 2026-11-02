@@ -101,7 +101,7 @@ END^
 CREATE OR ALTER FUNCTION frame_move (mid INTEGER, frame INTEGER, dflt DOUBLE PRECISION) RETURNS DOUBLE PRECISION
 AS
 BEGIN
-  RETURN COALESCE((SELECT f.dist FROM models m JOIN frame_moves f ON f.model = m.name WHERE m.id = :mid AND f.frame = :frame), dflt);
+  RETURN COALESCE((SELECT f.dist FROM models m JOIN frame_moves f ON f.model = m.name WHERE m.id = :mid AND f.frame = :frame AND f.kind IS NULL), dflt);
 END^
 
 -- V_ParseDamage's view kick: count (half the health and half the armor the hit took, at least 10) × v_kickpitch or
@@ -353,6 +353,18 @@ BEGIN
   UPDATE ents e SET e.vx = (:tx - :px) / :tt, e.vy = (:ty - :py) / :tt, e.vz = (:tz - :pz) / :tt,
          e.dstx = :tx, e.dsty = :ty, e.dstz = :tz, e.mv_done = :done, e.mv_time = :lt + :tt, e.nextthink = NULL, e.think = NULL
    WHERE e.id = :eid;
+END^
+
+-- a pain or death frame's step, as its frame function takes it (STEP_MOVES): ai_pain and ai_back walkmove back from
+-- the facing, ai_forward along it, ai_painforward along ideal_yaw
+CREATE OR ALTER PROCEDURE step_move (eid INTEGER)
+AS
+DECLARE k CHAR(1); DECLARE d DOUBLE PRECISION; DECLARE a DOUBLE PRECISION; DECLARE ok SMALLINT;
+BEGIN
+  SELECT f.kind, f.dist, IIF(f.kind = 'i', e.ideal_yaw, e.yaw + IIF(f.kind = 'b', 180, 0)) * 0.0174532925e0
+    FROM ents e JOIN models m ON m.id = e.model_id JOIN frame_moves f ON f.model = m.name AND f.frame = e.frame
+   WHERE e.id = :eid AND f.kind IS NOT NULL INTO k, d, a;
+  IF (k IS NOT NULL) THEN ok = move_step(eid, COS(a) * d, SIN(a) * d, 0);
 END^
 
 -- ── bubbles and teleport fog (misc.qc, player.qc, triggers.qc) ─────────────────────────────────────

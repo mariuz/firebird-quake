@@ -4,37 +4,58 @@
 SET TERM ^ ;
 
 -- ── damage (combat.qc) ───────────────────────────────────────────────────
+-- VelocityForDamage(dm), dm the (negative) health: 100 crandom() across each way, 200 + 100 random() up, all × 0.7
+-- above -50, × 2 above -200, else × 10
+CREATE OR ALTER PROCEDURE velocity_for_damage (dm INTEGER)
+RETURNS (vx DOUBLE PRECISION, vy DOUBLE PRECISION, vz DOUBLE PRECISION)
+AS
+DECLARE k DOUBLE PRECISION;
+BEGIN
+  vx = 100 * (2 * (rnd() - 0.5e0)); vy = 100 * (2 * (rnd() - 0.5e0)); vz = 200 + 100 * rnd();
+  k = IIF(dm > -50, 0.7e0, IIF(dm > -200, 2, 10));
+  vx = vx * k; vy = vy * k; vz = vz * k;
+END^
+
+-- ThrowGib: a gib from the origin, VelocityForDamage, spun by three random()s (the yaw's kept), gone 10 to 20 s on
+-- (dmg: the damage below zero, -health)
 CREATE OR ALTER PROCEDURE throw_gib (eid INTEGER, model VARCHAR(64), dmg INTEGER)
 AS
-DECLARE g INTEGER; DECLARE spd DOUBLE PRECISION;
+DECLARE g INTEGER; DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION;
+DECLARE r DOUBLE PRECISION;
 BEGIN
   EXECUTE PROCEDURE spawn_ent('gib', (SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid),
     (SELECT e.z FROM ents e WHERE e.id = :eid)) RETURNING_VALUES g;
   EXECUTE PROCEDURE set_model(g, model);
-  -- VelocityForDamage
-  spd = IIF(dmg > 50, 2, IIF(dmg > 200, 4, 1)) * 1e0;
-  UPDATE ents e SET e.movetype = 10, e.solid = 0,
-         e.vx = 100 * (rnd() * 2 - 1) * :spd * 0.7e0, e.vy = 100 * (rnd() * 2 - 1) * :spd * 0.7e0, e.vz = (rnd() * 200 + 100) * :spd,
-         e.avel_yaw = rnd() * 600, e.think = 'remove', e.nextthink = now_() + 10 + rnd() * 10, e.frame = 0 WHERE e.id = :g;
+  EXECUTE PROCEDURE velocity_for_damage(-dmg) RETURNING_VALUES vx, vy, vz;
+  r = rnd(); ay = rnd() * 600; r = rnd();
+  UPDATE ents e SET e.movetype = 10, e.solid = 0, e.minx = 0, e.miny = 0, e.minz = 0, e.maxx = 0, e.maxy = 0, e.maxz = 0,
+         e.vx = :vx, e.vy = :vy, e.vz = :vz, e.avel_yaw = :ay, e.think = 'remove', e.nextthink = now_() + 10 + rnd() * 10, e.frame = 0
+   WHERE e.id = :g;
 END^
 
+-- ThrowHead: the body becomes its head, 24 lower, VelocityForDamage, spun by crandom() × 600 about the vertical
 CREATE OR ALTER PROCEDURE throw_head (eid INTEGER, model VARCHAR(64), dmg INTEGER)
 AS
+DECLARE vx DOUBLE PRECISION; DECLARE vy DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION;
 BEGIN
   EXECUTE PROCEDURE set_model(eid, model);
+  EXECUTE PROCEDURE velocity_for_damage(-dmg) RETURNING_VALUES vx, vy, vz;
   UPDATE ents e SET e.movetype = 10, e.solid = 0, e.takedamage = 0, e.frame = 0, e.anim = NULL, e.st = 'dead',
-         e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
-         e.vx = 100 * (rnd() * 2 - 1), e.vy = 100 * (rnd() * 2 - 1), e.vz = rnd() * 200 + 200,
-         e.avel_yaw = rnd() * 600, e.think = NULL, e.nextthink = NULL, e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
+         e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56, e.z = e.z - 24,
+         e.vx = :vx, e.vy = :vy, e.vz = :vz, e.avel_yaw = 2 * (rnd() - 0.5e0) * 600, e.think = NULL, e.nextthink = NULL,
+         e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
 END^
 
 -- Killed(): the target's health fell to zero
 CREATE OR ALTER PROCEDURE killed (targ INTEGER, attacker INTEGER)
 AS
-DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp INTEGER;
+DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp INTEGER; DECLARE mt SMALLINT; DECLARE r DOUBLE PRECISION;
 BEGIN
-  SELECT e.classname, e.flags, e.health FROM ents e WHERE e.id = :targ INTO cls, flags, hp;
+  SELECT e.classname, e.flags, e.health, e.movetype FROM ents e WHERE e.id = :targ INTO cls, flags, hp, mt;
   IF (hp < -99) THEN UPDATE ents e SET e.health = -99 WHERE e.id = :targ;
+  -- ClientObituary's random() (drawn first, whoever died; not for a pusher or a thing that does not move, whose
+  -- th_die comes at once)
+  IF (mt NOT IN (0, 7)) THEN r = rnd();
   IF (cls = 'player') THEN
   BEGIN
     UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0,
@@ -380,7 +401,8 @@ BEGIN
     -- T_MissileTouch: 100 to 120 on what it hit, and a blast of 120 on the rest
     -- (its random() drawn whatever it hit)
     dmg2 = rnd();
-    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, dmg + FLOOR(dmg2 * 20));
+    -- (100 + random() × 20 as it is, the fraction too: T_Damage takes the ceiling; half on a shambler)
+    IF (td2 > 0 AND hp2 > 0) THEN EXECUTE PROCEDURE t_damage(e2, e1, own, (dmg + dmg2 * 20) * IIF((SELECT e.mtype FROM ents e WHERE e.id = :e2) = 'shambler', 0.5e0, 1));
     EXECUTE PROCEDURE t_radius_damage(e1, own, 120, e2);
     -- then the rocket backs off 8 units along its flight before it becomes the explosion: where a hit player's view
     -- kick comes from at the frame's end
