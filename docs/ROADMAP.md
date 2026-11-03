@@ -443,7 +443,18 @@ to the same behaviour, with a test of its own:
     `ShamClaw` charges 10 before its reach. **The zombie down**: not solid, 5 s on the ground, up only where there is
     room. **The rocket**: `100 + random() × 20` with its fraction (half on a shambler).
   Held, the trigger's next shot falls exactly 0.5 s on (`attack_finished`), which each game's clock rounds its own way:
-  the duels fire every 0.6 s. Not compared yet: walking a path, the player's death.
+  the duels fire every 0.6 s.
+- ~~**Walking a path, tic by tic**~~ done (`DUEL=army:walk`): each kind that patrols a `path_corner` chain on the
+  shareware levels (grunt, knight, ogre, fiend, zombie, scrag), unseen (notarget), set alike and compared 400 tics,
+  every draw and every corner reached (up to four). The PSQL game's walk now follows `ai_walk` and `t_movetarget`:
+  `FindTarget` every frame (it was every other), `movetogoal` along the `ideal_yaw` set at the start and at each
+  corner (it re-aimed at the corner every step), the corner reached by touching its box (it was 24 units off), the
+  next corner the first of its name, none: standing for good (no pause at a corner: 1.06 has no `wait` there); a
+  monster whose target is no corner stands (E1M6's shambler, whose target is a door, walked on the spot). The
+  ogre's `walk6` drag sound draws too; the scrag walks and stands on `hover1`–`hover8`. And an attack frame faces
+  the enemy only if its function does (`FACE_FRAMES`, read out of `progs.dat`: the fiend in the air keeps its
+  heading, the ogre's chainsaw frames turn only in `chainsaw`'s own `ai_charge`).
+  Not compared yet: the player's death.
 - ~~**Air bubbles**~~ done: the PSQL game had none (`air_bubbles` was skipped at spawn, no `DeathBubbles`), where
   QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s. Now `air_bubbles` lets out a bubble every 0.5 to
   1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water five; a bubble
@@ -463,7 +474,7 @@ to the same behaviour, with a test of its own:
   - The parity test's QuakeC monsters were moved away but still thinking, drawing for their walks and idle sounds.
   And in the duels: an attack's frames play on to its end when the enemy dies (only `ai_run` notices), and the think
   that goes on into the run does not face the enemy first.
-- The scrag's walk is its `fly` frames in the PSQL game, `hover1`–`hover8` in id's (`wiz_walk`).
+- ~~The scrag's walk~~ done: `hover1`–`hover8`, as `wiz_walk`.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
 

@@ -85,6 +85,12 @@ CREATE INDEX models_name ON models (name);
 -- Frame runs of an alias model: "run1".."run6" → ('run', first, 6).
 -- the distance each walk and run frame of a monster moves it (id's ai_walk / ai_run constants, src/gamedata.js); a
 -- pain or death frame's step has its kind: b back, f forward, i toward ideal_yaw (STEP_MOVES)
+-- the frames whose function faces the enemy (ai_face, ai_charge: FACE_FRAMES in src/gamedata.js)
+CREATE TABLE face_frames (
+  model VARCHAR(64) NOT NULL,
+  frame INTEGER NOT NULL,
+  PRIMARY KEY (model, frame)
+);
 CREATE TABLE frame_moves (
   model VARCHAR(64) NOT NULL,
   frame INTEGER NOT NULL,

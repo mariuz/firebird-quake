@@ -60,7 +60,7 @@ export const MONSTERS = [
   {
     name: 'wizard', model: 'progs/wizard.mdl', head_model: 'progs/h_wizard.mdl', health: 80, hull: 1, maxz: 40, flags: 1,
     run_speed: 16, walk_speed: 8, yaw_speed: 20,
-    stand_anim: 'hover', walk_anim: 'fly', run_anim: 'fly', pain_anims: 'pain', death_anims: 'death',
+    stand_anim: 'hover', walk_anim: 'hover', run_anim: 'fly', pain_anims: 'pain', death_anims: 'death',
     missile_anim: 'magatt', missile_frames: '', missile_seq: '29,30,31,32,33,34,33,32,31,30', missile_kind: 'wspike',   // the spikes come from Wiz_StartFast's two shooters attack_chance: 0.35, pain_chance: 1,
     sight_snd: 'wizard/wsight.wav', idle_snd: 'wizard/widle1.wav', pain_snd: 'wizard/wpain.wav', death_snd: 'wizard/wdeath.wav',
     attack_snd: 'wizard/wattack.wav', missile_start_snd: 'wizard/wattack.wav', gib_health: -40,
@@ -183,4 +183,22 @@ export const STEP_MOVES = {
   'progs/hknight.mdl': { 42: 'f10', 43: 'f8', 44: 'f7', 49: 'f10', 50: 'f11' },
   'progs/fish.mdl': { 58: 'b6', 59: 'b6', 60: 'b6', 61: 'b6', 62: 'b6', 63: 'b6', 64: 'b6', 65: 'b6' },
   'progs/enforcer.mdl': { 44: 'f14', 45: 'f2', 49: 'f3', 50: 'f5', 51: 'f5', 52: 'f5', 86: 'i2', 87: 'i1', 93: 'i1', 94: 'i1', 95: 'i1', 98: 'b1', 99: 'b1' },
+};
+
+// The frames whose function turns the monster to its enemy (ai_face, or ai_charge, which faces before its step), read out
+// of progs.dat 1.06: model → frames. An attack frame not listed keeps the facing it has (demon1_jump5..12 in the air).
+export const FACE_FRAMES = {
+  'progs/ogre.mdl': [33, 34, 35, 36, 37, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
+  'progs/demon.mdl': [27, 28, 29, 30, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 65, 66, 67, 68],
+  'progs/shambler.mdl': [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67],
+  'progs/knight.mdl': [17, 27, 42, 44, 45, 46, 47, 48, 49, 50, 51, 52],
+  'progs/soldier.mdl': [81, 82, 83, 84, 85, 86, 87, 88, 89],
+  'progs/wizard.mdl': [29, 30, 31, 32, 33, 34],
+  'progs/dog.mdl': [0, 1, 2, 4, 5, 6, 7, 60, 61],
+  'progs/zombie.mdl': [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90],
+  'progs/tarbaby.mdl': [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 50, 51, 52, 53],
+  'progs/hknight.mdl': [63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 91, 92, 93, 94, 95, 96, 97, 98, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159],
+  'progs/fish.mdl': [0, 1, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17],
+  'progs/shalrath.mdl': [0, 1, 2, 3, 4, 5, 6, 7, 9],
+  'progs/enforcer.mdl': [31, 32, 33, 34, 35, 37, 38, 39, 40],
 };

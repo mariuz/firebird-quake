@@ -205,7 +205,7 @@ END^
 CREATE OR ALTER PROCEDURE start_attack (eid INTEGER, melee SMALLINT)
 AS
 DECLARE a VARCHAR(16); DECLARE ss VARCHAR(64); DECLARE mt VARCHAR(16); DECLARE mid INTEGER; DECLARE fmv DOUBLE PRECISION;
-DECLARE r DOUBLE PRECISION; DECLARE hp INTEGER;
+DECLARE r DOUBLE PRECISION; DECLARE hp INTEGER; DECLARE fr INTEGER;
 BEGIN
   SELECT IIF(:melee = 1, t.melee_anim, t.missile_anim), IIF(:melee = 1, t.melee_start_snd, t.missile_start_snd), e.mtype, e.model_id, e.health
     FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO a, ss, mt, mid, hp;
@@ -250,13 +250,14 @@ BEGIN
              -SIN(:r), COS(:r), 'wiz_fastfire', now_() + 0.3e0 FROM ents e WHERE e.id = :eid;
   END
   -- the first frame's function runs now (th_melee calls it): its ai_charge, ai_face then the step
-  fmv = frame_move(mid, (SELECT e.frame FROM ents e WHERE e.id = :eid), NULL);
-  IF (fmv IS NOT NULL) THEN
+  fr = (SELECT e.frame FROM ents e WHERE e.id = :eid);
+  fmv = frame_move(mid, fr, NULL);
+  IF (fmv IS NOT NULL OR frame_faces(mid, fr) = 1) THEN
   BEGIN
     UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = e.enemy_id) - e.x, (SELECT n.y FROM ents n WHERE n.id = e.enemy_id) - e.y)
      WHERE e.id = :eid AND e.enemy_id IS NOT NULL;
     EXECUTE PROCEDURE change_yaw(eid);
-    EXECUTE PROCEDURE move_to_goal(eid, fmv);
+    IF (fmv IS NOT NULL) THEN EXECUTE PROCEDURE move_to_goal(eid, fmv);
   END
 END^
 
@@ -591,8 +592,10 @@ BEGIN
   -- the second twice (plus the third): 2 r2 + r3
   IF (mt = 'ogre') THEN
   BEGIN
-    -- chainsaw: CanDamage, its own ai_charge(10), then the reach
+    -- chainsaw: CanDamage, its own ai_charge(10) (ai_face, then the step), then the reach
     IF (can_damage(enemy, eid) = 0) THEN EXIT;
+    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+    EXECUTE PROCEDURE change_yaw(eid);
     EXECUTE PROCEDURE move_to_goal(eid, 10);
     SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
   END
@@ -996,6 +999,10 @@ BEGIN
   BEGIN
     IF (rnd() < 0.2e0) THEN EXECUTE PROCEDURE snd(eid, 2, IIF(st = 'run', 'ogre/ogidle2.wav', 'ogre/ogidle.wav'), 1, 2);
   END
+  ELSE IF (mt = 'ogre' AND st = 'walk' AND af = 5) THEN       -- ogre_walk6: the chainsaw dragged, one time in ten
+  BEGIN
+    IF (rnd() < 0.1e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'ogre/ogdrag.wav', 1, 2);
+  END
   ELSE IF (mt = 'shambler' AND ((st = 'walk' AND af = 11) OR (st = 'run' AND af = 5))) THEN
   BEGIN
     IF (rnd() > 0.8e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'shambler/sidle.wav', 1, 2);
@@ -1042,6 +1049,32 @@ BEGIN
   EXECUTE PROCEDURE monster_idle_sound(eid, 'wizard', 'run', 0, NULL, 0);
 END^
 
+-- t_movetarget: a walking monster touching its corner (the boxes as SV_LinkEdict pads them, a unit each way; the
+-- corner's '-8 -8 -8' to '8 8 8') heads for the next one, the first of its target's name (the ogre drags its
+-- chainsaw); with none it stands for good. 1 when it stood
+CREATE OR ALTER FUNCTION path_corner_touch (eid INTEGER) RETURNS SMALLINT
+AS
+DECLARE goal INTEGER; DECLARE gt VARCHAR(40); DECLARE nx INTEGER; DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION;
+DECLARE mt VARCHAR(16);
+BEGIN
+  SELECT c.id, c.target, e.mtype FROM ents e JOIN ents c ON c.id = e.goal_id
+   WHERE e.id = :eid AND e.enemy_id IS NULL AND c.classname = 'path_corner'
+     AND e.x + e.minx - 1 <= c.x + 9 AND e.x + e.maxx + 1 >= c.x - 9
+     AND e.y + e.miny - 1 <= c.y + 9 AND e.y + e.maxy + 1 >= c.y - 9
+     AND e.z + e.minz - 1 <= c.z + 9 AND e.z + e.maxz + 1 >= c.z - 9 INTO goal, gt, mt;
+  IF (goal IS NULL) THEN RETURN 0;
+  IF (mt = 'ogre') THEN EXECUTE PROCEDURE snd(eid, 2, 'ogre/ogdrag.wav', 1, 2);
+  SELECT FIRST 1 c.id, c.x, c.y FROM ents c WHERE c.targetname = :gt ORDER BY c.id INTO nx, x, y;
+  IF (nx IS NULL) THEN
+  BEGIN
+    UPDATE ents e SET e.goal_id = NULL, e.target = NULL, e.st = 'stand' WHERE e.id = :eid;
+    EXECUTE PROCEDURE set_anim(eid, (SELECT t.stand_anim FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid));
+    RETURN 1;
+  END
+  UPDATE ents e SET e.goal_id = :nx, e.target = :gt, e.ideal_yaw = vectoyaw(:x - e.x, :y - e.y) WHERE e.id = :eid;
+  RETURN 0;
+END^
+
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER)
 AS
 DECLARE st VARCHAR(12); DECLARE anim VARCHAR(16); DECLARE af INTEGER; DECLARE mid INTEGER; DECLARE enemy INTEGER; DECLARE flags INTEGER;
@@ -1081,7 +1114,7 @@ BEGIN
   END
   SELECT a.first_frame, a.frame_count FROM anims a WHERE a.model_id = :mid AND a.anim = :anim INTO ff, fc;
   IF (ff IS NULL) THEN BEGIN ff = 0; fc = 12; END   -- no such animation (model missing): a typical run length, so attack frames still come
-  IF (mt = 'wizard' AND anim = 'hover' AND st = 'run') THEN fc = 8;                -- wiz_side1..8: hover1..8
+  IF (mt = 'wizard' AND anim = 'hover') THEN fc = 8;            -- wiz_stand, wiz_walk, wiz_side: hover1..8
 
   -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end)
   IF (enemy IS NOT NULL AND st NOT IN ('melee', 'missile')) THEN
@@ -1112,8 +1145,8 @@ BEGIN
   IF (st = 'stand' OR st = 'walk' OR st = 'rise') THEN
   BEGIN
     EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 1);
-    -- ai_stand / ai_walk: look for the player (cheaply: only when in the player's PVS)
-    IF (st <> 'rise' AND MOD(af, 2) = 0) THEN
+    -- ai_stand / ai_walk: look for the player every frame (FindTarget; cheap out of the player's PVS)
+    IF (st <> 'rise') THEN
     BEGIN
       enemy = find_target(eid);
       IF (enemy > 0) THEN
@@ -1126,38 +1159,26 @@ BEGIN
     END
     IF (st = 'walk' AND tgt IS NOT NULL) THEN
     BEGIN
-      -- follow the path_corner chain
+      -- walkmonster_start_go: the first corner (goalentity, movetarget) and the way to it, once
       IF (goal IS NULL) THEN
       BEGIN
-        SELECT FIRST 1 e.id FROM ents e WHERE e.targetname = :tgt AND e.classname = 'path_corner' INTO goal;
-        UPDATE ents e SET e.goal_id = :goal WHERE e.id = :eid;
+        SELECT FIRST 1 e.id, e.x, e.y FROM ents e WHERE e.targetname = :tgt AND e.classname = 'path_corner' ORDER BY e.id INTO goal, gx, gy;
+        IF (goal IS NOT NULL) THEN UPDATE ents e SET e.goal_id = :goal, e.ideal_yaw = vectoyaw(:gx - e.x, :gy - e.y) WHERE e.id = :eid;
+        ELSE
+        BEGIN
+          -- a target that is no path_corner (E1M6's shambler opens a door when it dies): it stands (pausetime 99999999)
+          UPDATE ents e SET e.st = 'stand' WHERE e.id = :eid;
+          EXECUTE PROCEDURE set_anim(eid, stand_a);
+          EXIT;
+        END
       END
       IF (goal IS NOT NULL) THEN
       BEGIN
-        SELECT e.x, e.y, e.z, e.target, e.wait_ FROM ents e WHERE e.id = :goal INTO gx, gy, gz, gt, gw;
-        IF (vlen(gx - x, gy - y, 0) < 24) THEN
-        BEGIN
-          -- t_movetarget: next corner, maybe after a pause
-          UPDATE ents e SET e.target = :gt, e.goal_id = NULL, e.ideal_yaw = vectoyaw(:gx - e.x, :gy - e.y) WHERE e.id = :eid;
-          IF (gt IS NULL OR gw > 0) THEN
-          BEGIN
-            UPDATE ents e SET e.st = 'stand', e.search_time = :t + COALESCE(:gw, 0) WHERE e.id = :eid;
-            EXECUTE PROCEDURE set_anim(eid, stand_a);
-            EXIT;
-          END
-        END
-        ELSE
-        BEGIN
-          UPDATE ents e SET e.ideal_yaw = vectoyaw(:gx - :x, :gy - :y) WHERE e.id = :eid;
-          EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + MOD(af + 1, fc), walk_spd));
-        END
+        -- ai_walk: movetogoal along ideal_yaw; touching the corner (t_movetarget) turns it to the next, or, at the
+        -- path's end, stands it for good
+        EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + MOD(af + 1, fc), walk_spd));
+        IF (path_corner_touch(eid) = 1) THEN EXIT;
       END
-    END
-    ELSE IF (st = 'stand' AND tgt IS NOT NULL AND (SELECT e.search_time FROM ents e WHERE e.id = :eid) < t AND EXISTS (SELECT 1 FROM ents c WHERE c.targetname = :tgt AND c.classname = 'path_corner')) THEN
-    BEGIN
-      UPDATE ents e SET e.st = 'walk' WHERE e.id = :eid;
-      EXECUTE PROCEDURE set_anim(eid, walk_a);
-      EXIT;
     END
     -- advance the frame
     af = af + 1;
@@ -1296,8 +1317,9 @@ BEGIN
       EXECUTE PROCEDURE monster_think(eid);
       EXIT;
     END
-    -- ai_face each attack frame (not the think that goes on into the run); act on the key frames
-    IF (enemy IS NOT NULL) THEN
+    -- ai_face on the attack frames whose function faces (not the think that goes on into the run, nor the fiend's
+    -- frames in the air); act on the key frames
+    IF (enemy IS NOT NULL AND frame_faces(mid, IIF(aseq IS NULL, ff + af, seq_at(aseq, af))) = 1) THEN
     BEGIN
       UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
       EXECUTE PROCEDURE change_yaw(eid);

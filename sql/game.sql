@@ -355,6 +355,13 @@ BEGIN
    WHERE e.id = :eid;
 END^
 
+-- does the frame's function face the enemy (ai_face, ai_charge)?
+CREATE OR ALTER FUNCTION frame_faces (mid INTEGER, frame INTEGER) RETURNS SMALLINT
+AS
+BEGIN
+  RETURN IIF(EXISTS (SELECT 1 FROM models m JOIN face_frames f ON f.model = m.name WHERE m.id = :mid AND f.frame = :frame), 1, 0);
+END^
+
 -- a pain or death frame's step, as its frame function takes it (STEP_MOVES): ai_pain and ai_back walkmove back from
 -- the facing, ai_forward along it, ai_painforward along ideal_yaw
 CREATE OR ALTER PROCEDURE step_move (eid INTEGER)

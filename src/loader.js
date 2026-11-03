@@ -14,7 +14,7 @@ import { Bsp, parseVec } from './bsp.js';
 import { Mdl, Spr } from './mdl.js';
 import { FRAME_LAYOUTS } from './framelayouts.js';
 import { Progs } from './progs.js';
-import { MONSTERS, LIGHTSTYLES, FRAME_MOVES, STEP_MOVES } from './gamedata.js';
+import { MONSTERS, LIGHTSTYLES, FRAME_MOVES, STEP_MOVES, FACE_FRAMES } from './gamedata.js';
 
 const CHUNK = 30000;
 export const WORLD_ID_BASE = 0;           // ids below ITEM_ID_BASE are the current map
@@ -184,7 +184,7 @@ export async function savedTablesSql(db) {
  * Returns the model registry the JS renderer needs alongside.
  */
 export async function loadResources(db, pak, { width = 320, height = 200, fov = 90 } = {}) {
-  await db.exec('DELETE FROM anims; DELETE FROM models; DELETE FROM monster_types; DELETE FROM frame_moves; DELETE FROM lightstyles; DELETE FROM game; DELETE FROM player; DELETE FROM viewcfg; ' +
+  await db.exec('DELETE FROM anims; DELETE FROM models; DELETE FROM monster_types; DELETE FROM frame_moves; DELETE FROM face_frames; DELETE FROM lightstyles; DELETE FROM game; DELETE FROM player; DELETE FROM viewcfg; ' +
     'DELETE FROM face_verts; DELETE FROM faces; DELETE FROM miptex; DELETE FROM hulls; DELETE FROM leaves; DELETE FROM marksurfaces; DELETE FROM ents; DELETE FROM map_ents');
 
   const res = { models: new Map(), byName: new Map(), bsps: new Map(), nextModel: 1, pak };
@@ -245,7 +245,8 @@ async function loadMonsterTypes(db) {
   const body = MONSTERS.map((m) => `INSERT INTO monster_types (${cols.join(', ')}) VALUES (${cols.map((c) => lit(m[c] ?? null)).join(', ')});`).join('\n');
   await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${body}\nEND^\nSET TERM ; ^`);
   const moves = Object.entries(FRAME_MOVES).flatMap(([m, t]) => Object.entries(t).map(([f, d]) => `INSERT INTO frame_moves (model, frame, dist) VALUES (${lit(m)}, ${f}, ${d});`))
-    .concat(Object.entries(STEP_MOVES).flatMap(([m, t]) => Object.entries(t).map(([f, v]) => `INSERT INTO frame_moves (model, frame, dist, kind) VALUES (${lit(m)}, ${f}, ${v.slice(1)}, '${v[0]}');`)));
+    .concat(Object.entries(STEP_MOVES).flatMap(([m, t]) => Object.entries(t).map(([f, v]) => `INSERT INTO frame_moves (model, frame, dist, kind) VALUES (${lit(m)}, ${f}, ${v.slice(1)}, '${v[0]}');`)))
+    .concat(Object.entries(FACE_FRAMES).flatMap(([m, fs]) => fs.map((f) => `INSERT INTO face_frames (model, frame) VALUES (${lit(m)}, ${f});`)));
   for (let i = 0; i < moves.length; i += 200)        // (a block takes at most 256 statements' contexts)
     await db.exec(`SET TERM ^ ;\nEXECUTE BLOCK AS BEGIN\n${moves.slice(i, i + 200).join('\n')}\nEND^\nSET TERM ; ^`);
 }

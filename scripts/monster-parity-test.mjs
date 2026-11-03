@@ -5,7 +5,8 @@
 // health, the player's health and the generator itself (both games draw from the seeded rnd(), so its state shows
 // that the two make the same random draws in the same order). A monster that parts reports the first tic and both rows.
 // Then each the other way round: the player, in god mode, shoots it every 0.6 s (the zombie with rockets) until it
-// lies dead, its pains and death compared the same way (DUEL=army:fight). Each duel runs in a process of its own (two
+// lies dead, its pains and death compared the same way (DUEL=army:fight); and each kind that patrols a path walking
+// it unseen (DUEL=army:walk). Each duel runs in a process of its own (two
 // engines a duel).
 //
 //   node scripts/monster-parity-test.mjs
@@ -179,10 +180,66 @@ async function bubbles(map, N = 300) {
   await P.db.close(); await Q.db.close();
 }
 
+// a monster on its path_corner patrol in both games, unseen (notarget): put at the same place, frame and think phase,
+// heading for the same corner along the same ideal_yaw, from one seed, and compared every tic (place, frame, the
+// generator): ai_walk's steps and movetogoal's draws, the corners touched (t_movetarget), the idle sounds
+async function walker(map, mtype, N = 400) {
+  const P = await open(`pw${mtype}`); await loadMap(P.db, pak, P.res, map, { skill: 1, seed: 1 });
+  const Q = await open(`qw${mtype}`); await loadMap(Q.db, pak, Q.res, map, { skill: 1, seed: 1 });
+  await loadProgs(Q.db, pak); await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
+  for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '', '')");
+  const tic = (g) => g.q1(`SELECT health FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, 0, 0, 0, 0, 1, 0)`);
+  for (const g of [P, Q]) for (let k = 0; k < 10; k++) await tic(g);
+  P.pid = (await P.q1('SELECT player_ent() id FROM rdb$database')).ID; Q.pid = 1;
+  const M = await P.q1(`SELECT e.id, e.x, e.y, e.z, e.yaw, e.ideal_yaw, e.goal_id, c.x cx, c.y cy, c.z cz FROM ents e JOIN ents c ON c.id = e.goal_id WHERE e.mtype = '${mtype}' AND e.st = 'walk' AND e.health > 0 ORDER BY e.id ROWS 1`);
+  if (!M) { assert(false, `${map} ${mtype}: one walking a path`); return; }
+  const near = (x, y, z, extra = '') => Q.q1(`SELECT id FROM ents WHERE id <> 1 ${extra} AND ABS(x - ${x}) < 48 AND ABS(y - ${y}) < 48 AND ABS(z - ${z}) < 48 ORDER BY (x - ${x}) * (x - ${x}) + (y - ${y}) * (y - ${y}) ROWS 1`);
+  const qid = (await near(M.X, M.Y, M.Z, 'AND solid = 3'))?.ID;
+  const qgoal = (await Q.q1(`SELECT id FROM ents WHERE ABS(x - ${M.CX}) < 1 AND ABS(y - ${M.CY}) < 1 AND ABS(z - ${M.CZ}) < 1 AND qc_str(CAST(qc_f(id, qc_fdef('classname')) AS INTEGER)) = 'path_corner' ROWS 1`))?.ID;
+  if (!qid || !qgoal) { assert(false, `${mtype}: the same walker and corner in QuakeC mode (${qid}, ${qgoal})`); return; }
+  // every other monster away
+  await P.db.exec(`UPDATE ents SET health = 0, solid = 0, nextthink = NULL, think = NULL, x = x + 50000 WHERE mtype IS NOT NULL AND id <> ${M.ID}`);
+  await Q.db.exec(`UPDATE ents SET solid = 0, x = x + 50000 WHERE id <> ${qid} AND (BIN_AND(flags, 32) <> 0 OR id IN (SELECT f.ent FROM qc_fields f WHERE f.ofs = qc_fdef('classname') AND qc_str(CAST(f.v AS INTEGER)) STARTING WITH 'monster_'))`);
+  for (const g of [P, Q]) for (const r of (await g.db.query('SELECT id FROM ents WHERE x > 40000')).rows) {
+    await g.db.exec(`EXECUTE PROCEDURE link_ent(${r.ID})`);
+    if (g === Q) for (const f of ['nextthink', 'health', 'takedamage']) await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${r.ID}, qc_fdef('${f}'), 0)`);
+  }
+  // the same place, heading and goal; walk1 shown, the next think next tic (army_walk2 or the like)
+  const walk = (await P.q1(`SELECT t.walk_anim a FROM monster_types t WHERE t.name = '${mtype}'`)).A;
+  await Q.db.exec(`UPDATE ents SET x = ${M.X}, y = ${M.Y}, z = ${M.Z}, yaw = ${M.YAW}, ideal_yaw = ${M.IDEAL_YAW} WHERE id = ${qid}`);
+  await Q.db.exec(`EXECUTE PROCEDURE link_ent(${qid})`);
+  for (const f of ['goalentity', 'movetarget']) await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${qid}, qc_fdef('${f}'), ${qgoal})`);
+  await P.db.exec(`EXECUTE PROCEDURE set_anim(${M.ID}, '${walk}')`);
+  await P.db.exec(`UPDATE ents SET nextthink = (SELECT time_ FROM game) + 0.05 WHERE id = ${M.ID}`);
+  const fn = { army: 'army_walk2', dog: 'dog_walk2', knight: 'knight_walk2', ogre: 'ogre_walk2', demon1: 'demon1_walk2', wizard: 'wiz_walk2', shambler: 'sham_walk2', zombie: 'zombie_walk2', enforcer: 'enf_walk2' }[mtype];
+  const qt = (await Q.q1('SELECT time_ t FROM game')).T;
+  await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${qid}, qc_fdef('frame'), ${(await P.q1(`SELECT frame FROM ents WHERE id = ${M.ID}`)).FRAME})`);
+  await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${qid}, qc_fdef('think'), qc_fn('${fn}'))`);
+  await Q.db.exec(`EXECUTE PROCEDURE qc_sf(${qid}, qc_fdef('nextthink'), ${qt + 0.05})`);
+  for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
+  const row = (g) => g.q1(`SELECT e.x, e.y, e.z, e.frame, e.yaw, ${g === P ? 'e.goal_id' : `CAST(qc_f(e.id, qc_fdef('goalentity')) AS INTEGER)`} goal, (SELECT seed FROM rng) seed FROM ents e WHERE e.id = ${g === P ? M.ID : qid}`);
+  const fmt = (r) => `${r.X.toFixed(2)} ${r.Y.toFixed(2)} ${r.Z.toFixed(2)} yaw ${r.YAW.toFixed(1)} frame ${r.FRAME} seed ${r.SEED}`;
+  let parted = null, moved = 0, last = null, lastQ = null, turns = 0, k = 0;
+  for (; k < N && !parted; k++) {
+    await tic(P); await tic(Q);
+    const a = await row(P), b = await row(Q);
+    if (a.SEED !== b.SEED || Math.abs(a.X - b.X) > 0.01 || Math.abs(a.Y - b.Y) > 0.01 || Math.abs(a.Z - b.Z) > 0.01 || a.FRAME !== b.FRAME) parted = `tic ${k}: PSQL ${fmt(a)} | QuakeC ${fmt(b)}`;
+    if (process.env.TRACE && k >= +process.env.TRACE) console.log('T', k, fmt(a), '|', fmt(b));
+    if (last) { moved += Math.hypot(a.X - last.X, a.Y - last.Y); if (a.GOAL !== last.GOAL) turns++; }
+    if (last && (a.GOAL !== last.GOAL) !== (b.GOAL !== lastQ.GOAL)) parted = parted ?? `tic ${k}: a corner reached in one game only (PSQL ${last.GOAL} → ${a.GOAL}, QuakeC ${lastQ.GOAL} → ${b.GOAL})`;
+    lastQ = b;
+    last = a;
+  }
+  assert(!parted && moved > 50 && turns > 0, parted ? `${map} ${mtype} walking: parted at ${parted}` : `${map} ${mtype} walking its path: ${N} tics the same, every random draw too (walked ${moved.toFixed(0)} units, ${turns} corner(s) reached)`);
+  await P.db.close(); await Q.db.close();
+}
+
 const DUELS = [['e1m1', 'army', 0, 576], ['e1m1', 'dog', 88, 1520], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'wizard'], ['e1m6', 'shambler'], ['e1m3', 'zombie']];
+// the levels where each kind walks a path at the start (no dog or shambler does: E1M6's shambler's target is a door)
+const WALKS = [['e1m1', 'army'], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'zombie'], ['e1m4', 'wizard']];
 const only = process.env.DUEL;
 if (!only) {
-  for (const mtype of [...DUELS.map((d) => d[1]), ...DUELS.map((d) => `${d[1]}:fight`), 'bubbles']) {
+  for (const mtype of [...DUELS.map((d) => d[1]), ...DUELS.map((d) => `${d[1]}:fight`), ...WALKS.map((w) => `${w[1]}:walk`), 'bubbles']) {
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, DUEL: mtype } });
     if (r.status !== 0) failed++;
   }
@@ -191,6 +248,7 @@ if (!only) {
     if (only.split(',').includes(mtype)) await duel(map, mtype, mx, my);
     if (only.split(',').includes(`${mtype}:fight`)) await duel(map, mtype, mx, my, true);
   }
+  for (const [map, mtype] of WALKS) if (only.split(',').includes(`${mtype}:walk`)) await walker(map, mtype);
   if (only.split(',').includes('bubbles')) await bubbles('e1m4');
   if (!failed) process.exit(0);
 }
