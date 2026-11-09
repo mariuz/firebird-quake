@@ -37,7 +37,7 @@ BEGIN
   fx = cp * cy; fy = cp * sy; fz = -sp;
   rx = sy; ry = -cy; rz = 0;
   ux = sp * cy; uy = sp * sy; uz = cp;
-  IF (dead = 1) THEN
+  IF (dead <> 0) THEN
   BEGIN
     -- the dead lie on their side: roll the view 60 degrees
     sp = rx; cp = ry;

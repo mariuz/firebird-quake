@@ -168,7 +168,7 @@ for (const mode of ['psql', 'qc']) {
   for (let i = 0; i < 5; i++) s = await tic();
   if (qc) assert(s.EXIT_KIND === 3, `${label}: kill runs ClientKill, whose respawn restarts the level in single player (exit_kind ${s.EXIT_KIND})`);
   else {
-    assert(s.DEAD === 1 && s.HEALTH <= 0, `${label}: kill kills, god mode or not (health ${s.HEALTH})`);
+    assert(s.DEAD >= 1 && s.HEALTH <= 0, `${label}: kill kills, god mode or not (health ${s.HEALTH}, gibbed: deadflag ${s.DEAD})`);
     assert((await host('kill')).startsWith("Can't suicide"), `${label}: kill when dead: Can't suicide`);
   }
 }

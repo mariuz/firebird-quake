@@ -522,7 +522,7 @@ BEGIN
   t = now_();
   IF (pe IS NULL) THEN EXIT;
 
-  IF (dead = 1) THEN
+  IF (dead <> 0) THEN                  -- dying (1) or dead after a gib (2: GibPlayer)
   BEGIN
     -- PlayerDeathThink: lie there, then restart the level on any button
     EXECUTE PROCEDURE toss_move(pe, dt);
