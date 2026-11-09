@@ -1057,7 +1057,8 @@ AS
 DECLARE goal INTEGER; DECLARE gt VARCHAR(40); DECLARE nx INTEGER; DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION;
 DECLARE mt VARCHAR(16);
 BEGIN
-  SELECT c.id, c.target, e.mtype FROM ents e JOIN ents c ON c.id = e.goal_id
+  -- (the movetarget: the first corner its target names; the goalentity may be elsewhere, an enemy that died)
+  SELECT c.id, c.target, e.mtype FROM ents e JOIN ents c ON c.id = (SELECT FIRST 1 m.id FROM ents m WHERE m.targetname = e.target ORDER BY m.id)
    WHERE e.id = :eid AND e.enemy_id IS NULL AND c.classname = 'path_corner'
      AND e.x + e.minx - 1 <= c.x + 9 AND e.x + e.maxx + 1 >= c.x - 9
      AND e.y + e.miny - 1 <= c.y + 9 AND e.y + e.maxy + 1 >= c.y - 9
@@ -1078,7 +1079,7 @@ END^
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER)
 AS
 DECLARE st VARCHAR(12); DECLARE anim VARCHAR(16); DECLARE af INTEGER; DECLARE mid INTEGER; DECLARE enemy INTEGER; DECLARE flags INTEGER;
-DECLARE mt VARCHAR(16); DECLARE ehp INTEGER; DECLARE t DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ctx INTEGER;
+DECLARE mt VARCHAR(16); DECLARE ehp INTEGER; DECLARE t DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ctx INTEGER; DECLARE ehp_id INTEGER;
 DECLARE ff INTEGER; DECLARE fc INTEGER; DECLARE atkst SMALLINT; DECLARE tgt VARCHAR(40); DECLARE goal INTEGER;
 DECLARE run_spd DOUBLE PRECISION; DECLARE walk_spd DOUBLE PRECISION; DECLARE stand_a VARCHAR(16); DECLARE walk_a VARCHAR(16); DECLARE run_a VARCHAR(16);
 DECLARE melee_a VARCHAR(16); DECLARE melee_f INTEGER; DECLARE missile_a VARCHAR(16); DECLARE missile_f VARCHAR(40); DECLARE idle_s VARCHAR(64);
@@ -1123,6 +1124,7 @@ BEGIN
     IF (ehp IS NULL OR ehp <= 0) THEN
     BEGIN
       -- ai_run: back to the player it was hunting before a monster hurt it (HuntTarget), if alive
+      ehp_id = enemy;
       enemy = NULL;
       SELECT o.id FROM ents e JOIN ents o ON o.id = e.oldenemy_id WHERE e.id = :eid AND o.health > 0 INTO enemy;
       IF (enemy IS NOT NULL) THEN
@@ -1134,9 +1136,25 @@ BEGIN
       UPDATE ents e SET e.enemy_id = NULL, e.oldenemy_id = NULL WHERE e.id = :eid;
       IF (st IN ('run', 'melee', 'missile')) THEN
       BEGIN
-        st = 'stand';
-        UPDATE ents e SET e.st = 'stand' WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, stand_a);
+        -- (the run frame's function draws its idle sound before ai_run sees the enemy dead)
+        IF (st = 'run') THEN EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 1);
+        -- th_walk if it has a movetarget (any entity its target names: a corner, or E1M6's shambler's door), its walk1
+        -- running now, its step and its draw; its goalentity is still the dead enemy, toward which it walks until it
+        -- touches its corner; else th_stand
+        IF (tgt IS NOT NULL AND EXISTS (SELECT 1 FROM ents c WHERE c.targetname = :tgt)) THEN
+        BEGIN
+          UPDATE ents e SET e.st = 'walk', e.goal_id = :ehp_id WHERE e.id = :eid;
+          EXECUTE PROCEDURE set_anim(eid, walk_a);
+          UPDATE ents e SET e.anim_frame = IIF(:walk_a = 'hover', 7, COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :walk_a), 0)) WHERE e.id = :eid;
+          EXECUTE PROCEDURE monster_think(eid);
+        END
+        ELSE
+        BEGIN
+          UPDATE ents e SET e.st = 'stand' WHERE e.id = :eid;
+          EXECUTE PROCEDURE set_anim(eid, stand_a);
+        END
+        -- (and the draw the run frame makes after its ai_run: ogre_run1's, the shambler's)
+        IF (st = 'run') THEN EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 0);
         EXIT;
       END
     END
@@ -1709,7 +1727,7 @@ BEGIN
       EXECUTE PROCEDURE water_transition(eid);
   END
   -- toss, bounce, fly, flymissile, and monsters in the air
-  FOR SELECT e.id, e.movetype, e.flags, e.classname FROM ents e WHERE e.movetype IN (6, 9, 10)
+  FOR SELECT e.id, e.movetype, e.flags, e.classname FROM ents e WHERE e.movetype IN (6, 9, 10) AND e.id <> :pe   -- (the dead player tosses in its own think)
         INTO eid, mt, flags, cls DO
   BEGIN
     IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN CONTINUE;      -- resting

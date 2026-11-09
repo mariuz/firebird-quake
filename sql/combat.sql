@@ -49,25 +49,43 @@ END^
 -- Killed(): the target's health fell to zero
 CREATE OR ALTER PROCEDURE killed (targ INTEGER, attacker INTEGER)
 AS
-DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp INTEGER; DECLARE mt SMALLINT; DECLARE r DOUBLE PRECISION;
+DECLARE cls VARCHAR(40); DECLARE flags INTEGER; DECLARE hp INTEGER; DECLARE mt SMALLINT; DECLARE r DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE wl SMALLINT; DECLARE w INTEGER;
 BEGIN
   SELECT e.classname, e.flags, e.health, e.movetype FROM ents e WHERE e.id = :targ INTO cls, flags, hp, mt;
-  IF (hp < -99) THEN UPDATE ents e SET e.health = -99 WHERE e.id = :targ;
+  IF (hp < -99) THEN BEGIN UPDATE ents e SET e.health = -99 WHERE e.id = :targ; hp = -99; END
   -- ClientObituary's random() (drawn first, whoever died; not for a pusher or a thing that does not move, whose
   -- th_die comes at once)
   IF (mt NOT IN (0, 7)) THEN r = rnd();
+  -- (a player dead in water, slime or lava: the obituary's two lines each, picked by random() < 0.5, whoever killed it)
+  IF (cls = 'player' AND (SELECT e.watertype FROM ents e WHERE e.id = :targ) IN (-3, -4, -5)) THEN r = rnd();
   IF (cls = 'player') THEN
   BEGIN
-    UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0,
-           e.anim = 'death' || SUBSTRING('abcde' FROM 1 + FLOOR(rnd() * 5) FOR 1), e.anim_frame = 0 WHERE e.id = :targ;
+    -- PlayerDie: tossed up by random() × 300 unless already rising; below -40 GibPlayer (the head and three gibs,
+    -- gib or udeath on random() < 0.5); else DeathSound (under water five bubbles and h2odeath, else death1 to death5
+    -- by rint(random() × 4 + 1)), then the death: axdeth with the axe in hand, else 1 + floor(random() × 6) picks
+    -- deatha to deathd, or deathe for 5 and 6
+    SELECT e.vz, e.waterlevel, p.weapon FROM ents e CROSS JOIN player p WHERE e.id = :targ AND p.id = 1 INTO vz, wl, w;
+    IF (vz < 10) THEN vz = vz + rnd() * 300;
+    UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0, e.vz = :vz,
+           e.flags = BIN_AND(e.flags, BIN_NOT(512)), e.anim_frame = 0 WHERE e.id = :targ;
     UPDATE player p SET p.dead_time = now_(), p.view_ofs = -8, p.weapon = 0, p.items = BIN_AND(p.items, BIN_NOT(1048576 + 524288 + 4194304 + 2097152)) WHERE p.id = 1;
-    -- DeathSound: under water five bubbles and h2odeath
-    IF ((SELECT e.waterlevel FROM ents e WHERE e.id = :targ) = 3) THEN
+    IF (hp < -40) THEN
+    BEGIN
+      EXECUTE PROCEDURE throw_head(targ, 'progs/h_player.mdl', -hp);
+      EXECUTE PROCEDURE throw_gib(targ, 'progs/gib1.mdl', -hp);
+      EXECUTE PROCEDURE throw_gib(targ, 'progs/gib2.mdl', -hp);
+      EXECUTE PROCEDURE throw_gib(targ, 'progs/gib3.mdl', -hp);
+      UPDATE ents e SET e.deadflag = 2 WHERE e.id = :targ;
+      EXECUTE PROCEDURE snd(targ, 2, TRIM(IIF(rnd() < 0.5e0, 'player/gib.wav', 'player/udeath.wav')), 1, 0);
+      EXIT;
+    END
+    IF (wl = 3) THEN
     BEGIN
       EXECUTE PROCEDURE death_bubbles(targ, 5);
       EXECUTE PROCEDURE snd(targ, 2, 'player/h2odeath.wav', 1, 0);
     END
-    ELSE EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(1 + FLOOR(rnd() * 5) AS INTEGER) || '.wav', 1, 1);
+    ELSE EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(ROUND(rnd() * 4 + 1) AS INTEGER) || '.wav', 1, 1);
+    UPDATE ents e SET e.anim = TRIM(IIF(:w = 4096, 'axdeth', 'death' || SUBSTRING('abcdee' FROM 1 + FLOOR(rnd() * 6) FOR 1))) WHERE e.id = :targ;
     EXIT;
   END
   IF (BIN_AND(flags, 32) <> 0) THEN

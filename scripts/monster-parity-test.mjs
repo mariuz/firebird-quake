@@ -121,23 +121,27 @@ async function duel(map, mtype, mx, my, fight = false, D = 300, N = 400) {
   };
   if (fight) for (const g of [P, Q]) g.view = await g.q1(`SELECT yaw, pitch - punch pitch FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, 0, 0, 0, 0, 1, ${rl ? 7 : 0})`).then((r) => ({ yaw: r.YAW, pitch: r.PITCH }));
   if (fight) for (const g of [P, Q]) await g.db.exec('UPDATE rng SET seed = 12345');
-  let k = 0, parted = null, last = null, moved = 0, hurt = false, still = 0;
+  let k = 0, parted = null, last = null, moved = 0, hurt = false, still = 0, died = null;
   for (; k < N; k++) {
     const a = await (fight ? ftic(P, k) : tic(P)), b = await (fight ? ftic(Q, k) : tic(Q));
     const ma = await row(P), mb = await row(Q);
-    const dead = a.HEALTH <= 0 && b.HEALTH <= 0;      // the killing blow: the same, but the deaths draw their own
-    if ((ma.SEED !== mb.SEED && !dead) || Math.abs(ma.X - mb.X) > 0.01 || Math.abs(ma.Y - mb.Y) > 0.01 || Math.abs(ma.Z - mb.Z) > 0.01 || ma.FRAME !== mb.FRAME
-        || ma.HEALTH !== mb.HEALTH || a.HEALTH !== b.HEALTH) { parted = `tic ${k}: PSQL ${fmt(ma, a.HEALTH)} | QuakeC ${fmt(mb, b.HEALTH)}`; break; }
+    // (and after the player's death, its body too: PlayerDie's draws, the death it picked, its fall; the PSQL game
+    // keeps the player's animation by name, never drawing its frames, so the death is the anim QuakeC's frame is in)
+    const pa = await P.q1(`SELECT z, anim frame FROM ents WHERE id = ${P.pid}`);
+    const pb = await Q.q1("SELECT e.z, (SELECT a.anim FROM anims a JOIN models m ON m.id = a.model_id WHERE m.name = 'progs/player.mdl' AND e.frame BETWEEN a.first_frame AND a.first_frame + a.frame_count - 1) frame FROM ents e WHERE e.id = 1");
+    if ((died !== null && (Math.abs(pa.Z - pb.Z) > 0.01 || pa.FRAME !== pb.FRAME)) || ma.SEED !== mb.SEED || Math.abs(ma.X - mb.X) > 0.01 || Math.abs(ma.Y - mb.Y) > 0.01 || Math.abs(ma.Z - mb.Z) > 0.01 || ma.FRAME !== mb.FRAME
+        || ma.HEALTH !== mb.HEALTH || a.HEALTH !== b.HEALTH) { parted = `tic ${k}: PSQL ${fmt(ma, a.HEALTH)} player z ${pa.Z.toFixed(2)} frame ${pa.FRAME} | QuakeC ${fmt(mb, b.HEALTH)} player z ${pb.Z.toFixed(2)} frame ${pb.FRAME}`; break; }
     if (process.env.TRACE && k >= +process.env.TRACE) console.log('T', k, fmt(ma, a.HEALTH), '|', fmt(mb, b.HEALTH));
     if (last) moved += Math.hypot(ma.X - last.X, ma.Y - last.Y);
     if (a.HEALTH < 100) hurt = true;
     still = last && ma.HEALTH <= 0 && ma.FRAME === last.FRAME ? still + 1 : 0;
     last = ma;
-    if (a.HEALTH <= 0) break;            // the player's death is not compared
+    if (a.HEALTH <= 0 && died === null) died = k;
+    if (died !== null && k >= died + 40) break;      // two seconds of the player's death compared
     if (fight && still >= 20) break;     // the monster dead, its last frame shown a second
   }
   if (fight) assert(!parted && last && last.HEALTH <= 0, parted ? `${map} ${mtype} shot at: parted at ${parted}` : `${map} ${mtype} shot at: ${k + 1} tics the same, every random draw too, until it lay dead (${last ? `hp ${last.HEALTH}, frame ${last.FRAME}` : ''})`);
-  else assert(!parted && hurt, parted ? `${map} ${mtype}: parted at ${parted}` : `${map} ${mtype}: ${k + 1} tics the same, every random draw too, until the player ${last && (await P.q1(`SELECT health FROM ents WHERE id = ${P.pid}`)).HEALTH <= 0 ? 'died' : 'had had enough'} (moved ${moved.toFixed(0)} units)`);
+  else assert(!parted && hurt, parted ? `${map} ${mtype}: parted at ${parted}` : `${map} ${mtype}: ${k + 1} tics the same, every random draw too, until the player ${died !== null ? 'died, and its death the same for 2 s' : 'had had enough'} (moved ${moved.toFixed(0)} units)`);
   await P.db.close(); await Q.db.close();
 }
 

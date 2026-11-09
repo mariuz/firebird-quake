@@ -565,51 +565,6 @@ BEGIN
   -- CheckWaterJump and PlayerJump; this frame's check comes just before the gravity, which it decides
   SELECT e.waterlevel, e.watertype FROM ents e WHERE e.id = :pe INTO owl, wt;
   wl = owl;
-  -- WaterMove: out of the water a gasp after a long breath held, and the air back to 12 s; under it, past the air,
-  -- a bite each second that grows by 2 (2, 4 ... 14, then 10 again); its pain (PainSound) is the drowning sound and a
-  -- bubble
-  IF (wl <> 3) THEN
-  BEGIN
-    IF (afin < t) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp2.wav', 1, 1);
-    ELSE IF (afin < t + 9) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp1.wav', 1, 1);
-    UPDATE player p SET p.air_finished = :t + 12, p.drown_dmg = 2 WHERE p.id = 1 AND (p.air_finished <> :t + 12 OR p.drown_dmg <> 2);
-  END
-  ELSE IF (afin < t AND (SELECT p.pain_finished FROM player p WHERE p.id = 1) < t) THEN
-  BEGIN
-    UPDATE player p SET p.drown_dmg = IIF(p.drown_dmg + 2 > 15, 10, p.drown_dmg + 2) WHERE p.id = 1;
-    EXECUTE PROCEDURE t_damage(pe, 0, 0, (SELECT p.drown_dmg FROM player p WHERE p.id = 1));
-    UPDATE player p SET p.pain_finished = :t + 1 WHERE p.id = 1;
-  END
-  -- lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel every second (not at
-  -- all in the biosuit); a bite waits until time is past dmgtime
-  IF (wl > 0 AND wt = -5 AND dltime < t) THEN
-  BEGIN
-    UPDATE player p SET p.dmg_lava_time = :t + IIF(p.radsuit_finished > :t, 1, 0.2e0) WHERE p.id = 1;
-    EXECUTE PROCEDURE t_damage(pe, 0, 0, 10 * wl);
-  END
-  ELSE IF (wl > 0 AND wt = -4 AND dltime < t AND (SELECT p.radsuit_finished FROM player p WHERE p.id = 1) < t) THEN
-  BEGIN
-    UPDATE player p SET p.dmg_lava_time = :t + 1 WHERE p.id = 1;
-    EXECUTE PROCEDURE t_damage(pe, 0, 0, 4 * wl);
-  END
-  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
-  -- going in (FL_INWATER): the liquid's sound, and dmgtime cleared, so the frame after the first bite bites again;
-  -- coming out: misc/outwater.wav
-  SELECT e.flags FROM ents e WHERE e.id = :pe INTO flags;
-  IF (wl = 0 AND BIN_AND(flags, 16) <> 0) THEN
-  BEGIN
-    EXECUTE PROCEDURE snd(pe, 4, 'misc/outwater.wav', 1, 1);
-    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(16)) WHERE e.id = :pe;
-  END
-  ELSE IF (wl > 0 AND BIN_AND(flags, 16) = 0) THEN
-  BEGIN
-    IF (wt = -5) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inlava.wav', 1, 1);
-    ELSE IF (wt = -3) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inh2o.wav', 1, 1);
-    ELSE IF (wt = -4) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/slimbrn2.wav', 1, 1);
-    UPDATE ents e SET e.flags = BIN_OR(e.flags, 16) WHERE e.id = :pe;
-    UPDATE player p SET p.dmg_lava_time = 0 WHERE p.id = 1;
-  END
-
   -- SV_WaterJump (SV_ClientThink, while FL_WATERJUMP holds from an earlier frame): the push into the ledge the jump
   -- found (CheckWaterJump's movedir) is the velocity across, until teleport_time or out of the water; that frame has
   -- no friction or acceleration of its own
@@ -690,6 +645,63 @@ BEGIN
       END
     END
   END
+  -- (WaterMove comes after SV_ClientThink's velocity: a death here tosses the body up from that velocity)
+  UPDATE ents e SET e.vx = :vx, e.vy = :vy, e.vz = :vz WHERE e.id = :pe;
+  -- WaterMove: out of the water a gasp after a long breath held, and the air back to 12 s; under it, past the air,
+  -- a bite each second that grows by 2 (2, 4 ... 14, then 10 again); its pain (PainSound) is the drowning sound and a
+  -- bubble
+  IF (wl <> 3) THEN
+  BEGIN
+    IF (afin < t) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp2.wav', 1, 1);
+    ELSE IF (afin < t + 9) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp1.wav', 1, 1);
+    UPDATE player p SET p.air_finished = :t + 12, p.drown_dmg = 2 WHERE p.id = 1 AND (p.air_finished <> :t + 12 OR p.drown_dmg <> 2);
+  END
+  ELSE IF (afin < t AND (SELECT p.pain_finished FROM player p WHERE p.id = 1) < t) THEN
+  BEGIN
+    UPDATE player p SET p.drown_dmg = IIF(p.drown_dmg + 2 > 15, 10, p.drown_dmg + 2) WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, (SELECT p.drown_dmg FROM player p WHERE p.id = 1));
+    UPDATE player p SET p.pain_finished = :t + 1 WHERE p.id = 1;
+  END
+  -- lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel every second (not at
+  -- all in the biosuit); a bite waits until time is past dmgtime
+  IF (wl > 0 AND wt = -5 AND dltime < t) THEN
+  BEGIN
+    UPDATE player p SET p.dmg_lava_time = :t + IIF(p.radsuit_finished > :t, 1, 0.2e0) WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, 10 * wl);
+  END
+  ELSE IF (wl > 0 AND wt = -4 AND dltime < t AND (SELECT p.radsuit_finished FROM player p WHERE p.id = 1) < t) THEN
+  BEGIN
+    UPDATE player p SET p.dmg_lava_time = :t + 1 WHERE p.id = 1;
+    EXECUTE PROCEDURE t_damage(pe, 0, 0, 4 * wl);
+  END
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe)) THEN EXIT;
+  -- going in (FL_INWATER): the liquid's sound, and dmgtime cleared, so the frame after the first bite bites again;
+  -- coming out: misc/outwater.wav
+  SELECT e.flags FROM ents e WHERE e.id = :pe INTO flags;
+  IF (wl = 0 AND BIN_AND(flags, 16) <> 0) THEN
+  BEGIN
+    EXECUTE PROCEDURE snd(pe, 4, 'misc/outwater.wav', 1, 1);
+    UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(16)) WHERE e.id = :pe;
+  END
+  ELSE IF (wl > 0 AND BIN_AND(flags, 16) = 0) THEN
+  BEGIN
+    IF (wt = -5) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inlava.wav', 1, 1);
+    ELSE IF (wt = -3) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/inh2o.wav', 1, 1);
+    ELSE IF (wt = -4) THEN EXECUTE PROCEDURE snd(pe, 4, 'player/slimbrn2.wav', 1, 1);
+    UPDATE ents e SET e.flags = BIN_OR(e.flags, 16) WHERE e.id = :pe;
+    UPDATE player p SET p.dmg_lava_time = 0 WHERE p.id = 1;
+  END
+  SELECT e.flags FROM ents e WHERE e.id = :pe INTO flags;           -- (FL_INWATER as it is now)
+  -- killed by the water (drowned, burnt): WaterMove's drag still on the body's new velocity, then PlayerPreThink
+  -- returns while dying, the body tossed (SV_Physics_Toss) and PlayerPostThink with nothing to do
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :pe AND e.deadflag <> 0)) THEN
+  BEGIN
+    IF (wl > 0 AND BIN_AND(flags, 2048) = 0) THEN
+      UPDATE ents e SET e.vx = e.vx - 0.8e0 * :wl * :dt * e.vx, e.vy = e.vy - 0.8e0 * :wl * :dt * e.vy, e.vz = e.vz - 0.8e0 * :wl * :dt * e.vz WHERE e.id = :pe;
+    EXECUTE PROCEDURE toss_move(pe, dt);
+    EXIT;
+  END
+  SELECT e.vx, e.vy, e.vz FROM ents e WHERE e.id = :pe INTO vx, vy, vz;
   -- WaterMove's drag (PlayerPreThink): in a liquid, but not in a water jump, the speed loses 0.8 × waterlevel of
   -- itself a second
   IF (wl > 0 AND BIN_AND(flags, 2048) = 0) THEN

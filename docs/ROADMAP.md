@@ -454,7 +454,17 @@ to the same behaviour, with a test of its own:
   ogre's `walk6` drag sound draws too; the scrag walks and stands on `hover1`–`hover8`. And an attack frame faces
   the enemy only if its function does (`FACE_FRAMES`, read out of `progs.dat`: the fiend in the air keeps its
   heading, the ogre's chainsaw frames turn only in `chainsaw`'s own `ai_charge`).
-  Not compared yet: the player's death.
+- ~~**The player's death, tic by tic**~~ done: each duel goes on two seconds past the player's death, its draws, the
+  death picked and the body's fall compared (the PSQL game keeps the player's animation by name). `PlayerDie` as id
+  has it: tossed up by `random() × 300` unless rising, `GibPlayer` below -40 (the head, three gibs, `gib` or `udeath`),
+  `DeathSound` (`rint(random() × 4 + 1)`) before the death, `1 + floor(random() × 6)` picking deatha to deathd or
+  deathe, `axdeth` with the axe; `ClientObituary`'s second draw for a death in water, slime or lava. The body tosses
+  in the player's own physics (not the general toss a frame early). A drowning or burning death in the PSQL game's
+  player think now stops it there (`PlayerPreThink` returns while dying; it ran the walk and reset the animation),
+  and `WaterMove` comes after `SV_ClientThink`'s velocity as in id (the death tosses up from the input's velocity,
+  then the drag). After its enemy dies, a monster's run frame draws its idle sound before `ai_run` notices, and
+  goes back to `th_walk` if it has a `movetarget` (any entity its target names), walking at the dead enemy until it
+  touches its corner, else stands.
 - ~~**Air bubbles**~~ done: the PSQL game had none (`air_bubbles` was skipped at spawn, no `DeathBubbles`), where
   QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s. Now `air_bubbles` lets out a bubble every 0.5 to
   1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water five; a bubble
