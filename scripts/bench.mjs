@@ -44,8 +44,13 @@ const m = (await q1("SELECT FIRST 1 id FROM ents WHERE mtype IS NOT NULL AND st 
 await time('monster_think (standing)', `EXECUTE BLOCK AS BEGIN EXECUTE PROCEDURE monster_think(${m}); END`);
 await time('find_target', `SELECT find_target(${m}) FROM rdb$database`);
 await time('visible(monster, player)', `SELECT visible(${m}, ${pe}) FROM rdb$database`);
+const home = await q1(`SELECT x, y, z, yaw FROM ents WHERE id = ${m}`);
 await db.exec(`UPDATE ents SET enemy_id = ${pe}, st = 'run', anim = NULL WHERE id = ${m}`);
 await time('monster_think (running)', `EXECUTE BLOCK AS BEGIN EXECUTE PROCEDURE monster_think(${m}); END`);
+// (from where it stood: the running thinks leave it wherever their steps took it, and a step against a wall or
+// a ledge costs its retries; the same step every run)
+await db.exec(`UPDATE ents SET x = ${home.X}, y = ${home.Y}, z = ${home.Z}, yaw = ${home.YAW} WHERE id = ${m}`);
+await db.query(`EXECUTE BLOCK AS BEGIN EXECUTE PROCEDURE link_ent(${m}); END`);
 await time('move_step', `SELECT move_step(${m}, 5, 5, 0) FROM rdb$database`);
 await time('view_setup', 'SELECT * FROM view_setup');
 await time('frame_faces', 'SELECT * FROM frame_faces');
