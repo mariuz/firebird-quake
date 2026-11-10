@@ -2,7 +2,8 @@
 // (quake_tic) and once for QuakeC mode (qc_tic: id's progs.dat on the engine's physics), and the same input given
 // to both, tic by tic. The PSQL game is a rewrite of progs.dat, so the player must come out the same in both: its
 // place to a hundredth, its view, health, armor, ammo, weapon and the view weapon's frame, every tic. Walking,
-// a ramp, strafing, wall slides, the shotgun, the nailgun held, a rocket jump, falls and a hard landing, swimming,
+// a ramp, strafing, wall slides, the shotgun, the nailgun held, a rocket jump, the super shotgun, the super nailgun,
+// a grenade, the thunderbolt, falls and a hard landing, swimming,
 // drowning and slime; the random generator and the bubbles alike every tic too. A scenario that parts reports the
 // first tic and both rows.
 //
@@ -111,6 +112,16 @@ await check('a weapon change waits for the shot', [{ imp: 2 }, ...rep(3, {}), { 
 await check('the nailgun', [{ imp: 4 }, ...rep(5, {}), ...rep(25, { fire: 1 }), ...rep(15, {})], (a) => a.NAILS < 100 && a.WEAPON === 4);
 maxKick = 0;
 await check('a rocket jump', [{ imp: 7 }, ...rep(5, {}), { pitch: 80 }, { fire: 1, jump: 1 }, ...rep(25, {}), { pitch: -80 }], (a) => a.ROCKETS === 9 && a.HEALTH < 100 && maxKick > 1);
+
+// ── the other weapons, each fired along the hall: the super shotgun (14 pellets, two shells), the super nailgun
+// (two nails a shot), a grenade thrown on (its spin and drift drawn, its bounces, its blast 2.5 s on) and the
+// thunderbolt held (a cell a frame, the beam's trace) ──
+for (const g of [P, Q]) for (const [a1, a2] of [['3', ''], ['5', ''], ['6', ''], ['8', ''], ['s', '50'], ['n', '100'], ['r', '10'], ['c', '50'], ['h', '100']]) await g.db.query('SELECT msg FROM host_cmd(?, ?, ?)', ['give', a1, a2]);
+await check('the super shotgun', [{ imp: 3 }, ...rep(5, {}), { fire: 1 }, ...rep(20, {}), { fire: 1 }, ...rep(20, {})], (a) => a.SHELLS === 46 && a.WEAPON === 2);
+await check('the super nailgun', [{ imp: 5 }, ...rep(5, {}), ...rep(20, { fire: 1 }), ...rep(10, {})], (a) => a.NAILS < 100 && a.WEAPON === 8);
+// (thrown looking up: v_forward × 600 + v_up × 200 and the drift; then looking level: aim × 600, 200 up)
+await check('two grenades', [{ imp: 6 }, ...rep(5, {}), { pitch: -20 }, { fire: 1 }, ...rep(70, {}), { pitch: 20 }, ...rep(5, {}), { fire: 1 }, ...rep(70, {})], (a) => a.ROCKETS === 8 && a.WEAPON === 16);
+await check('the thunderbolt', [{ imp: 8 }, ...rep(5, {}), ...rep(20, { fire: 1 }), ...rep(10, {})], (a) => a.CELLS < 50 && a.WEAPON === 64);
 
 // ── a fall from as high as the level allows onto a dry floor (the spot with the most room above it among the
 // entities' places) ──

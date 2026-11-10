@@ -342,7 +342,7 @@ BEGIN
   EXECUTE PROCEDURE set_model(s, model);
   UPDATE ents e SET e.owner_id = :owner, e.movetype = 10, e.solid = 2, e.vx = :vx, e.vy = :vy, e.vz = :vz,
          e.yaw = vectoyaw(:vx, :vy), e.avel_yaw = 300, e.dmg = :dmg,
-         e.think = 'grenade_explode', e.nextthink = now_() + :fuse WHERE e.id = :s;
+         e.think = 'grenade_explode', e.nextthink = think_base() + :fuse WHERE e.id = :s;   -- (QuakeC's time: the frame's start in the player's think)
   EXECUTE PROCEDURE link_ent(s);
 END^
 

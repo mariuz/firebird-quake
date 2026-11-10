@@ -353,8 +353,12 @@ to the same behaviour, with a test of its own:
   - In QuakeC mode, the view after a teleport: the page's `qc_tic` took the destination's angles (`fixangle`) only
     at the start of the next tic, so the row showed the old view for one; now it takes them with the frame, as the
     client does with `svc_setangle`.
-  Not compared: monsters (their random choices draw from different generators), the super shotgun on E1M1 (no
-  walkable spot found by the test), the deathmatch-only weapons and the Pentagram.
+  Since compared too: the super shotgun, the super nailgun, two grenades and the thunderbolt, given and fired along
+  the hall, every draw alike. `W_FireGrenade` was off: looking up or down it throws `v_forward × 600 + v_up × 200`
+  with `crandom() × 10` along `v_right` and `v_up` (two draws), looking level `aim × 600` with 200 up, from the
+  player's origin (the PSQL game threw from the eye, along v_forward plus 200 straight up, drawing nothing), and its
+  fuse counts from QuakeC's time (`think_base()`: the frame's start in the player's think), a tic earlier.
+  Not compared: picking up the super shotgun on E1M1 (no walkable spot found by the test), the Pentagram.
 - ~~**The monsters' idle sounds**~~ done (`npm test`): read from `progs.dat` itself (the frame functions whose code
   plays an `idle` sound, and the constants they compare `random()` against): id's monsters grumble on entering one
   frame of their walk or run, `army_walk1`, `army_run1`, the dog's, fiend's, knight's, Enforcer's, Vore's and hell

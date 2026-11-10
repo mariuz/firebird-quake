@@ -160,7 +160,7 @@ DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECI
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
 DECLARE quad DOUBLE PRECISION; DECLARE td SMALLINT;
-DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION; DECLARE wf INTEGER;
+DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION; DECLARE wf INTEGER; DECLARE cr1 DOUBLE PRECISION; DECLARE cr2 DOUBLE PRECISION;
 BEGIN
   SELECT p.ent_id, p.weapon, p.attack_finished, p.shells, p.nails, p.rockets, p.cells, p.weapon_sound, p.super_damage_finished, p.weaponframe
     FROM player p WHERE p.id = 1 INTO pe, w, af, sh, na, ro, ce, lefty, quad, wf;
@@ -240,7 +240,22 @@ BEGIN
     IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/grenade.wav', 1, 1);
     UPDATE player p SET p.attack_finished = :t + 0.6e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
-    EXECUTE PROCEDURE launch_grenade(pe, ex, ey, ez - 6, fx_ * 600, fy * 600, fz * 600 + 200, 120, 'progs/grenade.mdl', 2.5e0);
+    -- W_FireGrenade: from the player's origin; looking up or down, v_forward × 600 + v_up × 200 and crandom() × 10
+    -- along v_right then along v_up; looking level, aim(self, 10000) × 600 with velocity_z 200
+    IF ((SELECT p.pitch FROM player p WHERE p.id = 1) <> 0) THEN
+    BEGIN
+      cr1 = 2 * (rnd() - 0.5e0) * 10; cr2 = 2 * (rnd() - 0.5e0) * 10;
+      ax = fx_ * 600 + ux * 200 + cr1 * rx + cr2 * ux;
+      ay = fy * 600 + uy * 200 + cr1 * ry + cr2 * uy;
+      az = fz * 600 + uz * 200 + cr1 * rz + cr2 * uz;
+    END
+    ELSE
+    BEGIN
+      EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;
+      ax = ax * 600; ay = ay * 600; az = 200;
+    END
+    EXECUTE PROCEDURE launch_grenade(pe, (SELECT e.x FROM ents e WHERE e.id = :pe), (SELECT e.y FROM ents e WHERE e.id = :pe), (SELECT e.z FROM ents e WHERE e.id = :pe),
+      ax, ay, az, 120, 'progs/grenade.mdl', 2.5e0);
   END
   ELSE IF (w = 32) THEN                                                  -- rocket launcher
   BEGIN
