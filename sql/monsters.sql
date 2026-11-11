@@ -187,12 +187,12 @@ DECLARE s VARCHAR(64); DECLARE run_ VARCHAR(16); DECLARE fr INTEGER;
 BEGIN
   SELECT t.sight_snd, t.run_anim FROM ents e JOIN monster_types t ON t.name = e.mtype WHERE e.id = :eid INTO s, run_;
   -- FoundTarget: with the player for its enemy, the monster is the sight_entity a moment (others that see it wake),
-  -- and its show_hostile is a second on
-  IF (enemy = player_ent()) THEN UPDATE game g SET g.sight_entity = :eid, g.sight_entity_time = now_() WHERE g.id = 1;
-  UPDATE ents e SET e.show_hostile = now_() + 1 WHERE e.id = :eid;
+  -- and its show_hostile is a second on; QuakeC's time (think_base: woken by the player's shot, the frame's start)
+  IF (enemy = player_ent()) THEN UPDATE game g SET g.sight_entity = :eid, g.sight_entity_time = think_base() WHERE g.id = 1;
+  UPDATE ents e SET e.show_hostile = think_base() + 1 WHERE e.id = :eid;
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
-  UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = now_() + 5,
-         e.attack_finished = IIF(nightmare() = 1, e.attack_finished, now_() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
+  UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = think_base() + 5,
+         e.attack_finished = IIF(nightmare() = 1, e.attack_finished, think_base() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
   -- HuntTarget: ideal_yaw toward the enemy (the run's movetogoal steps that way), think = th_run, so the run's first
   -- frame comes with the next think; until then the frame stays
   UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
@@ -1150,8 +1150,9 @@ BEGIN
   IF (ff IS NULL) THEN BEGIN ff = 0; fc = 12; END   -- no such animation (model missing): a typical run length, so attack frames still come
   IF (mt = 'wizard' AND anim = 'hover') THEN fc = 8;            -- wiz_stand, wiz_walk, wiz_side: hover1..8
 
-  -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end)
-  IF (enemy IS NOT NULL AND st NOT IN ('melee', 'missile')) THEN
+  -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end,
+  -- and a pain's, which look at no enemy: th_run's first frame sees it after)
+  IF (enemy IS NOT NULL AND st NOT IN ('melee', 'missile', 'pain')) THEN
   BEGIN
     SELECT e.health FROM ents e WHERE e.id = :enemy INTO ehp;
     IF (ehp IS NULL OR ehp <= 0) THEN
