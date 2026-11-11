@@ -319,7 +319,8 @@ assert(s.KILLED === 1, `the level counts the kill all the same, as Quake's Kille
   const wiz = await spawn('wizard', 200);
   await placeAt(wiz, 200);
   let slid = null;
-  for (let i = 0; i < 100 && slid === null; i++) {
+  // (the run it enters checks again at once, as wiz_side1's ai_run does, and may pick a missile: tried again then)
+  for (let i = 0; i < 100 && (slid === null || slid === 4); i++) {
     await db.exec(`UPDATE ents SET attack_state = 1, attack_finished = 0, st = 'run' WHERE id = ${wiz}`);
     if ((await q1(`SELECT check_attack(${wiz}) c FROM rdb$database`)).C === 0) slid = (await q1(`SELECT attack_state a FROM ents WHERE id = ${wiz}`)).A;
   }

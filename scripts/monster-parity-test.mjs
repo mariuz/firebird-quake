@@ -35,7 +35,7 @@ const open = async (name) => {
 };
 
 // one monster (its mtype and its place on E1M1) against the player, D units in front of it
-async function duel(map, mtype, mx, my, fight = false, D = 300, N = 400) {
+async function duel(map, mtype, mx, my, fight = false, D = 300, N = 400, spot = null) {
   const P = await open(`p${mtype}`); await loadMap(P.db, pak, P.res, map, { skill: 1, seed: 1 });
   const Q = await open(`q${mtype}`); await loadMap(Q.db, pak, Q.res, map, { skill: 1, seed: 1 });
   await loadProgs(Q.db, pak); await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
@@ -50,8 +50,10 @@ async function duel(map, mtype, mx, my, fight = false, D = 300, N = 400) {
     if (!(await Q.q1(`SELECT id, x, y, z FROM ents WHERE solid = 3 AND id <> ${Q.pid} AND ABS(x - ${c.X}) < 48 AND ABS(y - ${c.Y}) < 48 AND ABS(z - ${c.Z}) < 48 ORDER BY (x - ${c.X}) * (x - ${c.X}) + (y - ${c.Y}) * (y - ${c.Y}) ROWS 1`))) { if (process.env.DBGM) console.log('noqc', c.ID, c.X, c.Y, c.Z); continue; }
     // a free spot for the player in front of it (straight ahead, else turned toward one aside or behind it, on its
     // floor or a step up), in sight
-    search: for (const da of [0, 20, -20, 40, -40, 60, -60, 90, -90, 120, -120, 150, -150, 180]) for (let dz = 0; dz <= 48; dz += 8) for (let d = D; d >= 64; d -= 16) {
-      const a = ((c.YAW + da) * Math.PI) / 180, fx = Math.round(c.X + Math.cos(a) * d), fy = Math.round(c.Y + Math.sin(a) * d), fz = c.Z + dz;   // whole units: QuakeC's floats see the angle to them as PSQL's doubles do
+    // (or the spot the duel names, the monster turned to face it)
+    if (spot) c.YAW = Math.round((Math.atan2(spot[1] - c.Y, spot[0] - c.X) * 180) / Math.PI);
+    search: for (const da of spot ? [0] : [0, 20, -20, 40, -40, 60, -60, 90, -90, 120, -120, 150, -150, 180]) for (let dz = 0; dz <= 48; dz += 8) for (let d = D; d >= 64; d -= 16) {
+      const a = ((c.YAW + da) * Math.PI) / 180, fx = spot ? spot[0] : Math.round(c.X + Math.cos(a) * d), fy = spot ? spot[1] : Math.round(c.Y + Math.sin(a) * d), fz = c.Z + dz;   // whole units: QuakeC's floats see the angle to them as PSQL's doubles do
       const ok = await P.q1(`SELECT test_position(${P.pid}, ${fx}, ${fy}, ${fz}) t, (SELECT fraction FROM trace_move(${c.ID}, 0, 0, 0, 0, 0, 0, ${c.X}, ${c.Y}, ${c.Z + 22}, ${fx}, ${fy}, ${fz + 22}, 1)) f , (SELECT COUNT(*) FROM ents t WHERE t.solid = 1 AND t.x + t.minx < ${fx} + 64 AND t.x + t.maxx > ${fx} - 64 AND t.y + t.miny < ${fy} + 64 AND t.y + t.maxy > ${fy} - 64 AND t.z + t.minz < ${fz} + 64 AND t.z + t.maxz > ${fz} - 256) tr FROM rdb$database`);
       // (away from triggers: E1M6's exit pit)
       if (ok.T === 0 && ok.F === 1 && ok.TR === 0) { M = { ...c, YAW: (c.YAW + da + 360) % 360, PX: fx, PY: fy, PZ: fz }; break search; }
@@ -190,6 +192,7 @@ async function bubbles(map, N = 300) {
 async function walker(map, mtype, N = 400) {
   const P = await open(`pw${mtype}`); await loadMap(P.db, pak, P.res, map, { skill: 1, seed: 1 });
   const Q = await open(`qw${mtype}`); await loadMap(Q.db, pak, Q.res, map, { skill: 1, seed: 1 });
+  await Q.db.exec('UPDATE rng SET seed = level_seed');   // QuakeC's spawn draws from the level's seed too
   await loadProgs(Q.db, pak); await Q.db.exec('EXECUTE PROCEDURE qc_begin_map(1, 0)');
   for (const g of [P, Q]) await g.db.query("SELECT msg FROM host_cmd('notarget', '', '')");
   const tic = (g) => g.q1(`SELECT health FROM ${g === P ? 'quake_tic' : 'qc_tic'}(1, 0, 0, 0, 0, 0, 0, 1, 0)`);
@@ -238,7 +241,10 @@ async function walker(map, mtype, N = 400) {
   await P.db.close(); await Q.db.close();
 }
 
-const DUELS = [['e1m1', 'army', 0, 576], ['e1m1', 'dog', 88, 1520], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'wizard'], ['e1m6', 'shambler'], ['e1m3', 'zombie']];
+// (the fiend's fight from a named spot, the player's place when the fiend is shot at: QuakeC keeps origins in floats,
+// so the two drift by hundredths in a fight, and from where the search lands now a whole-degree vectoyaw falls either
+// way of 4.5° at tic 48)
+const DUELS = [['e1m1', 'army', 0, 576], ['e1m1', 'dog', 88, 1520], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1', null, null, [1352, 645]], ['e1m3', 'wizard'], ['e1m6', 'shambler'], ['e1m3', 'zombie']];
 // the levels where each kind walks a path at the start (no dog or shambler does: E1M6's shambler's target is a door)
 const WALKS = [['e1m1', 'army'], ['e1m2', 'knight'], ['e1m2', 'ogre'], ['e1m3', 'demon1'], ['e1m3', 'zombie'], ['e1m4', 'wizard']];
 const only = process.env.DUEL;
@@ -248,9 +254,9 @@ if (!only) {
     if (r.status !== 0) failed++;
   }
 } else {
-  for (const [map, mtype, mx, my] of DUELS) {
+  for (const [map, mtype, mx, my, spot] of DUELS) {
     if (only.split(',').includes(mtype)) await duel(map, mtype, mx, my);
-    if (only.split(',').includes(`${mtype}:fight`)) await duel(map, mtype, mx, my, true);
+    if (only.split(',').includes(`${mtype}:fight`)) await duel(map, mtype, mx, my, true, undefined, undefined, spot);
   }
   for (const [map, mtype] of WALKS) if (only.split(',').includes(`${mtype}:walk`)) await walker(map, mtype);
   if (only.split(',').includes('bubbles')) await bubbles('e1m4');
