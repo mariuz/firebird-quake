@@ -23,15 +23,16 @@ CREATE OR ALTER PROCEDURE change_yaw (eid INTEGER)
 AS
 DECLARE cur DOUBLE PRECISION; DECLARE ideal DOUBLE PRECISION; DECLARE spd DOUBLE PRECISION; DECLARE mv DOUBLE PRECISION;
 BEGIN
-  -- (PF_changeyaw's anglemod: the angle in 65536ths of a turn, before the turn and after it, as QuakeC mode's builtin)
-  SELECT MOD(CAST(e.yaw * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536, e.ideal_yaw, e.yaw_speed FROM ents e WHERE e.id = :eid INTO cur, ideal, spd;
+  -- (PF_changeyaw's anglemod: (int)(a * 65536 / 360) & 65535, the angle in 65536ths of a turn cut down, before the
+  -- turn and after it, as QuakeC mode's builtin)
+  SELECT BIN_AND(CAST(TRUNC(e.yaw * 65536 / 360) AS BIGINT), 65535) * 360.0e0 / 65536, e.ideal_yaw, e.yaw_speed FROM ents e WHERE e.id = :eid INTO cur, ideal, spd;
   IF (cur = ideal) THEN EXIT;
   mv = ideal - cur;
   IF (ideal > cur) THEN BEGIN IF (mv >= 180) THEN mv = mv - 360; END
   ELSE BEGIN IF (mv <= -180) THEN mv = mv + 360; END
   IF (mv > 0) THEN BEGIN IF (mv > spd) THEN mv = spd; END
   ELSE BEGIN IF (mv < -spd) THEN mv = -spd; END
-  UPDATE ents e SET e.yaw = MOD(CAST((:cur + :mv) * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536 WHERE e.id = :eid;
+  UPDATE ents e SET e.yaw = BIN_AND(CAST(TRUNC((:cur + :mv) * 65536 / 360) AS BIGINT), 65535) * 360.0e0 / 65536 WHERE e.id = :eid;
 END^
 
 CREATE OR ALTER FUNCTION facing_ideal (eid INTEGER) RETURNS SMALLINT

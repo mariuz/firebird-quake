@@ -183,24 +183,12 @@ BEGIN
 
   IF (w = 4096) THEN                                                      -- axe
   BEGIN
+    -- W_Attack: the swing drawn (player_axe1, axeb1, axec1, axed1: the view's frames 1 to 4 or 5 to 8); the blow
+    -- falls on its third frame (player_weapon_frame, player_axe_hit)
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/ax1.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.5e0 WHERE p.id = 1;
-    EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, ex, ey, ez - 6, ex + fx_ * 64, ey + fy * 64, ez - 6 + fz * 64, 0)
-      RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
-    IF (f = 1) THEN EXIT;
-    td = 0;
-    IF (hit > 0) THEN SELECT e.takedamage FROM ents e WHERE e.id = :hit INTO td;
-    IF (td > 0) THEN
-    BEGIN
-      EXECUTE PROCEDURE fx(3, hx, hy, hz, 0, 0, 0, 20);
-      EXECUTE PROCEDURE t_damage(hit, pe, pe, 20);
-      EXECUTE PROCEDURE snd_at(hx, hy, hz, 'player/axhit1.wav', 1, 1);
-    END
-    ELSE
-    BEGIN
-      EXECUTE PROCEDURE snd_at(hx, hy, hz, 'player/axhit2.wav', 1, 1);
-      EXECUTE PROCEDURE fx(1, hx, hy, hz, 0, 0, 0, 0);
-    END
+    UPDATE player p SET p.attack_finished = :t + 0.5e0, p.weaponframe = IIF(:btn = 2, p.weaponframe, 1) WHERE p.id = 1;
+    cr1 = rnd();
+    IF (cr1 >= 0.25e0 AND (cr1 < 0.5e0 OR cr1 >= 0.75e0)) THEN UPDATE player p SET p.weaponframe = 5 WHERE p.id = 1;
   END
   ELSE IF (w = 1) THEN                                                   -- shotgun
   BEGIN
@@ -541,6 +529,38 @@ BEGIN
   free = 0;                                        -- player is stuck
 END^
 
+-- W_FireAxe, on the swing's third frame: a trace 64 ahead from 16 over the origin; a takedamage thing bleeds and takes
+-- 20, else the thud and a gunshot's puff
+CREATE OR ALTER PROCEDURE player_axe_hit
+AS
+DECLARE pe INTEGER; DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION;
+DECLARE fx_ DOUBLE PRECISION; DECLARE fy DOUBLE PRECISION; DECLARE fz DOUBLE PRECISION;
+DECLARE rx DOUBLE PRECISION; DECLARE ry DOUBLE PRECISION; DECLARE rz DOUBLE PRECISION;
+DECLARE ux DOUBLE PRECISION; DECLARE uy DOUBLE PRECISION; DECLARE uz DOUBLE PRECISION;
+DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
+DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
+DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER; DECLARE td SMALLINT;
+BEGIN
+  pe = player_ent();
+  EXECUTE PROCEDURE view_vectors RETURNING_VALUES ex, ey, ez, fx_, fy, fz, rx, ry, rz, ux, uy, uz;
+  EXECUTE PROCEDURE trace_move(pe, 0, 0, 0, 0, 0, 0, ex, ey, ez - 6, ex + fx_ * 64, ey + fy * 64, ez - 6 + fz * 64, 0)
+    RETURNING_VALUES f, hx, hy, hz, nx, ny, nz, als, sts, io, iw, hit;
+  IF (f = 1) THEN EXIT;
+  td = 0;
+  IF (hit > 0) THEN SELECT e.takedamage FROM ents e WHERE e.id = :hit INTO td;
+  IF (td > 0) THEN
+  BEGIN
+    EXECUTE PROCEDURE fx(3, hx - fx_ * 4, hy - fy * 4, hz - fz * 4, 0, 0, 0, 20);
+    EXECUTE PROCEDURE t_damage(hit, pe, pe, 20);
+    EXECUTE PROCEDURE snd_at(hx, hy, hz, 'player/axhit1.wav', 1, 1);
+  END
+  ELSE
+  BEGIN
+    EXECUTE PROCEDURE snd_at(hx, hy, hz, 'player/axhit2.wav', 1, 1);
+    EXECUTE PROCEDURE fx(1, hx - fx_ * 4, hy - fy * 4, hz - fz * 4, 0, 0, 0, 0);
+  END
+END^
+
 -- the view weapon's frame, as id's player_shot1..6 and kin step it: an attack sets frame 1 (player_fire), and a
 -- think every 0.1 s from it steps it on, run in the tic it falls in (SV_RunThink runs a think due before the frame's
 -- end) and before the move, as the client's think is; six frames for the shotguns and the launchers, four for the axe
@@ -559,8 +579,21 @@ BEGIN
     EXECUTE PROCEDURE player_fire(2);
     EXIT;
   END
-  wf = IIF(w IN (4, 8, 64) OR wf + 1 > IIF(w = 4096, 4, 6), 0, wf + 1);
+  wf = IIF(w IN (4, 8, 64) OR (w = 4096 AND wf IN (4, 8)) OR (w <> 4096 AND wf + 1 > 6), 0, wf + 1);
   UPDATE player p SET p.weaponframe = :wf WHERE p.id = 1;
+  IF (w = 4096 AND wf IN (3, 7)) THEN EXECUTE PROCEDURE player_axe_hit;
+END^
+
+-- PlayerPreThink's end: the weapon's ammo gone and its attack over, the best weapon left in hand (W_BestWeapon,
+-- W_SetCurrentAmmo's player_run: the view weapon at rest)
+CREATE OR ALTER PROCEDURE player_check_ammo (t DOUBLE PRECISION)
+AS
+BEGIN
+  UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0
+   WHERE p.id = 1 AND :t > p.attack_finished AND p.weapon <> 4096
+     AND (CASE p.weapon WHEN 1 THEN p.shells WHEN 2 THEN p.shells WHEN 4 THEN p.nails WHEN 8 THEN p.nails
+                        WHEN 16 THEN p.rockets WHEN 32 THEN p.rockets WHEN 64 THEN p.cells ELSE 1 END) = 0;
+  IF (ROW_COUNT > 0) THEN EXECUTE PROCEDURE player_current_ammo;
 END^
 
 -- W_WeaponFrame's ImpulseCommands: the impulse the client sent last (kept until used, as the engine keeps it) waits
@@ -628,6 +661,7 @@ BEGIN
   -- with its trigger touches (items, teleporters, exits); no water, no gravity, no ground; the weapon still fires
   IF ((SELECT e.movetype FROM ents e WHERE e.id = :pe) = 8) THEN
   BEGIN
+    EXECUTE PROCEDURE player_check_ammo(t);
     EXECUTE PROCEDURE player_weapon_frame(t, dt, fire);
     maxspd = IIF(run = 1, 320, 200);
     fx_ = COS(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0) * COS(pitch * 0.0174532925e0);
@@ -846,6 +880,7 @@ BEGIN
   -- SV_AddGravity, every frame but swimming or water-jumping, on the ground too: the walk then presses into
   -- the floor and finds it again (without it FL_ONGROUND went off every other frame, halving friction
   -- and dropping jumps)
+  EXECUTE PROCEDURE player_check_ammo(t);
   -- the client's think (SV_RunThink, before the move): the view weapon's frames, the nailguns' next shot
   EXECUTE PROCEDURE player_weapon_frame(t, dt, fire);
   -- SV_CheckWater, then: no gravity waist deep or deeper

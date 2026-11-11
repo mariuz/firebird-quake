@@ -114,7 +114,7 @@ BEGIN
   BEGIN
     e = CAST(qc_g((SELECT v.g_self FROM qc_vm v WHERE v.id = 1)) AS INTEGER);
     SELECT v.f_angles, v.f_ideal_yaw, v.f_yaw_speed FROM qc_vm v WHERE v.id = 1 INTO i, hit, head;
-    cur = MOD(CAST(qc_f(e, i + 1) * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536; ideal = qc_f(e, hit); spd = qc_f(e, head);
+    cur = BIN_AND(CAST(TRUNC(qc_f(e, i + 1) * 65536 / 360) AS BIGINT), 65535) * 360.0e0 / 65536; ideal = qc_f(e, hit); spd = qc_f(e, head);
     IF (cur <> ideal) THEN
     BEGIN
       mv = ideal - cur;
@@ -122,7 +122,7 @@ BEGIN
       ELSE BEGIN IF (mv <= -180) THEN mv = mv + 360; END
       IF (mv > 0) THEN BEGIN IF (mv > spd) THEN mv = spd; END
       ELSE BEGIN IF (mv < -spd) THEN mv = -spd; END
-      EXECUTE PROCEDURE qc_sf(e, i + 1, MOD(CAST((cur + mv) * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536);
+      EXECUTE PROCEDURE qc_sf(e, i + 1, BIN_AND(CAST(TRUNC((cur + mv) * 65536 / 360) AS BIGINT), 65535) * 360.0e0 / 65536);
     END
   END
   ELSE IF (n = 67) THEN                             -- movetogoal(dist): SV_MoveToGoal (step towards the goal, or a new chase direction)
