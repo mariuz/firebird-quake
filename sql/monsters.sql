@@ -23,14 +23,15 @@ CREATE OR ALTER PROCEDURE change_yaw (eid INTEGER)
 AS
 DECLARE cur DOUBLE PRECISION; DECLARE ideal DOUBLE PRECISION; DECLARE spd DOUBLE PRECISION; DECLARE mv DOUBLE PRECISION;
 BEGIN
-  SELECT anglemod(e.yaw), e.ideal_yaw, e.yaw_speed FROM ents e WHERE e.id = :eid INTO cur, ideal, spd;
+  -- (PF_changeyaw's anglemod: the angle in 65536ths of a turn, before the turn and after it, as QuakeC mode's builtin)
+  SELECT MOD(CAST(e.yaw * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536, e.ideal_yaw, e.yaw_speed FROM ents e WHERE e.id = :eid INTO cur, ideal, spd;
   IF (cur = ideal) THEN EXIT;
   mv = ideal - cur;
   IF (ideal > cur) THEN BEGIN IF (mv >= 180) THEN mv = mv - 360; END
   ELSE BEGIN IF (mv <= -180) THEN mv = mv + 360; END
   IF (mv > 0) THEN BEGIN IF (mv > spd) THEN mv = spd; END
   ELSE BEGIN IF (mv < -spd) THEN mv = -spd; END
-  UPDATE ents e SET e.yaw = anglemod(:cur + :mv) WHERE e.id = :eid;
+  UPDATE ents e SET e.yaw = MOD(CAST((:cur + :mv) * 65536 / 360 AS BIGINT), 65536) * 360.0e0 / 65536 WHERE e.id = :eid;
 END^
 
 CREATE OR ALTER FUNCTION facing_ideal (eid INTEGER) RETURNS SMALLINT
@@ -167,8 +168,7 @@ BEGIN
   r = ent_range(eid, client);
   IF (r = 3) THEN RETURN 0;
   IF (visible(eid, client) = 0) THEN RETURN 0;
-  -- (show_hostile 0 is never set, in the past even in the first frame: QuakeC's clock starts at 1, this one at 0)
-  IF (r = 1) THEN BEGIN IF ((sh < t OR sh = 0) AND infront(eid, client) = 0) THEN RETURN 0; END
+  IF (r = 1) THEN BEGIN IF (sh < t AND infront(eid, client) = 0) THEN RETURN 0; END
   ELSE IF (r = 2) THEN BEGIN IF (infront(eid, client) = 0) THEN RETURN 0; END
   -- got one: a monster seen is the way to its enemy, which must be the player
   IF (client <> pe) THEN
@@ -1879,7 +1879,9 @@ BEGIN
   UPDATE demo d SET d.recording = 0 WHERE d.id = 1;      -- a demo is one level
   -- the edicts are numbered from 1 again (loadMap emptied ents), so a replay makes the same ids
   i = GEN_ID(ent_seq, -GEN_ID(ent_seq, 0));
-  UPDATE game g SET g.tic = 0, g.time_ = 0, g.sight_entity = NULL, g.sight_entity_time = -1, g.check_time = NULL, g.check_leaf = NULL, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
+  -- (the clock starts at 1, as the server's does (sv.time): QuakeC mode's and this game's times are then the same sums,
+  -- to the last bit, and a 0 in a time field is in the past from the first frame)
+  UPDATE game g SET g.tic = 0, g.time_ = 1, g.sight_entity = NULL, g.sight_entity_time = -1, g.check_time = NULL, g.check_leaf = NULL, g.map_name = :map_name, g.next_map = NULL, g.exit_kind = 0, g.skill = :skill, g.world_model = :world_model,
          g.total_monsters = 0, g.killed = 0, g.total_secrets = 0, g.found_secrets = 0, g.level_msg = NULL, g.intermission_tics = 0, g.finale = 0,
          g.intermission = 0, g.completed_time = 0, g.finale_text = NULL, g.cdtrack = -1,
          g.gravity = IIF(LOWER(:map_name) = 'e1m8', 100, 800) WHERE g.id = 1;   -- worldspawn: Ziggurat Vertigo has low gravity
@@ -1892,7 +1894,7 @@ BEGIN
            p.invincible_finished = 0, p.invisible_finished = 0, p.super_damage_finished = 0, p.radsuit_finished = 0, p.kills = 0 WHERE p.id = 1;
   UPDATE player p SET p.weaponframe = 0, p.attack_finished = 0, p.pain_finished = 0, p.punchangle = 0, p.view_ofs = 22, p.dmg_take = 0, p.dmg_save = 0,
          p.dmg_time = -10, p.bonus_time = -10, p.msg = NULL, p.msg_time = 0, p.cprint = NULL, p.cprint_time = 0, p.dead_time = 0, p.pitch = 0, p.stepz = 0,
-         p.jump_released = 1, p.air_finished = 12, p.dmg_lava_time = 0, p.drown_dmg = 2, p.jump_flag = 0, p.impulse = 0, p.rot_time = NULL, p.weapon_sound = 0, p.items = BIN_AND(p.items, BIN_NOT(131072 + 262144)) WHERE p.id = 1;
+         p.jump_released = 1, p.air_finished = now_() + 12, p.dmg_lava_time = 0, p.drown_dmg = 2, p.jump_flag = 0, p.impulse = 0, p.rot_time = NULL, p.weapon_sound = 0, p.items = BIN_AND(p.items, BIN_NOT(131072 + 262144)) WHERE p.id = 1;
   -- keys don't carry over; neither do dead weapons
   UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1 AND BIN_AND(p.items, p.weapon) = 0;
   EXECUTE PROCEDURE player_current_ammo;
@@ -1900,7 +1902,7 @@ BEGIN
   -- ClientConnect's bprint, single player too (before any frame: three seconds from now)
   UPDATE player p SET p.msg = 'player entered the game', p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 3 WHERE p.id = 1;
   -- the level name
-  UPDATE player p SET p.cprint = (SELECT g.level_msg FROM game g WHERE g.id = 1), p.cprint_time = 3 WHERE p.id = 1;
+  UPDATE player p SET p.cprint = (SELECT g.level_msg FROM game g WHERE g.id = 1), p.cprint_time = now_() + 3 WHERE p.id = 1;
 END^
 
 SET TERM ; ^

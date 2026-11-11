@@ -39,7 +39,8 @@ DECLARE multi_ent INTEGER; DECLARE multi_dmg DOUBLE PRECISION;
 BEGIN
   -- FireBullets: makevectors(self.v_angle) (the view's angles for the player; a monster never sets v_angle, so its
   -- spread runs along the world's -y and z whatever way it shoots), the shot from origin + v_forward * 10 at 0.7 of
-  -- the box's height; each pellet's direction is dir plus crandom() * spread along v_right, then along v_up
+  -- the box's height above absmin (a unit under the box: SV_LinkEdict pads it); each pellet's direction is dir plus
+  -- crandom() * spread along v_right, then along v_up
   vp = 0; vy = 0;
   IF (shooter = player_ent()) THEN
     SELECT p.pitch, e.yaw FROM player p CROSS JOIN ents e WHERE p.id = 1 AND e.id = :shooter INTO vp, vy;
@@ -47,7 +48,7 @@ BEGIN
   fx_ = COS(vp) * COS(vy); fy = COS(vp) * SIN(vy);
   rx = SIN(vy); ry = -COS(vy); rz = 0;
   ux = SIN(vp) * COS(vy); uy = SIN(vp) * SIN(vy); uz = COS(vp);
-  SELECT e.x + :fx_ * 10, e.y + :fy * 10, e.z + e.minz + (e.maxz - e.minz) * 0.7e0 FROM ents e WHERE e.id = :shooter INTO ox, oy, oz;
+  SELECT e.x + :fx_ * 10, e.y + :fy * 10, e.z + e.minz - 1 + (e.maxz - e.minz) * 0.7e0 FROM ents e WHERE e.id = :shooter INTO ox, oy, oz;
   multi_ent = NULL; multi_dmg = 0;
   WHILE (i < cnt) DO
   BEGIN

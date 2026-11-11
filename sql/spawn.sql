@@ -332,12 +332,12 @@ BEGIN
     ELSE IF (cls = 'misc_fireball') THEN
       -- misc.qc's "if (!self.speed) self.speed == 1000;" compares instead of assigning: without a speed key a
       -- fireball rises only random() * 200
-      UPDATE ents e SET e.solid = 0, e.speed = COALESCE(:spd, 0), e.think = 'fireball_think', e.nextthink = rnd() * 5 WHERE e.id = :eid;
+      UPDATE ents e SET e.solid = 0, e.speed = COALESCE(:spd, 0), e.think = 'fireball_think', e.nextthink = now_() + rnd() * 5 WHERE e.id = :eid;
     ELSE IF (cls = 'trap_spikeshooter' OR cls = 'trap_shooter') THEN
     BEGIN
       EXECUTE PROCEDURE movedir(COALESCE(ang, 0)) RETURNING_VALUES dx, dy, dz;
       UPDATE ents e SET e.solid = 0, e.p1x = :dx, e.p1y = :dy, e.p1z = :dz, e.wait_ = IIF(COALESCE(:wt, 0) = 0, 1, :wt) WHERE e.id = :eid;
-      IF (cls = 'trap_shooter') THEN UPDATE ents e SET e.think = 'shooter_think', e.nextthink = e.wait_ WHERE e.id = :eid;
+      IF (cls = 'trap_shooter') THEN UPDATE ents e SET e.think = 'shooter_think', e.nextthink = now_() + e.wait_ WHERE e.id = :eid;
     END
     ELSE IF (cls = 'event_lightning') THEN UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
     ELSE IF (cls = 'misc_teleporttrain') THEN
