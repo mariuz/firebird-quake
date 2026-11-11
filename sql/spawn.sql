@@ -18,7 +18,7 @@ DECLARE sx DOUBLE PRECISION; DECLARE sy DOUBLE PRECISION; DECLARE sz DOUBLE PREC
 DECLARE n1 VARCHAR(64); DECLARE n2 VARCHAR(64); DECLARE n3 VARCHAR(64);
 DECLARE mname VARCHAR(16); DECLARE mmodel VARCHAR(40); DECLARE mhp INTEGER; DECLARE mhull SMALLINT; DECLARE mmaxz DOUBLE PRECISION; DECLARE mflags INTEGER;
 DECLARE mys DOUBLE PRECISION; DECLARE stand VARCHAR(16);
-DECLARE skillbit INTEGER;
+DECLARE skillbit INTEGER; DECLARE r DOUBLE PRECISION;
 DECLARE items INTEGER;
 BEGIN
   skillbit = CASE skill WHEN 0 THEN 256 WHEN 1 THEN 512 ELSE 1024 END;
@@ -262,8 +262,8 @@ BEGIN
              e.movetype = IIF(BIN_AND(:mflags, 3) <> 0, 5, 4), e.flags = BIN_OR(32, :mflags), e.yaw_speed = :mys,
              e.minx = IIF(:mhull = 2, -32, -16), e.miny = IIF(:mhull = 2, -32, -16), e.minz = -24,
              e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
-             e.st = 'stand', e.anim = :stand, e.anim_frame = FLOOR(rnd() * 4), e.ideal_yaw = e.yaw,
-             e.think = 'monster_think', e.nextthink = 0.1e0 + rnd() * 0.5e0 WHERE e.id = :eid;
+             e.st = 'stand', e.anim = :stand, e.anim_frame = -1, e.ideal_yaw = e.yaw,
+             e.think = 'monster_think', e.nextthink = 0 WHERE e.id = :eid;
       IF (mname = 'fish') THEN
         UPDATE ents e SET e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 24 WHERE e.id = :eid;
       IF (mname = 'oldone') THEN
@@ -282,9 +282,23 @@ BEGIN
           UPDATE ents e SET e.z = e.z + 1 WHERE e.id = :eid;
           EXECUTE PROCEDURE drop_to_floor(eid);
         END
-        ELSE EXECUTE PROCEDURE link_ent(eid);
-        IF (tg IS NOT NULL AND tg <> '' AND mname <> 'boss') THEN
-          UPDATE ents e SET e.st = 'walk', e.anim = NULL WHERE e.id = :eid;
+        ELSE
+        BEGIN
+          -- flymonster_start and swimmonster_start leave FL_FLY and FL_SWIM to start_go: until that first think the
+          -- monster falls like any other (two units in the first frame, before the think)
+          UPDATE ents e SET e.flags = BIN_AND(e.flags, BIN_NOT(3)) WHERE e.id = :eid;
+          EXECUTE PROCEDURE link_ent(eid);
+        END
+        -- walkmonster_start (flymonster_, swimmonster_): its think spread by random() × 0.5, drawn now, in the map's
+        -- order (whatever it draws, that first think, walkmonster_start_go, comes in the first frame: nextthink 0
+        -- marks it); start_go walks a monster whose target is a path_corner (the first entity of that name), else it
+        -- stands, entering walk1 or stand1 (anim_frame -1) and spreading its next think by a second draw
+        IF (mname <> 'boss') THEN
+        BEGIN
+          r = rnd();
+          IF (tg IS NOT NULL AND tg <> '' AND (SELECT FIRST 1 m.classname FROM map_ents m WHERE m.targetname = :tg ORDER BY m.id) = 'path_corner') THEN
+            UPDATE ents e SET e.st = 'walk', e.anim = (SELECT t.walk_anim FROM monster_types t WHERE t.name = :mname) WHERE e.id = :eid;
+        END
       END
     END
     -- ── decorations and traps ──

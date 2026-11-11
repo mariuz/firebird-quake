@@ -167,7 +167,8 @@ BEGIN
   r = ent_range(eid, client);
   IF (r = 3) THEN RETURN 0;
   IF (visible(eid, client) = 0) THEN RETURN 0;
-  IF (r = 1) THEN BEGIN IF (sh < t AND infront(eid, client) = 0) THEN RETURN 0; END
+  -- (show_hostile 0 is never set, in the past even in the first frame: QuakeC's clock starts at 1, this one at 0)
+  IF (r = 1) THEN BEGIN IF ((sh < t OR sh = 0) AND infront(eid, client) = 0) THEN RETURN 0; END
   ELSE IF (r = 2) THEN BEGIN IF (infront(eid, client) = 0) THEN RETURN 0; END
   -- got one: a monster seen is the way to its enemy, which must be the player
   IF (client <> pe) THEN
@@ -1095,6 +1096,28 @@ BEGIN
          t.melee_start_snd, t.missile_start_snd, t.leap_snd, t.leap_dmg, t.missile_frames_nm, t.missile_skip, t.melee_frames, t.melee_seq, t.missile_seq
     FROM monster_types t WHERE t.name = :mt INTO run_spd, walk_spd, stand_a, walk_a, run_a, melee_a, melee_f, missile_a, missile_f, idle_s,
          melee_ss, missile_ss, leap_s, leap_d, missile_nm, missile_sk, melee_fs, mseq, sseq;
+  -- walkmonster_start_go (the first think, its nextthink still 0): this think as any other, its next spread by
+  -- random() × 0.5
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.nextthink = 0 AND e.st <> 'cruc')) THEN   -- (zombie_cruc1 draws nothing)
+  BEGIN
+    -- (flymonster_start_go, swimmonster_start_go: FL_FLY or FL_SWIM from now)
+    UPDATE ents e SET e.nextthink = -1, e.flags = BIN_OR(e.flags, (SELECT BIN_AND(t.flags, 3) FROM monster_types t WHERE t.name = e.mtype)) WHERE e.id = :eid;
+    -- (walkmonster_start_go and flymonster_start_go try walkmove(0, 0), which settles a walker within a step of where
+    -- it dropped: onto a ledge under part of its box; "in wall" when it fails, and nothing else)
+    IF (BIN_AND((SELECT t.flags FROM monster_types t WHERE t.name = :mt), 2) = 0) THEN ctx = move_step(eid, 0, 0, 0);
+    EXECUTE PROCEDURE monster_think(eid);
+    -- (a walker's twice: start_go's missing braces run th_stand after th_walk, and stand1's ai_stand, its pausetime
+    -- still 0, goes straight back to th_walk, walk1 again with its draw and its step)
+    IF (st = 'walk' AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = 'walk')) THEN
+    BEGIN
+      UPDATE ents e SET e.anim_frame = -1, e.nextthink = -1 WHERE e.id = :eid;
+      EXECUTE PROCEDURE monster_think(eid);
+    END
+    -- (walkmonster_start_go and swimmonster_start_go spread the next think; flymonster_start_go does not)
+    IF (BIN_AND((SELECT t.flags FROM monster_types t WHERE t.name = :mt), 1) = 0) THEN
+      UPDATE ents e SET e.nextthink = e.nextthink + rnd() * 0.5e0 WHERE e.id = :eid AND e.nextthink IS NOT NULL;
+    EXIT;
+  END
   UPDATE ents e SET e.nextthink = :t + 0.1e0 WHERE e.id = :eid;
   IF (st = 'dead' OR st = 'cruc') THEN
   BEGIN
@@ -1103,6 +1126,8 @@ BEGIN
       UPDATE ents e SET e.anim_frame = MOD(e.anim_frame + 1, 6), e.frame = COALESCE((SELECT a.first_frame FROM anims a WHERE a.model_id = :mid AND a.anim = 'cruc_'), 0) + MOD(e.anim_frame + 1, 6) WHERE e.id = :eid;
       -- zombie_cruc1: one time in ten as the six frames come round
       IF (MOD((SELECT e.anim_frame FROM ents e WHERE e.id = :eid), 6) = 0 AND rnd() < 0.1e0) THEN EXECUTE PROCEDURE snd(eid, 2, 'zombie/idle_w2.wav', 1, 1);
+      -- zombie_cruc2 to 6: the next frame in 0.1 to 0.2 s (self.nextthink = time + 0.1 + random() * 0.1)
+      UPDATE ents e SET e.nextthink = :t + 0.1e0 + rnd() * 0.1e0 WHERE e.id = :eid AND MOD(e.anim_frame, 6) <> 0;
     END
     ELSE UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid;
     EXIT;
@@ -1181,7 +1206,8 @@ BEGIN
       IF (goal IS NULL) THEN
       BEGIN
         SELECT FIRST 1 e.id, e.x, e.y FROM ents e WHERE e.targetname = :tgt AND e.classname = 'path_corner' ORDER BY e.id INTO goal, gx, gy;
-        IF (goal IS NOT NULL) THEN UPDATE ents e SET e.goal_id = :goal, e.ideal_yaw = vectoyaw(:gx - e.x, :gy - e.y) WHERE e.id = :eid;
+        -- (flymonster_start_go sets no ideal_yaw toward it: a flyer keeps the one it has)
+        IF (goal IS NOT NULL) THEN UPDATE ents e SET e.goal_id = :goal, e.ideal_yaw = IIF(BIN_AND(e.flags, 1) <> 0, e.ideal_yaw, vectoyaw(:gx - e.x, :gy - e.y)) WHERE e.id = :eid;
         ELSE
         BEGIN
           -- a target that is no path_corner (E1M6's shambler opens a door when it dies): it stands (pausetime 99999999)
@@ -1709,6 +1735,11 @@ BEGIN
   UPDATE game g SET g.time_ = g.time_ + :dt WHERE g.id = 1;
   ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
   END
+  -- force_retouch: the player's spawn (spawn_tdeath) sets it, and in the next frame every edict is linked again with its
+  -- touches, the still ones too: a monster standing in a door's trigger field (spawned that frame) opens the door
+  IF ((SELECT g.tic FROM game g WHERE g.id = 1) = 2) THEN
+    FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 32) <> 0 AND e.health > 0 ORDER BY e.id INTO eid DO
+      EXECUTE PROCEDURE monster_touch_triggers(eid);
   -- thinks that are due (non-pushers)
   -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
   -- (SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what

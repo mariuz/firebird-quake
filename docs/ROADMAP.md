@@ -491,6 +491,26 @@ to the same behaviour, with a test of its own:
 - ~~The scrag's walk~~ done: `hover1`–`hover8`, as `wiz_walk`.
 - Already the same: `visible` (a line through air and water is no sight), the monsters' stepping and chasing
   (`move_step`, `move_to_goal`: one copy for both games), the pushed things' clip (`push_entity`).
+- ~~**Whole levels in both games**~~ done (`npm run test:levelparity`, `scripts/level-parity-test.mjs`): E1M1 to E1M6
+  loaded twice from one seed, the player standing at the start, every monster the same in both every tic for 300 tics
+  (its place, frame, and the random generator's state). The monsters' start-up was the PSQL game's own; now it is
+  `monsters.qc`'s:
+  - **The spread**: `walkmonster_start` draws `random() × 0.5` for the first think, and `walkmonster_start_go` and
+    `swimmonster_start_go` draw again at its end (`flymonster_start_go` does not, nor faces its first corner); the
+    flags (`FL_FLY`, `FL_SWIM`) are set at that first think.
+  - **The drop**: `walkmove(0, 0)` at start-up can lift a monster onto a ledge (`move_step` with no move).
+  - **The path walker's first corner**: `th_walk`, then, by the missing braces, `th_stand`, whose `ai_stand` (with
+    `pausetime` 0) runs `th_walk` again.
+  - **A monster's step touches triggers** (`SV_movestep`'s `SV_LinkEdict(ent, true)`, `monster_touch_triggers`): a
+    door's trigger field opens for anything alive (`door_trigger_touch`), and teleporters, monster jumps, pushes and
+    hurts take monsters too. The fields exist from the level's second frame (`LinkDoors`, the doors' first think),
+    when the player's spawn has every edict touch again (`spawn_tdeath`'s `force_retouch`): E1M6's zombie standing on
+    a bridge opens it, though only once its door's turn has come in edict order.
+  - **`show_hostile` 0** is in the past in the first frame too: QuakeC's clock starts at 1, the PSQL game's at 0, so
+    a grunt with the player behind it saw him at once on E1M2.
+  - **The crucified zombies**: `zombie_cruc2` to `cruc6` each draw their next frame's time, 0.1 to 0.2 s on (the
+    PSQL game ticked them every 0.1 s without a draw); the start map parted on it.
+  E1M7, E1M8 and the start map hold for 600 tics as well (run them with `MAPS=`).
 
 ## Performance
 

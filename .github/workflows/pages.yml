@@ -58,13 +58,15 @@ jobs:
               npm run test:skill
               npm run test:infight
               npm run test:parity
-          # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode
+          # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode;
+          # whole levels played by both games side by side
           - group: QuakeC
             run: |
               npm run test:qcjit
               npm run test:qcvm
               npm run test:qcplay
               npm run test:qctic
+              npm run test:levelparity
           # LibreQuake: its smoke test, levels, boss trap and progs.dat; deathmatch bots; BSP2 maps; mods
           - group: LibreQuake, mods and deathmatch
             run: |

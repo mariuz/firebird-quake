@@ -422,6 +422,76 @@ BEGIN
 
 END^
 
+-- SV_LinkEdict(ent, true) after a PSQL monster's step (SV_movestep): the triggers it is in, as id's touch functions
+-- take a monster: a door's trigger field opens for anything alive (door_trigger_touch), teleporters, monster jumps,
+-- pushes and hurts; the rest (trigger_multiple, items, plats, changelevel) are the player's. QuakeC mode's walkmove
+-- touches through qc_touch_triggers.
+CREATE OR ALTER PROCEDURE monster_touch_triggers (eid INTEGER)
+AS
+DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION;
+DECLARE mnx DOUBLE PRECISION; DECLARE mny DOUBLE PRECISION; DECLARE mnz DOUBLE PRECISION;
+DECLARE mxx DOUBLE PRECISION; DECLARE mxy DOUBLE PRECISION; DECLARE mxz DOUBLE PRECISION;
+DECLARE tid INTEGER; DECLARE tcls VARCHAR(40); DECLARE tst SMALLINT; DECLARE tn VARCHAR(40); DECLARE titems INTEGER; DECLARE thp INTEGER;
+DECLARE tdm INTEGER; DECLARE tlt DOUBLE PRECISION; DECLARE fl INTEGER; DECLARE t DOUBLE PRECISION;
+BEGIN
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN EXIT;
+  SELECT e.x, e.y, e.z, e.minx - 1, e.miny - 1, e.minz - 1, e.maxx + 1, e.maxy + 1, e.maxz + 1, e.flags FROM ents e
+   WHERE e.id = :eid AND e.health > 0 INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, fl;
+  IF (px IS NULL OR BIN_AND(fl, 32) = 0) THEN EXIT;
+  t = now_();
+  FOR SELECT e.id, e.classname FROM ents e
+       WHERE e.solid = 1 AND e.id <> :eid AND e.classname IN ('trigger_teleport', 'trigger_monsterjump', 'trigger_push', 'trigger_hurt')
+         AND e.x + e.maxx + 1 >= :px + :mnx AND e.x + e.minx - 1 <= :px + :mxx
+         AND e.y + e.maxy + 1 >= :py + :mny AND e.y + e.miny - 1 <= :py + :mxy
+         AND e.z + e.maxz + 1 >= :pz + :mnz AND e.z + e.minz - 1 <= :pz + :mxz
+       ORDER BY e.id INTO tid, tcls
+  DO
+  BEGIN
+    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.health > 0)) THEN LEAVE;
+    IF (tcls = 'trigger_teleport') THEN EXECUTE PROCEDURE teleport_touch(tid, eid);
+    ELSE IF (tcls = 'trigger_monsterjump') THEN
+    BEGIN
+      IF (BIN_AND(fl, 35) = 32) THEN
+        UPDATE ents e SET e.vx = COS(e.yaw * 0.0174532925e0) * (SELECT tr.speed FROM ents tr WHERE tr.id = :tid),
+               e.vy = SIN(e.yaw * 0.0174532925e0) * (SELECT tr.speed FROM ents tr WHERE tr.id = :tid),
+               e.vz = IIF(BIN_AND(e.flags, 512) <> 0, (SELECT tr.height FROM ents tr WHERE tr.id = :tid), e.vz),
+               e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
+    END
+    ELSE IF (tcls = 'trigger_push') THEN
+      UPDATE ents e SET e.vx = (SELECT tr.p1x * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.vy = (SELECT tr.p1y * tr.speed * 10 FROM ents tr WHERE tr.id = :tid),
+             e.vz = (SELECT tr.p1z * tr.speed * 10 FROM ents tr WHERE tr.id = :tid) WHERE e.id = :eid;
+    ELSE IF (tcls = 'trigger_hurt') THEN
+    BEGIN
+      SELECT e.nextthink, e.dmg FROM ents e WHERE e.id = :tid INTO tlt, tdm;
+      IF ((tlt IS NULL OR tlt < t) AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.takedamage <> 0)) THEN
+      BEGIN
+        UPDATE ents e SET e.nextthink = :t + 1 WHERE e.id = :tid;
+        EXECUTE PROCEDURE t_damage(eid, tid, tid, tdm);
+      END
+    END
+  END
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.health > 0)) THEN EXIT;
+  -- door trigger fields: 60 units around a linked group of plain doors, from the level's second frame: LinkDoors, the
+  -- group's first door's first think, spawns them then, in its turn in edict order, so the monsters' start-up step in
+  -- the first frame finds none, and in the second a monster before the door does not either
+  SELECT g.tic FROM game g WHERE g.id = 1 INTO tst;
+  IF (tst < 2) THEN EXIT;
+  FOR SELECT DISTINCT COALESCE(d.linked_id, d.id) FROM ents d
+       WHERE d.classname = 'func_door'
+         AND d.x + d.maxx + 60 >= :px + :mnx AND d.x + d.minx - 60 <= :px + :mxx
+         AND d.y + d.maxy + 60 >= :py + :mny AND d.y + d.miny - 60 <= :py + :mxy
+         AND d.z + d.maxz + 8 >= :pz + :mnz AND d.z + d.minz - 8 <= :pz + :mxz
+         AND (:tst > 2 OR COALESCE(d.linked_id, d.id) < :eid)
+       INTO tid
+  DO
+  BEGIN
+    SELECT e.mv_state, e.targetname, e.items, e.max_health FROM ents e WHERE e.id = :tid INTO tst, tn, titems, thp;
+    IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst IN (1, 3)) THEN EXECUTE PROCEDURE door_fire(tid, eid);
+    ELSE IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst = 0) THEN
+      UPDATE ents e SET e.nextthink = e.ltime + e.wait_ WHERE COALESCE(e.linked_id, e.id) = :tid AND e.think = 'door_go_down';
+  END
+END^
+
 -- SV_CheckStuck for the player: inside something solid, back to the last free place (player.free_*, QuakeC's
 -- oldorigin), or the first free spot within a unit across and 17 up; untested while the player is where its last
 -- move left it (a move only ends where its traces found room). free = 0: stuck where it is.

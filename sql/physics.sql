@@ -947,6 +947,9 @@ BEGIN
   RETURN 1;
 END^
 
+-- forward declaration (body in weapons.sql): the triggers a PSQL monster's step touches
+CREATE OR ALTER PROCEDURE monster_touch_triggers (eid INTEGER) AS BEGIN END^
+
 -- SV_movestep for monsters: move horizontally, then settle onto the floor
 -- within one step up or down. Returns 1 if the move was taken.
 CREATE OR ALTER FUNCTION move_step (eid INTEGER, dx DOUBLE PRECISION, dy DOUBLE PRECISION, dz DOUBLE PRECISION)
@@ -986,7 +989,7 @@ BEGIN
       BEGIN
         IF (BIN_AND(flags, 2) <> 0 AND point_contents(ex, ey, ez) = -1) THEN RETURN 0;   -- swim monster left water
         UPDATE ents e SET e.x = :ex, e.y = :ey, e.z = :ez WHERE e.id = :eid;
-        EXECUTE PROCEDURE link_ent(eid);
+        EXECUTE PROCEDURE link_ent(eid); EXECUTE PROCEDURE monster_touch_triggers(eid);
         RETURN 1;
       END
       IF (enemy IS NULL OR enemy = 0) THEN LEAVE;
@@ -1013,7 +1016,7 @@ BEGIN
     IF (BIN_AND(flags, 1024) <> 0) THEN
     BEGIN
       UPDATE ents e SET e.x = e.x + :dx, e.y = e.y + :dy, e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
-      EXECUTE PROCEDURE link_ent(eid);
+      EXECUTE PROCEDURE link_ent(eid); EXECUTE PROCEDURE monster_touch_triggers(eid);
       RETURN 1;
     END
     RETURN 0;                 -- walked off an edge
@@ -1025,7 +1028,7 @@ BEGIN
     IF (BIN_AND(flags, 1024) <> 0) THEN
     BEGIN
       -- the floor mostly pulled out from under it, and it is trying to correct
-      EXECUTE PROCEDURE link_ent(eid);
+      EXECUTE PROCEDURE link_ent(eid); EXECUTE PROCEDURE monster_touch_triggers(eid);
       RETURN 1;
     END
     UPDATE ents e SET e.x = :px, e.y = :py, e.z = :pz WHERE e.id = :eid;
@@ -1034,7 +1037,7 @@ BEGIN
   -- the move is ok; a step onto something that isn't the world is fine too, and that is its groundentity
   UPDATE ents e SET e.flags = BIN_OR(BIN_AND(e.flags, BIN_NOT(1024)), 512) WHERE e.id = :eid;
   EXECUTE PROCEDURE qc_set_ground(eid, hit);
-  EXECUTE PROCEDURE link_ent(eid);
+  EXECUTE PROCEDURE link_ent(eid); EXECUTE PROCEDURE monster_touch_triggers(eid);
   RETURN 1;
 END^
 
