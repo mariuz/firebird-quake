@@ -1108,6 +1108,14 @@ BEGIN
     EXECUTE PROCEDURE monster_think(eid);
     -- (a walker's twice: start_go's missing braces run th_stand after th_walk, and stand1's ai_stand, its pausetime
     -- still 0, goes straight back to th_walk, walk1 again with its draw and its step)
+    -- If walk1's ai_walk found the player, HuntTarget's run is undone the same way: stand1 and walk1 again, and from
+    -- then on it walks at the player (its goalentity) in its walk frames, FindTarget finding nothing new while the
+    -- player is its enemy, until a pain or a sight of another sends it to th_run
+    IF (st = 'walk' AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = 'run' AND e.enemy_id IS NOT NULL)) THEN
+    BEGIN
+      UPDATE ents e SET e.st = 'walk', e.goal_id = e.enemy_id WHERE e.id = :eid;
+      EXECUTE PROCEDURE set_anim(eid, (SELECT t.walk_anim FROM monster_types t WHERE t.name = :mt));
+    END
     IF (st = 'walk' AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = 'walk')) THEN
     BEGIN
       UPDATE ents e SET e.anim_frame = -1, e.nextthink = -1 WHERE e.id = :eid;
