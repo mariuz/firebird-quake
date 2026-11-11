@@ -16,7 +16,7 @@ CREATE DOMAIN d_pvs AS VARCHAR(8192) CHARACTER SET ASCII;
 CREATE TABLE game (
   id             SMALLINT NOT NULL PRIMARY KEY,
   tic            INTEGER DEFAULT 0 NOT NULL,
-  time_          DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- seconds, tic / 20
+  time_          DOUBLE PRECISION DEFAULT 0 NOT NULL,   -- seconds: 1 + tic / 20 (from 1, as the server's sv.time)
   sight_entity   INTEGER,                               -- FoundTarget: the monster that last saw the player, and when
   sight_entity_time DOUBLE PRECISION DEFAULT -1 NOT NULL,
   check_time     DOUBLE PRECISION,                      -- checkclient: the leaf of the player's eye, kept for 0.1 s

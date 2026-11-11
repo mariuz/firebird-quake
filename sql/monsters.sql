@@ -194,9 +194,11 @@ BEGIN
   EXECUTE PROCEDURE snd(eid, 2, s, 1, 1);
   UPDATE ents e SET e.enemy_id = :enemy, e.goal_id = NULL, e.st = 'run', e.search_time = think_base() + 5,
          e.attack_finished = IIF(nightmare() = 1, e.attack_finished, think_base() + 1) WHERE e.id = :eid;   -- SUB_AttackFinished
-  -- HuntTarget: ideal_yaw toward the enemy (the run's movetogoal steps that way), think = th_run, so the run's first
-  -- frame comes with the next think; until then the frame stays
-  UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+  -- HuntTarget: ideal_yaw toward the enemy (the run's movetogoal steps that way), think = th_run 0.1 s on (a pain's
+  -- next frame put off: woken by the player's shot, from the frame's start), so the run's first frame comes with the
+  -- next think; until then the frame stays
+  UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y),
+         e.nextthink = think_base() + 0.1e0 WHERE e.id = :eid;
   SELECT e.frame FROM ents e WHERE e.id = :eid INTO fr;
   EXECUTE PROCEDURE set_anim(eid, run_);
   UPDATE ents e SET e.frame = :fr, e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_), 0) WHERE e.id = :eid;

@@ -21,7 +21,7 @@ npm run test:dm                # deathmatch and coop with PSQL bots (QuakeC mode
 npm run test:nav               # the bots' map of the level (FrikBot's waypoints): nodes, links, a way run node by node
 npm run test:hazard            # slime and lava damage, with and without the biosuit, both modes
 npm run test:parity            # the two games given the same input tic by tic: the player the same in both
-npm run test:levelparity       # whole levels in both games: every monster the same tic by tic (MAPS=… TICS=…)
+npm run test:levelparity       # whole levels in both games: every monster the same tic by tic (MAPS=… TICS=…), and fights (FIGHTS=…)
 npm run test:fire              # the shambler's lightning frames, the fireballs' throw
 npm run test:bsp2              # BSP2 and 2PSB maps: E1M1 rewritten in both, the same rows and the same game
 npm run test:water             # see-through liquids where the map was vised for them (LibreQuake), not elsewhere

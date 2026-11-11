@@ -506,11 +506,39 @@ to the same behaviour, with a test of its own:
     hurts take monsters too. The fields exist from the level's second frame (`LinkDoors`, the doors' first think),
     when the player's spawn has every edict touch again (`spawn_tdeath`'s `force_retouch`): E1M6's zombie standing on
     a bridge opens it, though only once its door's turn has come in edict order.
-  - **`show_hostile` 0** is in the past in the first frame too: QuakeC's clock starts at 1, the PSQL game's at 0, so
-    a grunt with the player behind it saw him at once on E1M2.
+  - **`show_hostile` 0** is in the past in the first frame: a grunt with the player behind it saw him at once on E1M2,
+    the PSQL clock starting at 0 (it starts at 1 now, below).
   - **The crucified zombies**: `zombie_cruc2` to `cruc6` each draw their next frame's time, 0.1 to 0.2 s on (the
     PSQL game ticked them every 0.1 s without a draw); the start map parted on it.
   E1M7, E1M8 and the start map hold for 600 tics as well (run them with `MAPS=`).
+- ~~**Fights on whole levels**~~ done (`FIGHTS` in `npm run test:levelparity`): the player put in both games on a
+  free spot facing a level's first monster, firing every 0.6 s, the player and every monster compared each tic for 400
+  tics, on E1M1, E1M2, E1M3, E1M5 and E1M6 (the monsters wake, chase, shoot, flinch, die and infight; the player dies
+  on E1M6 and empties the shotgun on E1M5). What it found:
+  - **The clock starts at 1**, as the server's (`sv.time`): QuakeC mode's times and the PSQL game's are the same sums
+    to the last bit. From 0 they rounded apart: a scrag's think at 0.9999999999999999 found its `attack_finished` of 1
+    not come where QuakeC's at 2.000000000000001 found 2 come. What counted from 0 counts from the level's start now:
+    the fireballs' first throw, the shooters', the player's air, the level's message.
+  - **A path walker that sees the player on its first think** (`walkmonster_start_go`'s missing braces once more):
+    `HuntTarget` sends it to `th_run`, then `th_stand` and `ai_stand` put it back on `th_walk`; from then on it walks
+    at the player in its walk frames, `FindTarget` finding nothing new while the player is its enemy.
+  - **`HuntTarget`** puts the next think 0.1 s on, and a monster woken by the player's shot counts its `attack_finished`,
+    `show_hostile` and `search_time` from the frame's start (`think_base()`): an ogre in pain, shot, runs at the next
+    think, not this one.
+  - **A pain looks at no enemy**: a monster in pain when the player died saw it only in `th_run`'s first frame, with
+    that frame's draw.
+  - **`FireBullets`** starts at `absmin_z + size_z × 0.7`, and `absmin` is a unit under the box: the pellets went a
+    unit higher, one more hitting a scrag.
+  - **`changeyaw`** turns in 65536ths of a turn, `(int)(a × 65536 / 360) & 65535` (`anglemod`), cut down and never
+    negative, in both games: QuakeC mode's builtin rounded and kept negative angles, and the PSQL game did not cut.
+  - **The axe** draws its swing (`player_axe1`, `axeb1`, `axec1`, `axed1`: the view's frames 1 to 4 or 5 to 8) and
+    strikes on its third frame (`player_axe_hit`), and **an empty weapon** is put away at once (`PlayerPreThink`:
+    `W_BestWeapon` when `currentammo` is 0 and the attack is over), not at the next press of the button.
+- **Missiles and edict order**: on E1M4 the fight parts at a scrag's spike. QuakeC moves each edict in turn, its think
+  then its physics; a missile spawned into a free edict below its launcher (one freed more than 0.5 s ago, `ED_Alloc`)
+  first moves in the next frame, one above it in this one. The PSQL game's new entities take fresh ids and every
+  missile moves in the frame it is launched. The next step: edict numbers in the PSQL game (allocated as `ED_Alloc`
+  does) and the physics run edict by edict.
 
 ## Performance
 
