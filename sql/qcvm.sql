@@ -339,10 +339,13 @@ END^
 
 CREATE OR ALTER FUNCTION qc_spawn () RETURNS INTEGER
 AS
-DECLARE e INTEGER; DECLARE mc INTEGER;
+DECLARE e INTEGER; DECLARE mc INTEGER; DECLARE t DOUBLE PRECISION;
 BEGIN
   mc = qc_maxclients();
-  SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 1 AND d.id > :mc ORDER BY d.id INTO e;
+  -- ED_Alloc: the first free edict past the clients that was freed before 2 s into the level or more than 0.5 s ago
+  -- (a missile's edict is not handed out again in the frame it hit something, and is moved in edict order)
+  SELECT COALESCE(v.sv_time, 1) FROM qc_vm v WHERE v.id = 1 INTO t;
+  SELECT FIRST 1 d.id FROM qc_edicts d WHERE d.free = 1 AND d.id > :mc AND (d.freetime < 2 OR :t - d.freetime > 0.5e0) ORDER BY d.id INTO e;
   IF (e IS NULL) THEN
   BEGIN
     SELECT MAXVALUE(COALESCE(MAX(d.id), 0), :mc) + 1 FROM qc_edicts d INTO e;
@@ -365,7 +368,7 @@ CREATE OR ALTER PROCEDURE qc_free (ent INTEGER)
 AS
 BEGIN
   IF (ent <= 0) THEN EXIT;
-  UPDATE qc_edicts d SET d.free = 1 WHERE d.id = :ent;
+  UPDATE qc_edicts d SET d.free = 1, d.freetime = COALESCE((SELECT v.sv_time FROM qc_vm v WHERE v.id = 1), 1) WHERE d.id = :ent;
   DELETE FROM qc_fields f WHERE f.ent = :ent;
   IF (qc_on() = 1) THEN DELETE FROM ents x WHERE x.id = :ent;
 END^

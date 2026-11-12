@@ -124,6 +124,7 @@ export const SAVED_TABLES = {
   ents: { qc: false, where: '' },
   lightstyles: { qc: false, where: '' },
   rng: { qc: false, where: '' },
+  edict_free: { qc: false, where: '' },
   qc_globals: { qc: true, where: '' },
   qc_fields: { qc: true, where: '' },
   qc_edicts: { qc: true, where: '' },

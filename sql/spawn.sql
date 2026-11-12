@@ -19,7 +19,7 @@ DECLARE n1 VARCHAR(64); DECLARE n2 VARCHAR(64); DECLARE n3 VARCHAR(64);
 DECLARE mname VARCHAR(16); DECLARE mmodel VARCHAR(40); DECLARE mhp INTEGER; DECLARE mhull SMALLINT; DECLARE mmaxz DOUBLE PRECISION; DECLARE mflags INTEGER;
 DECLARE mys DOUBLE PRECISION; DECLARE stand VARCHAR(16);
 DECLARE skillbit INTEGER; DECLARE r DOUBLE PRECISION;
-DECLARE items INTEGER;
+DECLARE items INTEGER; DECLARE qs INTEGER; DECLARE qx INTEGER;
 BEGIN
   skillbit = CASE skill WHEN 0 THEN 256 WHEN 1 THEN 512 ELSE 1024 END;
   FOR SELECT m.id, m.classname, m.targetname, m.target, m.killtarget, m.model, m.ox, m.oy, m.oz, m.angle, m.mpitch, m.myaw, m.mroll,
@@ -34,13 +34,24 @@ BEGIN
       UPDATE game g SET g.world_type = COALESCE(:wtype, 0), g.level_msg = :msg WHERE g.id = 1;
       CONTINUE;
     END
+    -- QuakeC's edict for it (ED_Alloc while the level loads: a spawn function that frees its edict at once, static
+    -- lights' makestatic, info_null, light without a targetname, func_illusionary, leaves it to the next); a plat's
+    -- inside trigger takes the one after it
+    qs = NULL;
+    IF (cls NOT IN ('info_null', 'light_torch_small_walltorch', 'light_flame_large_yellow', 'light_flame_small_yellow',
+                    'light_flame_small_white', 'light_globe', 'func_illusionary')
+        AND NOT (cls = 'light' AND (tn IS NULL OR tn = ''))) THEN
+    BEGIN
+      qs = ed_alloc();
+      IF (cls = 'func_plat') THEN qx = ed_alloc();
+    END
     IF (cls IN ('light', 'info_intermission', 'info_player_deathmatch', 'info_player_coop', 'light_fluoro', 'light_fluorospark',
                 'ambient_comp_hum', 'ambient_drip', 'ambient_drone', 'ambient_swamp1', 'ambient_swamp2', 'trigger_onlyregistered')) THEN
     BEGIN
       IF (cls = 'light' AND tn IS NOT NULL AND tn <> '' AND sty IS NOT NULL) THEN
       BEGIN
         EXECUTE PROCEDURE spawn_ent(cls, ox, oy, oz) RETURNING_VALUES eid;
-        UPDATE ents e SET e.targetname = :tn, e.style = :sty WHERE e.id = :eid;
+        UPDATE ents e SET e.targetname = :tn, e.style = :sty, e.edict = :qs WHERE e.id = :eid;
         UPDATE OR INSERT INTO lightstyles (style, pattern) VALUES (:sty, IIF(BIN_AND(:sf, 1) <> 0, 'a', 'm')) MATCHING (style);
       END
       IF (cls = 'trigger_onlyregistered' AND mdl IS NOT NULL) THEN
@@ -52,14 +63,14 @@ BEGIN
           EXECUTE PROCEDURE spawn_ent('trigger_multiple', ox, oy, oz) RETURNING_VALUES eid;
           EXECUTE PROCEDURE set_model(eid, mdl);
           UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.target = :tg, e.killtarget = :kt, e.message = :msg, e.spawnflags = :sf,
-                 e.wait_ = IIF(COALESCE(:wt, 0) = 0, 2, :wt), e.targetname = :tn WHERE e.id = :eid;
+                 e.wait_ = IIF(COALESCE(:wt, 0) = 0, 2, :wt), e.targetname = :tn, e.edict = :qs WHERE e.id = :eid;
         END
         ELSE
         BEGIN
           -- the shareware version: show the message, never fire
           EXECUTE PROCEDURE spawn_ent('trigger_message', ox, oy, oz) RETURNING_VALUES eid;
           EXECUTE PROCEDURE set_model(eid, mdl);
-          UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.message = COALESCE(:msg, 'This item is only available in the registered version'), e.wait_ = 2 WHERE e.id = :eid;
+          UPDATE ents e SET e.model_id = NULL, e.solid = 1, e.message = COALESCE(:msg, 'This item is only available in the registered version'), e.wait_ = 2, e.edict = :qs WHERE e.id = :eid;
         END
       END
       CONTINUE;
@@ -70,7 +81,7 @@ BEGIN
            e.wait_ = COALESCE(:wt, 0), e.delay = COALESCE(:dl, 0), e.speed = COALESCE(:spd, 0), e.lip = COALESCE(:lip, 0),
            e.health = COALESCE(:hp, 0), e.max_health = COALESCE(:hp, 0), e.style = COALESCE(:sty, 0), e.sounds = COALESCE(:snds, 0),
            e.dmg = COALESCE(:dmg, 0), e.height = COALESCE(:hgt, 0), e.count_ = COALESCE(:cnt, 0), e.map = :map_,
-           e.yaw = COALESCE(:ang, 0), e.spawn_x = :ox, e.spawn_y = :oy, e.spawn_z = :oz
+           e.yaw = COALESCE(:ang, 0), e.spawn_x = :ox, e.spawn_y = :oy, e.spawn_z = :oz, e.edict = :qs
      WHERE e.id = :eid;
     IF (mdl IS NOT NULL AND mdl STARTING WITH '*') THEN EXECUTE PROCEDURE set_model(eid, mdl);
     SELECT e.maxx - e.minx, e.maxy - e.miny, e.maxz - e.minz FROM ents e WHERE e.id = :eid INTO sx, sy, sz;
@@ -80,7 +91,7 @@ BEGIN
     BEGIN
       UPDATE ents e SET e.classname = 'player', e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 32,
              e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.anim = 'stand',
-             e.z = e.z + 1 WHERE e.id = :eid;                       -- PutClientInServer: spot.origin + '0 0 1'
+             e.z = e.z + 1, e.edict = 1 WHERE e.id = :eid;          -- PutClientInServer: spot.origin + '0 0 1' (the client, edict 1)
       EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
       UPDATE player p SET p.ent_id = :eid, p.free_x = NULL, p.free_y = NULL, p.free_z = NULL, p.jump_flag = 0 WHERE p.id = 1;
       EXECUTE PROCEDURE link_ent(eid);
@@ -90,11 +101,15 @@ BEGIN
       IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.classname = 'player')) THEN
       BEGIN
         UPDATE ents e SET e.classname = 'player', e.minx = -16, e.miny = -16, e.minz = -24, e.maxx = 16, e.maxy = 16, e.maxz = 32,
-               e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.z = e.z + 1 WHERE e.id = :eid;
+               e.solid = 3, e.movetype = 3, e.health = 100, e.max_health = 100, e.takedamage = 2, e.flags = 8, e.z = e.z + 1, e.edict = 1 WHERE e.id = :eid;
         EXECUTE PROCEDURE set_model(eid, 'progs/player.mdl');
         UPDATE player p SET p.ent_id = :eid, p.free_x = NULL, p.free_y = NULL, p.free_z = NULL, p.jump_flag = 0 WHERE p.id = 1;
       END
-      ELSE DELETE FROM ents e WHERE e.id = :eid;
+      ELSE
+      BEGIN
+        UPDATE ents e SET e.edict = NULL WHERE e.id = :eid;           -- (QuakeC keeps the spot's edict)
+        DELETE FROM ents e WHERE e.id = :eid;
+      END
     END
     -- ── doors ──
     ELSE IF (cls = 'func_door') THEN
@@ -356,6 +371,9 @@ BEGIN
   FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 256) <> 0 ORDER BY e.id INTO eid DO
   BEGIN
     EXECUTE PROCEDURE drop_to_floor(eid);
+    -- (its edict free from PlaceItem's think, 0.2 s in: in the frame from 1.15)
+    INSERT INTO edict_free (edict, freetime) SELECT e.edict, 1.15e0 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0 AND e.edict IS NOT NULL;
+    UPDATE ents e SET e.edict = NULL WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
     DELETE FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
   END
 

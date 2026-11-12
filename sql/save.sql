@@ -61,7 +61,9 @@ BEGIN
   SELECT g.map_name, g.world_model, g.registered FROM game g WHERE g.id = 1 INTO cur, w1, reg;
   IF (LOWER(cur) IS DISTINCT FROM LOWER(mn)) THEN EXCEPTION save_error 'load the save''s map first: ' || mn;
   IF (qc = 1 AND NOT EXISTS (SELECT 1 FROM qc_engine_fields)) THEN EXCEPTION save_error 'a QuakeC save needs QuakeC mode (qc_enter)';
+  skip = RDB$SET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF', '1');      -- (the rows come back with their edicts)
   EXECUTE PROCEDURE restore_tables(slot, qc);
+  skip = RDB$SET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF', NULL);
   -- this copy of the map: its world model's id (the brush models follow it in order), the pak's flag
   UPDATE game g SET g.world_model = :w1, g.registered = :reg, g.qc_mode = :qc WHERE g.id = 1;
   IF (w1 <> w0) THEN UPDATE ents e SET e.model_id = e.model_id - :w0 + :w1 WHERE e.model_id >= :w0;

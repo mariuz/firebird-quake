@@ -44,6 +44,10 @@ CREATE TABLE game (
   completed_time DOUBLE PRECISION DEFAULT 0 NOT NULL,
   finale_text    VARCHAR(1024),
   cdtrack        SMALLINT DEFAULT -1 NOT NULL,
+  -- QuakeC's edicts as the PSQL game mirrors them (ed_alloc, ed_free): the first never used, and the frame's start,
+  -- sv.time, which a freed edict's freetime is
+  num_edicts     INTEGER DEFAULT 6 NOT NULL,
+  sv_time        DOUBLE PRECISION DEFAULT 1 NOT NULL,
   -- the server's rules (QuakeC mode): deathmatch and coop as the cvars, the clients (1 + the bots of
   -- sql/bots.sql, in edicts 1..maxclients), fraglimit and timelimit (minutes); kept across levels
   deathmatch     SMALLINT DEFAULT 0 NOT NULL,
@@ -306,6 +310,7 @@ CREATE TABLE ents (
   lk_x DOUBLE PRECISION, lk_y DOUBLE PRECISION, lk_z DOUBLE PRECISION,
   lk_mnx DOUBLE PRECISION, lk_mny DOUBLE PRECISION, lk_mnz DOUBLE PRECISION,
   lk_mxx DOUBLE PRECISION, lk_mxy DOUBLE PRECISION, lk_mxz DOUBLE PRECISION, lk_grow DOUBLE PRECISION,
+  edict      INTEGER,                      -- QuakeC's edict number for it (ED_Alloc, ed_alloc), NULL where QuakeC keeps none
   waterlevel SMALLINT DEFAULT 0 NOT NULL,
   watertype  INTEGER DEFAULT -1 NOT NULL,
   ltime      DOUBLE PRECISION DEFAULT 0 NOT NULL,
@@ -500,7 +505,8 @@ CREATE TABLE qc_parmmap (
 CREATE TABLE qc_globals (ofs INTEGER NOT NULL PRIMARY KEY, v DOUBLE PRECISION NOT NULL);
 CREATE TABLE qc_edicts (
   id INTEGER NOT NULL PRIMARY KEY,
-  free SMALLINT DEFAULT 0 NOT NULL
+  free SMALLINT DEFAULT 0 NOT NULL,
+  freetime DOUBLE PRECISION DEFAULT 0 NOT NULL     -- ED_Free's sv.time: reused once below 2 or more than 0.5 s gone
 );
 CREATE TABLE qc_fields (
   ent INTEGER NOT NULL,
@@ -565,6 +571,13 @@ CREATE TABLE qc_eyeleaf (
 -- The game's random numbers (rnd() in physics.sql): a seeded generator, so that a game replays exactly
 -- from the same seed and the same input (demos, sql/demo.sql). init_map seeds it from next_seed when
 -- one is set (a demo, a test), else from RAND().
+-- the edicts QuakeC would have free (ED_Free): reused, lowest first, once freed before 2 s into the level or more
+-- than 0.5 s ago (ED_Alloc); usable from its freetime (the player's spawn_tdeath frees its own 0.2 s on)
+CREATE TABLE edict_free (
+  edict      INTEGER NOT NULL PRIMARY KEY,
+  freetime   DOUBLE PRECISION NOT NULL
+);
+
 CREATE TABLE rng (
   id         SMALLINT NOT NULL PRIMARY KEY,
   seed       BIGINT NOT NULL,

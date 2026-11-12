@@ -1750,8 +1750,17 @@ BEGIN
   -- force_retouch: the player's spawn (spawn_tdeath) sets it, and in the next frame every edict is linked again with its
   -- touches, the still ones too: a monster standing in a door's trigger field (spawned that frame) opens the door
   IF ((SELECT g.tic FROM game g WHERE g.id = 1) = 2) THEN
+  BEGIN
+    -- LinkDoors spawns each plain door group's trigger field now (spawn_field): its edict, in the doors' order (a
+    -- DOOR_DONT_LINK door links nothing and has none)
+    FOR SELECT d.edict FROM ents d
+         WHERE d.classname = 'func_door' AND d.linked_id IS NULL AND BIN_AND(d.spawnflags, 4) = 0
+           AND (d.targetname IS NULL OR d.targetname = '') AND d.items = 0 AND d.max_health = 0
+         ORDER BY d.edict INTO eid DO
+      eid = ed_alloc();
     FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 32) <> 0 AND e.health > 0 ORDER BY e.id INTO eid DO
       EXECUTE PROCEDURE monster_touch_triggers(eid);
+  END
   -- thinks that are due (non-pushers)
   -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
   -- (SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what
@@ -1841,7 +1850,7 @@ BEGIN
   UPDATE ents e SET e.effects = BIN_AND(e.effects, -3) WHERE e.effects IN (2, 3, 6, 7, 10, 11, 14, 15);
   WHILE (i < tics) DO
   BEGIN
-    UPDATE game g SET g.tic = g.tic + 1, g.time_ = g.time_ + 0.05e0 WHERE g.id = 1;
+    UPDATE game g SET g.tic = g.tic + 1, g.sv_time = g.time_, g.time_ = g.time_ + 0.05e0 WHERE g.id = 1;   -- (sv_time: the frame's start)
     -- (the frame runs on its end's clock, where QuakeC's runs at its start, sv.time, but for the thinks: what is
     -- scheduled for another entity's think counts from QuakeC's time, think_base())
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', 0.05e0);
@@ -1902,7 +1911,12 @@ BEGIN
   -- keys don't carry over; neither do dead weapons
   UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1 AND BIN_AND(p.items, p.weapon) = 0;
   EXECUTE PROCEDURE player_current_ammo;
+  -- QuakeC's edicts: the world, the client and the four of InitBodyQue before the map's
+  UPDATE game g SET g.num_edicts = 6, g.sv_time = 1 WHERE g.id = 1;
+  DELETE FROM edict_free;
   EXECUTE PROCEDURE spawn_map_ents(skill);
+  -- PutClientInServer's spawn_tdeath: an edict of its own, free again 0.2 s on
+  INSERT INTO edict_free (edict, freetime) VALUES (ed_alloc(), 1.15e0);   -- (its think at 1.2 runs in the frame from 1.15)
   -- ClientConnect's bprint, single player too (before any frame: three seconds from now)
   UPDATE player p SET p.msg = 'player entered the game', p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 3 WHERE p.id = 1;
   -- the level name

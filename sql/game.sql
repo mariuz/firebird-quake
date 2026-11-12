@@ -264,6 +264,51 @@ BEGIN
   SUSPEND;
 END^
 
+-- ED_Alloc: the edict QuakeC would give a spawn() now, the lowest free one freed before 2 s into the level or more
+-- than 0.5 s before this frame's start (sv.time), else a new one
+CREATE OR ALTER FUNCTION ed_alloc () RETURNS INTEGER
+AS
+DECLARE s INTEGER; DECLARE t DOUBLE PRECISION;
+BEGIN
+  SELECT g.sv_time FROM game g WHERE g.id = 1 INTO t;
+  SELECT FIRST 1 f.edict FROM edict_free f WHERE f.freetime <= :t AND (f.freetime < 2 OR :t - f.freetime > 0.5e0) ORDER BY f.edict INTO s;
+  IF (s IS NOT NULL) THEN
+  BEGIN
+    DELETE FROM edict_free f WHERE f.edict = :s;
+    RETURN s;
+  END
+  UPDATE game g SET g.num_edicts = g.num_edicts + 1 WHERE g.id = 1 RETURNING g.num_edicts - 1 INTO s;
+  RETURN s;
+END^
+
+-- ED_Free: the edict free from this frame's start
+CREATE OR ALTER PROCEDURE ed_free (s INTEGER)
+AS
+BEGIN
+  IF (s IS NOT NULL) THEN
+    UPDATE OR INSERT INTO edict_free (edict, freetime) VALUES (:s, (SELECT g.sv_time FROM game g WHERE g.id = 1)) MATCHING (edict);
+END^
+
+-- The PSQL game's entities keep QuakeC's edict numbers: one made in play is spawn()'s (ED_Alloc), one deleted gives
+-- its edict back (ED_Free). Where QuakeC keeps an edict the PSQL game deletes (an item picked up), the edict is set
+-- to NULL first; where it frees one the PSQL game keeps, ed_free. Not in QuakeC mode (its own qc_spawn and qc_free),
+-- nor while the level loads (spawn_map_ents numbers it) or a save comes back (EDICTS_OFF).
+CREATE OR ALTER TRIGGER ents_ed_alloc FOR ents ACTIVE BEFORE INSERT
+AS
+BEGIN
+  IF (NEW.edict IS NULL AND RDB$GET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF') IS NULL
+      AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0 AND g.tic > 0)) THEN
+    NEW.edict = ed_alloc();
+END^
+
+CREATE OR ALTER TRIGGER ents_ed_free FOR ents ACTIVE AFTER DELETE
+AS
+BEGIN
+  IF (OLD.edict > 1 AND RDB$GET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF') IS NULL
+      AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
+    EXECUTE PROCEDURE ed_free(OLD.edict);
+END^
+
 CREATE OR ALTER PROCEDURE remove_ent (eid INTEGER)
 AS
 BEGIN
