@@ -376,7 +376,7 @@ BEGIN
   BEGIN
     EXECUTE PROCEDURE drop_to_floor(eid);
     -- (its edict free from PlaceItem's think, 0.2 s in: in the frame from 1.15)
-    INSERT INTO edict_free (edict, freetime) SELECT e.edict, 1.15e0 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0 AND e.edict IS NOT NULL;
+    INSERT INTO edict_free (edict, freetime, free_tic) SELECT e.edict, 0, 4 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0 AND e.edict IS NOT NULL;
     UPDATE ents e SET e.edict = NULL WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
     DELETE FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
   END

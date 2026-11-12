@@ -271,7 +271,7 @@ AS
 DECLARE s INTEGER; DECLARE t DOUBLE PRECISION;
 BEGIN
   SELECT g.sv_time FROM game g WHERE g.id = 1 INTO t;
-  SELECT FIRST 1 f.edict FROM edict_free f WHERE f.freetime <= :t AND (f.freetime < 2 OR :t - f.freetime > 0.5e0) ORDER BY f.edict INTO s;
+  SELECT FIRST 1 f.edict FROM edict_free f WHERE f.free_tic IS NULL AND (f.freetime < 2 OR :t - f.freetime > 0.5e0) ORDER BY f.edict INTO s;
   IF (s IS NOT NULL) THEN
   BEGIN
     DELETE FROM edict_free f WHERE f.edict = :s;
@@ -289,13 +289,32 @@ BEGIN
     UPDATE OR INSERT INTO edict_free (edict, freetime) VALUES (:s, (SELECT g.sv_time FROM game g WHERE g.id = 1)) MATCHING (edict);
 END^
 
--- An edict QuakeC spawns and the PSQL game draws only as an effect (a meat spray): taken now, free again when its
--- SUB_Remove runs, life seconds on (in the frame from life - 0.05)
+-- the time a think scheduled now counts from, QuakeC's time: inside a think the think's own (run_physics sets the
+-- clock to it), elsewhere in a frame its start, sv.time (the client's think and move, the touches in the physics),
+-- where the PSQL game's clock already reads the frame's end; quake_tic keeps the difference in CLOCK_LAG
+CREATE OR ALTER FUNCTION think_base () RETURNS DOUBLE PRECISION
+AS
+BEGIN
+  RETURN now_() - COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG') AS DOUBLE PRECISION), 0);
+END^
+
+-- An edict whose SUB_Remove comes life seconds on from QuakeC's time now (think_base): free from the tic whose frame
+-- runs that think (its start within 0.05 s before it; the tic's frame starts at 1 + (tic - 1) * 0.05)
+CREATE OR ALTER PROCEDURE ed_free_later (s INTEGER, life DOUBLE PRECISION)
+AS
+BEGIN
+  IF (s > 1 AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
+    UPDATE OR INSERT INTO edict_free (edict, freetime, free_tic)
+      VALUES (:s, 0, CEILING((think_base() + :life - 1) / 0.05e0 - 1e-6)) MATCHING (edict);
+END^
+
+-- An edict QuakeC spawns and the PSQL game draws only as an effect (a meat spray): taken now, free when its
+-- SUB_Remove runs, life seconds on
 CREATE OR ALTER PROCEDURE ed_ghost (life DOUBLE PRECISION)
 AS
 BEGIN
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
-    INSERT INTO edict_free (edict, freetime) VALUES (ed_alloc(), (SELECT g.sv_time FROM game g WHERE g.id = 1) + :life - 0.05e0);
+    EXECUTE PROCEDURE ed_free_later(ed_alloc(), life);
 END^
 
 -- The PSQL game's entities keep QuakeC's edict numbers: one made in play is spawn()'s (ED_Alloc), one deleted gives
@@ -435,15 +454,6 @@ BEGIN
 END^
 
 -- ── bubbles and teleport fog (misc.qc, player.qc, triggers.qc) ─────────────────────────────────────
--- the time a think scheduled now counts from, QuakeC's time: inside a think the think's own (run_physics sets the
--- clock to it), elsewhere in a frame its start, sv.time (the client's think and move, the touches in the physics),
--- where the PSQL game's clock already reads the frame's end; quake_tic keeps the difference in CLOCK_LAG
-CREATE OR ALTER FUNCTION think_base () RETURNS DOUBLE PRECISION
-AS
-BEGIN
-  RETURN now_() - COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG') AS DOUBLE PRECISION), 0);
-END^
-
 -- A bubble (make_bubbles, bubble_split, DeathBubblesSpawn): s_bubble.spr, MOVETYPE_NOCLIP, not solid, bobbing every
 -- 0.5 s (bubble_bob); cnt counts its bobs
 CREATE OR ALTER PROCEDURE spawn_bubble (x DOUBLE PRECISION, y DOUBLE PRECISION, z DOUBLE PRECISION,

@@ -573,10 +573,12 @@ CREATE TABLE qc_eyeleaf (
 -- from the same seed and the same input (demos, sql/demo.sql). init_map seeds it from next_seed when
 -- one is set (a demo, a test), else from RAND().
 -- the edicts QuakeC would have free (ED_Free): reused, lowest first, once freed before 2 s into the level or more
--- than 0.5 s ago (ED_Alloc); usable from its freetime (the player's spawn_tdeath frees its own 0.2 s on)
+-- than 0.5 s ago (ED_Alloc); one whose SUB_Remove is still to come (an explosion's sprite, a meat spray, the player's
+-- spawn_tdeath) waits for its tic (free_tic), when the frame's start becomes its freetime
 CREATE TABLE edict_free (
   edict      INTEGER NOT NULL PRIMARY KEY,
-  freetime   DOUBLE PRECISION NOT NULL
+  freetime   DOUBLE PRECISION NOT NULL,
+  free_tic   INTEGER
 );
 
 CREATE TABLE rng (

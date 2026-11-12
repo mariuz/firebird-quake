@@ -1859,6 +1859,8 @@ BEGIN
   WHILE (i < tics) DO
   BEGIN
     UPDATE game g SET g.tic = g.tic + 1, g.sv_time = g.time_, g.time_ = g.time_ + 0.05e0 WHERE g.id = 1;   -- (sv_time: the frame's start)
+    UPDATE edict_free f SET f.freetime = (SELECT g.sv_time FROM game g WHERE g.id = 1), f.free_tic = NULL
+     WHERE f.free_tic <= (SELECT g.tic FROM game g WHERE g.id = 1);
     -- (the frame runs on its end's clock, where QuakeC's runs at its start, sv.time, but for the thinks: what is
     -- scheduled for another entity's think counts from QuakeC's time, think_base())
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', 0.05e0);
@@ -1924,7 +1926,7 @@ BEGIN
   DELETE FROM edict_free;
   EXECUTE PROCEDURE spawn_map_ents(skill);
   -- PutClientInServer's spawn_tdeath: an edict of its own, free again 0.2 s on
-  INSERT INTO edict_free (edict, freetime) VALUES (ed_alloc(), 1.15e0);   -- (its think at 1.2 runs in the frame from 1.15)
+  INSERT INTO edict_free (edict, freetime, free_tic) VALUES (ed_alloc(), 0, 4);   -- (its think at 1.2 runs in the frame from 1.15, tic 4)
   -- ClientConnect's bprint, single player too (before any frame: three seconds from now)
   UPDATE player p SET p.msg = 'player entered the game', p.msg_time = (SELECT g.time_ FROM game g WHERE g.id = 1) + 3 WHERE p.id = 1;
   -- the level name

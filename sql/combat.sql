@@ -363,7 +363,7 @@ BEGIN
 END^
 
 -- BecomeExplosion: the missile goes, but QuakeC's edict stays on as the explosion's sprite (s_explode1 to 6) and is
--- removed by its last frame's SUB_Remove, 0.6 s on: run in the frame from 0.55 s on
+-- removed by its last frame's SUB_Remove, 0.6 s on
 CREATE OR ALTER PROCEDURE become_explosion (eid INTEGER)
 AS
 DECLARE s INTEGER;
@@ -371,7 +371,7 @@ BEGIN
   SELECT e.edict FROM ents e WHERE e.id = :eid INTO s;
   IF (s > 1 AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
   BEGIN
-    UPDATE OR INSERT INTO edict_free (edict, freetime) VALUES (:s, (SELECT g.sv_time FROM game g WHERE g.id = 1) + 0.55e0) MATCHING (edict);
+    EXECUTE PROCEDURE ed_free_later(s, 0.6e0);
     UPDATE ents e SET e.edict = NULL WHERE e.id = :eid;
   END
   DELETE FROM ents e WHERE e.id = :eid;

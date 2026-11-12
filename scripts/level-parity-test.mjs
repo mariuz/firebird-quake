@@ -94,7 +94,7 @@ for (let k = 0; k < N && !parted; k++) {
     break;
   }
   // the edicts: the PSQL game's mirror of them (ed_alloc, ed_free) as many as QuakeC's, the same ones free
-  const ea = (await P.db.query("SELECT (SELECT num_edicts FROM game) n, (SELECT LIST(edict, ',') FROM (SELECT edict FROM edict_free WHERE freetime <= (SELECT time_ FROM game) - 0.05 + 1e-9 ORDER BY edict)) f FROM rdb$database")).rows[0];
+  const ea = (await P.db.query("SELECT (SELECT num_edicts FROM game) n, (SELECT LIST(edict, ',') FROM (SELECT edict FROM edict_free WHERE free_tic IS NULL ORDER BY edict)) f FROM rdb$database")).rows[0];
   const eb = (await Q.db.query("SELECT (SELECT MAX(id) + 1 FROM qc_edicts) n, (SELECT LIST(id, ',') FROM (SELECT id FROM qc_edicts WHERE free = 1 ORDER BY id)) f FROM rdb$database")).rows[0];
   if (ea.N !== eb.N || (ea.F ?? '') !== (eb.F ?? '')) { parted = `tic ${k}: the edicts, PSQL ${ea.N} (free ${ea.F ?? 'none'}) QuakeC ${eb.N} (free ${eb.F ?? 'none'})`; break; }
   const ra = await rows(P, pm), rb = await rows(Q, qm);
