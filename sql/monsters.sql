@@ -1771,7 +1771,9 @@ BEGIN
     IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
     lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', (SELECT e.edict FROM ents e WHERE e.id = :eid));
     EXECUTE PROCEDURE run_think(eid, think);
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', NULL);
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
     IF (nt <> t) THEN UPDATE game g SET g.time_ = :t WHERE g.id = 1;
     -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
@@ -1780,13 +1782,14 @@ BEGIN
   END
   -- toss, bounce, fly, flymissile, and monsters in the air
   FOR SELECT e.id, e.movetype, e.flags, e.classname FROM ents e WHERE e.movetype IN (6, 9, 10) AND e.id <> :pe   -- (the dead player tosses in its own think)
+           AND e.hold_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1)
         INTO eid, mt, flags, cls DO
   BEGIN
     IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN CONTINUE;      -- resting
     EXECUTE PROCEDURE toss_move(eid, dt);
   END
   -- SV_Physics_Noclip: the bubbles drift through everything
-  FOR SELECT e.id FROM ents e WHERE e.movetype = 8 AND e.id <> :pe INTO eid DO
+  FOR SELECT e.id FROM ents e WHERE e.movetype = 8 AND e.id <> :pe AND e.hold_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1) INTO eid DO
   BEGIN
     UPDATE ents e SET e.x = e.x + e.vx * :dt, e.y = e.y + e.vy * :dt, e.z = e.z + e.vz * :dt WHERE e.id = :eid;
     EXECUTE PROCEDURE link_ent(eid);

@@ -187,8 +187,12 @@ BEGIN
     BEGIN
       -- an episode gate stands only once its rune is held; the boss gate until all four are
       SELECT g.serverflags FROM game g WHERE g.id = 1 INTO wtype;
-      IF (cls = 'func_episodegate' AND BIN_AND(wtype, sf) = 0) THEN DELETE FROM ents e WHERE e.id = :eid;
-      ELSE IF (cls = 'func_bossgate' AND BIN_AND(wtype, 15) = 15) THEN DELETE FROM ents e WHERE e.id = :eid;
+      -- (a gate not wanted returns from its spawn function, its edict kept)
+      IF ((cls = 'func_episodegate' AND BIN_AND(wtype, sf) = 0) OR (cls = 'func_bossgate' AND BIN_AND(wtype, 15) = 15)) THEN
+      BEGIN
+        UPDATE ents e SET e.edict = NULL WHERE e.id = :eid;
+        DELETE FROM ents e WHERE e.id = :eid;
+      END
       ELSE UPDATE ents e SET e.solid = 4, e.movetype = 7, e.yaw = 0 WHERE e.id = :eid;
     END
     ELSE IF (cls = 'func_illusionary') THEN

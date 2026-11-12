@@ -298,7 +298,13 @@ AS
 BEGIN
   IF (NEW.edict IS NULL AND RDB$GET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF') IS NULL
       AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0 AND g.tic > 0)) THEN
+  BEGIN
     NEW.edict = ed_alloc();
+    -- SV_Physics runs the edicts in turn: one spawned below the edict whose think spawned it (RUN_EDICT) has had its
+    -- turn this frame, and first moves in the next
+    IF (NEW.edict < COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT') AS INTEGER), 0)) THEN
+      NEW.hold_tic = (SELECT g.tic FROM game g WHERE g.id = 1);
+  END
 END^
 
 CREATE OR ALTER TRIGGER ents_ed_free FOR ents ACTIVE AFTER DELETE

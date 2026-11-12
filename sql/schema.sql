@@ -311,6 +311,7 @@ CREATE TABLE ents (
   lk_mnx DOUBLE PRECISION, lk_mny DOUBLE PRECISION, lk_mnz DOUBLE PRECISION,
   lk_mxx DOUBLE PRECISION, lk_mxy DOUBLE PRECISION, lk_mxz DOUBLE PRECISION, lk_grow DOUBLE PRECISION,
   edict      INTEGER,                      -- QuakeC's edict number for it (ED_Alloc, ed_alloc), NULL where QuakeC keeps none
+  hold_tic   INTEGER,                      -- spawned in that tic below the edict being run: it first moves in the next
   waterlevel SMALLINT DEFAULT 0 NOT NULL,
   watertype  INTEGER DEFAULT -1 NOT NULL,
   ltime      DOUBLE PRECISION DEFAULT 0 NOT NULL,

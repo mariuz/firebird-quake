@@ -362,6 +362,21 @@ BEGIN
   EXECUTE PROCEDURE link_ent(s);
 END^
 
+-- BecomeExplosion: the missile goes, but QuakeC's edict stays on as the explosion's sprite (s_explode1 to 6) and is
+-- removed by its last frame's SUB_Remove, 0.6 s on: run in the frame from 0.55 s on
+CREATE OR ALTER PROCEDURE become_explosion (eid INTEGER)
+AS
+DECLARE s INTEGER;
+BEGIN
+  SELECT e.edict FROM ents e WHERE e.id = :eid INTO s;
+  IF (s > 1 AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
+  BEGIN
+    UPDATE OR INSERT INTO edict_free (edict, freetime) VALUES (:s, (SELECT g.sv_time FROM game g WHERE g.id = 1) + 0.55e0) MATCHING (edict);
+    UPDATE ents e SET e.edict = NULL WHERE e.id = :eid;
+  END
+  DELETE FROM ents e WHERE e.id = :eid;
+END^
+
 CREATE OR ALTER PROCEDURE grenade_explode (eid INTEGER)
 AS
 DECLARE own INTEGER; DECLARE dmg INTEGER; DECLARE cls VARCHAR(40);
@@ -370,7 +385,7 @@ BEGIN
   EXECUTE PROCEDURE t_radius_damage(eid, own, dmg, NULL);
   EXECUTE PROCEDURE snd(eid, 0, 'weapons/r_exp3.wav', 1, 1);
   EXECUTE PROCEDURE fx(IIF(cls = 'lavaball', 7, 2), (SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid), (SELECT e.z FROM ents e WHERE e.id = :eid), 0, 0, 0, 0);
-  DELETE FROM ents e WHERE e.id = :eid;
+  EXECUTE PROCEDURE become_explosion(eid);
 END^
 
 -- ── touching ────────────────────────────────────────────────────────────
@@ -430,7 +445,7 @@ BEGIN
      WHERE p.id = 1 AND p.dmg_ent = :e1;
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
-    DELETE FROM ents e WHERE e.id = :e1;
+    EXECUTE PROCEDURE become_explosion(e1);
   END
   ELSE IF (c1 = 'laser') THEN
   BEGIN
@@ -450,7 +465,7 @@ BEGIN
     EXECUTE PROCEDURE t_radius_damage(e1, own, 40, e2);
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(2, x, y, z, 0, 0, 0, 0);
-    DELETE FROM ents e WHERE e.id = :e1;
+    EXECUTE PROCEDURE become_explosion(e1);
   END
   ELSE IF (c1 = 'lavaball') THEN
   BEGIN
@@ -458,7 +473,7 @@ BEGIN
     EXECUTE PROCEDURE t_radius_damage(e1, own, dmg, e2);
     EXECUTE PROCEDURE snd_at(x, y, z, 'weapons/r_exp3.wav', 1, 1);
     EXECUTE PROCEDURE fx(7, x, y, z, 0, 0, 0, 0);
-    DELETE FROM ents e WHERE e.id = :e1;
+    EXECUTE PROCEDURE become_explosion(e1);
   END
   ELSE IF (c1 = 'fireball') THEN
   BEGIN
