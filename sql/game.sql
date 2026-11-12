@@ -289,6 +289,15 @@ BEGIN
     UPDATE OR INSERT INTO edict_free (edict, freetime) VALUES (:s, (SELECT g.sv_time FROM game g WHERE g.id = 1)) MATCHING (edict);
 END^
 
+-- An edict QuakeC spawns and the PSQL game draws only as an effect (a meat spray): taken now, free again when its
+-- SUB_Remove runs, life seconds on (in the frame from life - 0.05)
+CREATE OR ALTER PROCEDURE ed_ghost (life DOUBLE PRECISION)
+AS
+BEGIN
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
+    INSERT INTO edict_free (edict, freetime) VALUES (ed_alloc(), (SELECT g.sv_time FROM game g WHERE g.id = 1) + :life - 0.05e0);
+END^
+
 -- The PSQL game's entities keep QuakeC's edict numbers: one made in play is spawn()'s (ED_Alloc), one deleted gives
 -- its edict back (ED_Free). Where QuakeC keeps an edict the PSQL game deletes (an item picked up), the edict is set
 -- to NULL first; where it frees one the PSQL game keeps, ed_free. Not in QuakeC mode (its own qc_spawn and qc_free),

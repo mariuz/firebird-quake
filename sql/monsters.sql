@@ -637,10 +637,15 @@ BEGIN
   -- frames (swing6, swing10: one; smash10: crandom() and one), ShamClaw and Demon_Melee (one), sham_smash10 (two
   -- crandom()s and two)
   SELECT e.anim, e.anim_frame FROM ents e WHERE e.id = :eid INTO ms, k;
-  IF (mt = 'ogre' AND ms = 'swing' AND k IN (5, 9)) THEN r = rnd();
-  ELSE IF (mt = 'ogre' AND ms = 'smash' AND k = 9) THEN BEGIN r = rnd(); r = rnd(); END
-  ELSE IF ((mt = 'shambler' AND ms IN ('swingl', 'swingr')) OR mt = 'demon1') THEN r = rnd();
-  ELSE IF (mt = 'shambler' AND ms = 'smash') THEN BEGIN r = rnd(); r = rnd(); r = rnd(); r = rnd(); END
+  -- (each spray an edict of its own for a second: ed_ghost)
+  IF (mt = 'ogre' AND ms = 'swing' AND k IN (5, 9)) THEN BEGIN r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
+  ELSE IF (mt = 'ogre' AND ms = 'smash' AND k = 9) THEN BEGIN r = rnd(); r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
+  ELSE IF ((mt = 'shambler' AND ms IN ('swingl', 'swingr')) OR mt = 'demon1') THEN BEGIN r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
+  ELSE IF (mt = 'shambler' AND ms = 'smash') THEN
+  BEGIN
+    r = rnd(); r = rnd(); r = rnd(); r = rnd();
+    EXECUTE PROCEDURE ed_ghost(1); EXECUTE PROCEDURE ed_ghost(1);
+  END
   EXECUTE PROCEDURE fx(3, (SELECT e.x FROM ents e WHERE e.id = :enemy), (SELECT e.y FROM ents e WHERE e.id = :enemy), (SELECT e.z + 10 FROM ents e WHERE e.id = :enemy), 0, 0, 0, dmg);
 END^
 

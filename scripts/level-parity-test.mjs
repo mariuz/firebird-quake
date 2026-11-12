@@ -4,7 +4,8 @@
 // rnd(), so the same state means the same draws in the same order). It holds what the monsters do on their own
 // from the level's first frame: their start-up (the spread of their first thinks, the drop to the floor, the path
 // walkers' first corner), standing, patrolling, waking and coming for the player, and the doors they open on the way.
-// A level that parts reports the first tic and the monsters that differ. Each level runs in a process of its own.
+// The edicts too: the PSQL game numbers its entities as QuakeC's edicts (ed_alloc, ed_free), and the number in use and
+// the free ones must be QuakeC's every tic. A level that parts reports the first tic and the monsters that differ. Each level runs in a process of its own.
 // Then fights (FIGHTS): the player put in both games on the first free spot 192 to 320 units from the first monster
 // with one, in its sight and away from triggers, turned to face it and firing every 0.6 s, the player compared every
 // tic too (its place and health) for 400 tics: the waking, the chase, the shots both ways, pains, deaths, the
@@ -92,6 +93,10 @@ for (let k = 0; k < N && !parted; k++) {
     parted = `tic ${k}: the player, PSQL ${JSON.stringify(a)} QuakeC ${JSON.stringify(b)}`;
     break;
   }
+  // the edicts: the PSQL game's mirror of them (ed_alloc, ed_free) as many as QuakeC's, the same ones free
+  const ea = (await P.db.query("SELECT (SELECT num_edicts FROM game) n, (SELECT LIST(edict, ',') FROM (SELECT edict FROM edict_free WHERE freetime <= (SELECT time_ FROM game) - 0.05 + 1e-9 ORDER BY edict)) f FROM rdb$database")).rows[0];
+  const eb = (await Q.db.query("SELECT (SELECT MAX(id) + 1 FROM qc_edicts) n, (SELECT LIST(id, ',') FROM (SELECT id FROM qc_edicts WHERE free = 1 ORDER BY id)) f FROM rdb$database")).rows[0];
+  if (ea.N !== eb.N || (ea.F ?? '') !== (eb.F ?? '')) { parted = `tic ${k}: the edicts, PSQL ${ea.N} (free ${ea.F ?? 'none'}) QuakeC ${eb.N} (free ${eb.F ?? 'none'})`; break; }
   const ra = await rows(P, pm), rb = await rows(Q, qm);
   const bad = ra.map((r, i) => [r, rb[i]]).filter(([r, s]) => !s || Math.abs(r.X - s.X) > 0.01 || Math.abs(r.Y - s.Y) > 0.01 || Math.abs(r.Z - s.Z) > 0.01 || r.FRAME !== s.FRAME);
   const sa = await seed(P), sb = await seed(Q);
