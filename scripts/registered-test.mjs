@@ -84,11 +84,16 @@ assert(m?.ST === 'run', 'the death knight charges');
 let spikes = 0;
 for (let i = 0; i < 160 && !spikes; i++) { await tic(); spikes = await count('kspike'); }
 assert(spikes > 0, `the death knight threw flame spikes (${spikes} in the air)`);
-// within ai_melee's reach (60) of where the player stands now (without pak1 there is no model, so no frames to charge on)
+// within ai_melee's reach (60) of where the player stands now (without pak1 there is no model, so no frames to charge on),
+// the player held where it stands (the volley's last spikes would push it out of reach)
+const hold = await q1(`SELECT x, y, z FROM ents WHERE id = ${pe}`);
 await db.exec(`UPDATE ents SET x = (SELECT x - 50 FROM ents WHERE id = ${pe}), y = (SELECT y FROM ents WHERE id = ${pe}), z = 48 WHERE id = ${id}`);
 await db.exec(`EXECUTE PROCEDURE link_ent(${id})`);
 let sliced = 0;
-for (let i = 0; i < 120 && !sliced; i++) { await tic(); sliced = await sounds('hknight/slash1.wav'); }
+for (let i = 0; i < 120 && !sliced; i++) {
+  await db.exec(`UPDATE ents SET x = ${hold.X}, y = ${hold.Y}, z = ${hold.Z}, vx = 0, vy = 0 WHERE id = ${pe}`);
+  await tic(); sliced = await sounds('hknight/slash1.wav');
+}
 assert(sliced > 0, 'at arm\'s length he draws the sword');
 
 // ── vore: a homing pod that turns toward the player ────────────────────
