@@ -534,11 +534,26 @@ to the same behaviour, with a test of its own:
   - **The axe** draws its swing (`player_axe1`, `axeb1`, `axec1`, `axed1`: the view's frames 1 to 4 or 5 to 8) and
     strikes on its third frame (`player_axe_hit`), and **an empty weapon** is put away at once (`PlayerPreThink`:
     `W_BestWeapon` when `currentammo` is 0 and the attack is over), not at the next press of the button.
-- **Missiles and edict order**: on E1M4 the fight parts at a scrag's spike. QuakeC moves each edict in turn, its think
-  then its physics; a missile spawned into a free edict below its launcher (one freed more than 0.5 s ago, `ED_Alloc`)
-  first moves in the next frame, one above it in this one. The PSQL game's new entities take fresh ids and every
-  missile moves in the frame it is launched. The next step: edict numbers in the PSQL game (allocated as `ED_Alloc`
-  does) and the physics run edict by edict.
+- ~~**Missiles and edict order**~~ done (`ents.edict`, `ed_alloc`, `ed_free`, the edicts checked every tic by
+  `npm run test:levelparity`, whose fights now include E1M4's): on E1M4 the fight parted at a scrag's spike. QuakeC
+  moves each edict in turn, its think then its physics, so a missile spawned into a free edict below its launcher first
+  moves in the next frame, one above it in this one; the PSQL game's new entities took fresh ids and every missile
+  moved in the frame it was launched. Now the PSQL game numbers its entities as QuakeC's edicts:
+  - **At load** (`spawn_map_ents`): the world, the client and InitBodyQue's four take 0 to 5, then each map entity in
+    order takes the next, where a spawn function that frees its edict at once (the static lights' `makestatic`,
+    `info_null`, `light` without a targetname, `func_illusionary`, a skill's leftovers) leaves it to the next; a plat's
+    inside trigger takes the one after it, the player is 1, and `spawn_tdeath` takes one more. The same as QuakeC's on
+    all nine shareware levels.
+  - **In play**: every entity made takes `ED_Alloc`'s edict (`ents_ed_alloc`, a trigger: the lowest free one freed
+    before 2 s into the level or more than 0.5 s ago, else a new one), and every one deleted gives it back
+    (`ents_ed_free`); what QuakeC keeps the PSQL game deletes (an item picked up, an episode gate) keeps its edict, what
+    QuakeC spawns and the PSQL game only draws (a meat spray) takes one for its second (`ed_ghost`), and what QuakeC
+    frees later than the PSQL game (an explosion's sprite, 0.6 s on; PlaceItem's dropped item and `spawn_tdeath`, 0.2
+    s in) frees in the tic its `SUB_Remove` runs, counted from QuakeC's time (`ed_free_later`). `LinkDoors`' trigger
+    fields take theirs in the level's second frame.
+  - **QuakeC mode** had reused a freed edict at once; it keeps `ED_Alloc`'s half second now too (`qc_edicts.freetime`).
+  - **The order**: one spawned below the edict whose think made it (`RUN_EDICT`) sits out this frame's move
+    (`hold_tic`): a scrag's spike, a lava fireball.
 
 ## Performance
 

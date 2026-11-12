@@ -26,7 +26,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
 const TICS = +(process.env.TICS ?? 300);
 const MAPS = (process.env.MAPS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
-const FIGHTS = (process.env.FIGHTS ?? 'e1m1,e1m2,e1m3,e1m5,e1m6').split(',').filter(Boolean);
+const FIGHTS = (process.env.FIGHTS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
 
 if (!process.env.LEVEL) {
   let failed = 0;

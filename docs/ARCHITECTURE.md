@@ -222,6 +222,14 @@ A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in Qu
   tics of fighting, in a fresh database and in one that has played other levels (row placement does
   not leak into the results), in the PSQL game and in QuakeC mode, interpreted or with every function
   compiled.
+- **Edicts**: the PSQL game's entities carry QuakeC's edict numbers (`ents.edict`), so the two games give a
+  spawn the same edict and move it in the same frame. `spawn_map_ents` numbers the map as the server loads it (0 to 5
+  the world, the client and the body queue; a spawn function that frees its edict leaves it to the next); in play the
+  triggers `ents_ed_alloc` and `ents_ed_free` take and give back edicts as `ED_Alloc` and `ED_Free` do (`edict_free`:
+  reused lowest first, once freed before 2 s into the level or more than 0.5 s ago; `game.num_edicts`, `game.sv_time`,
+  the frame's start). A removal QuakeC makes later (an explosion's sprite) waits for its tic (`ed_free_later`), and an
+  edict QuakeC spawns where the PSQL game only draws an effect is taken for its life (`ed_ghost`). An entity spawned in
+  a think below the thinker's edict sits out the frame's move (`hold_tic`), as `SV_Physics` has passed it.
 - **Recording**: `demo_record` stores the level's map, skill, logic and `level_seed` in the `demo` row
   and turns recording on; after tic 0 it first saves the game into slot 13 and sets `from_save`, so a
   demo can start at any moment, as Quake's `record` does (the save holds `rng`, so the random choices
@@ -501,7 +509,7 @@ leaf ambients (water, sky/wind) at the levels `quake_tic` reports, and handles t
 | `fire-test.mjs` | the shambler's lightning frames (`shambler.qc`) and the fireballs' throw (`misc.qc`, its speed bug included) |
 | `hazard-test.mjs` | slime and lava as `WaterMove` hurts, with and without the biosuit, in both modes |
 | `monster-parity-test.mjs` | each shareware monster (grunt, dog, knight, ogre, fiend, scrag, shambler, zombie) against the player in both games from one seed, compared every tic with the shared random generator's state, until the player dies, then each shot dead by the player (`DUEL=army:fight`), each kind walking its path (`DUEL=army:walk`), and E1M4's air bubbles (`DUEL=bubbles`); a duel a process (`DUEL=wizard TRACE=0` one, every tic) |
-| `level-parity-test.mjs` | whole levels in both games: each map loaded twice with one seed, `quake_tic` and `qc_tic` run side by side with the player still, every monster's place and frame and the random generator compared every tic (`MAPS`, `TICS`), then fights: the player facing a level's first monster and firing, compared too (`FIGHTS`); a level a process |
+| `level-parity-test.mjs` | whole levels in both games: each map loaded twice with one seed, `quake_tic` and `qc_tic` run side by side with the player still, every monster's place and frame and the random generator compared every tic (`MAPS`, `TICS`), then fights: the player facing a level's first monster and firing, compared too (`FIGHTS`); every tic the edicts as well (`edict_free` and `num_edicts` against `qc_edicts`); a level a process |
 | `parity-test.mjs` | the two games against each other: E1M1 loaded twice with one seed, the same input to `quake_tic` and `qc_tic` tic by tic, the player compared every tic (place, view, health, armor, ammo, weapon, view weapon frame), the random generator and the bubbles too through movement, weapons, falls, liquids, items, doors, buttons, a lift and the teleporter; a scenario that parts prints the first tic and both rows (`DBG=n` the `ents` rows) |
 | `lq-test.mjs` | LibreQuake: every level loads and exits; lq_e0m7's boss trap (`trigger_hurt`) in both modes; `light_globe` and `makestatic` |
 | `levels-test.mjs` | every level of the paks it is given (shareware by default; `PAK1` adds the registered ones), in both logics: the player's footing, health and monsters, the exits, `total_monsters` equal between the PSQL game and progs.dat, no QuakeC error |
