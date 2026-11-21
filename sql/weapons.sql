@@ -160,12 +160,15 @@ DECLARE sh INTEGER; DECLARE na INTEGER; DECLARE ro INTEGER; DECLARE ce INTEGER; 
 DECLARE f DOUBLE PRECISION; DECLARE hx DOUBLE PRECISION; DECLARE hy DOUBLE PRECISION; DECLARE hz DOUBLE PRECISION;
 DECLARE nx DOUBLE PRECISION; DECLARE ny DOUBLE PRECISION; DECLARE nz DOUBLE PRECISION;
 DECLARE als SMALLINT; DECLARE sts SMALLINT; DECLARE io SMALLINT; DECLARE iw SMALLINT; DECLARE hit INTEGER;
-DECLARE quad DOUBLE PRECISION; DECLARE td SMALLINT;
+DECLARE quad DOUBLE PRECISION; DECLARE td SMALLINT; DECLARE qt DOUBLE PRECISION;
 DECLARE ax DOUBLE PRECISION; DECLARE ay DOUBLE PRECISION; DECLARE az DOUBLE PRECISION; DECLARE wf INTEGER; DECLARE cr1 DOUBLE PRECISION; DECLARE cr2 DOUBLE PRECISION;
 BEGIN
   SELECT p.ent_id, p.weapon, p.attack_finished, p.shells, p.nails, p.rockets, p.cells, p.weapon_sound, p.super_damage_finished, p.weaponframe
     FROM player p WHERE p.id = 1 INTO pe, w, af, sh, na, ro, ce, lefty, quad, wf;
   t = now_();
+  -- (attack_finished in QuakeC's time, the frame's start, sv.time: the same sum as QuakeC mode's, where the frame's end
+  -- rounds its own way and a shot exactly 0.5 s on would go one frame early)
+  SELECT g.sv_time FROM game g WHERE g.id = 1 INTO qt;
   SELECT e.waterlevel FROM ents e WHERE e.id = :pe INTO wl;
   IF (btn = 0) THEN
   BEGIN
@@ -175,7 +178,7 @@ BEGIN
   -- btn 2: a nailgun's or the thunderbolt's next shot, fired by its frames (player_nail1/2, player_light1/2) while
   -- the button is held; a press starts them once attack_finished is past (W_WeaponFrame's W_Attack)
   IF (btn = 1 AND w IN (4, 8, 64) AND wf > 0) THEN EXIT;
-  IF (af > t AND btn <> 2) THEN EXIT;
+  IF (af > qt AND btn <> 2) THEN EXIT;
   EXECUTE PROCEDURE view_vectors RETURNING_VALUES ex, ey, ez, fx_, fy, fz, rx, ry, rz, ux, uy, uz;
   -- an attack starts the view weapon's frames at 1 (lightning_time doubles as their start); the cycle's shots go on
   UPDATE player p SET p.show_hostile = :t + 1, p.lightning_time = IIF(:btn = 2, p.lightning_time, :t),
@@ -186,7 +189,7 @@ BEGIN
     -- W_Attack: the swing drawn (player_axe1, axeb1, axec1, axed1: the view's frames 1 to 4 or 5 to 8); the blow
     -- falls on its third frame (player_weapon_frame, player_axe_hit)
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/ax1.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.5e0, p.weaponframe = IIF(:btn = 2, p.weaponframe, 1) WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.5e0, p.weaponframe = IIF(:btn = 2, p.weaponframe, 1) WHERE p.id = 1;
     cr1 = rnd();
     IF (cr1 >= 0.25e0 AND (cr1 < 0.5e0 OR cr1 >= 0.75e0)) THEN UPDATE player p SET p.weaponframe = 5 WHERE p.id = 1;
   END
@@ -194,7 +197,7 @@ BEGIN
   BEGIN
     IF (sh < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/guncock.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.5e0, p.shells = p.shells - 1, p.punchangle = -2 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.5e0, p.shells = p.shells - 1, p.punchangle = -2 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 100000)
     EXECUTE PROCEDURE fire_bullets(pe, 6, ex, ey, ez, ax, ay, az, 0.04e0, 0.04e0);
   END
@@ -202,7 +205,7 @@ BEGIN
   BEGIN
     IF (sh < 2) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/shotgn2.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.7e0, p.shells = p.shells - 2, p.punchangle = -4 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.7e0, p.shells = p.shells - 2, p.punchangle = -4 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;
     EXECUTE PROCEDURE fire_bullets(pe, 14, ex, ey, ez, ax, ay, az, 0.14e0, 0.08e0);
   END
@@ -211,7 +214,7 @@ BEGIN
     IF (na < IIF(w = 8, 2, 1)) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     SELECT p.weapon_sound FROM player p WHERE p.id = 1 INTO lefty;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- dir = aim(self, 1000)
-    UPDATE player p SET p.attack_finished = :t + 0.2e0, p.nails = p.nails - IIF(:w = 8, 2, 1), p.weapon_sound = 1 - COALESCE(:lefty, 0) WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.2e0, p.nails = p.nails - IIF(:w = 8, 2, 1), p.weapon_sound = 1 - COALESCE(:lefty, 0) WHERE p.id = 1;
     IF (w = 8) THEN
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/spike2.wav', 1, 1);
@@ -228,7 +231,7 @@ BEGIN
   BEGIN
     IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/grenade.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.6e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.6e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
     -- W_FireGrenade: from the player's origin; looking up or down, v_forward × 600 + v_up × 200 and crandom() × 10
     -- along v_right then along v_up; looking level, aim(self, 10000) × 600 with velocity_z 200
     IF ((SELECT p.pitch FROM player p WHERE p.id = 1) <> 0) THEN
@@ -250,7 +253,7 @@ BEGIN
   BEGIN
     IF (ro < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     EXECUTE PROCEDURE snd(pe, 1, 'weapons/sgun1.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.8e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.8e0, p.rockets = p.rockets - 1, p.punchangle = -2 WHERE p.id = 1;
     EXECUTE PROCEDURE aim_dir(pe, fx_, fy, fz) RETURNING_VALUES ax, ay, az;     -- missile.velocity = aim(self, 1000) * 1000
     EXECUTE PROCEDURE launch_rocket(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, ax, ay, az, 1000, 100, 'progs/missile.mdl');
   END
@@ -259,7 +262,7 @@ BEGIN
     IF (ce < 1) THEN BEGIN UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0 WHERE p.id = 1; EXIT; END
     SELECT p.weapon_sound FROM player p WHERE p.id = 1 INTO lefty;
     IF (COALESCE(lefty, 0) = 0) THEN EXECUTE PROCEDURE snd(pe, 1, 'weapons/lstart.wav', 1, 1);
-    UPDATE player p SET p.attack_finished = :t + 0.2e0, p.cells = p.cells - 1, p.weapon_sound = 1, p.punchangle = -2 WHERE p.id = 1;
+    UPDATE player p SET p.attack_finished = :qt + 0.2e0, p.cells = p.cells - 1, p.weapon_sound = 1, p.punchangle = -2 WHERE p.id = 1;
     IF (wl > 1) THEN                                                     -- discharge!
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/lhit.wav', 1, 1);
@@ -384,7 +387,7 @@ BEGIN
 
   -- door trigger fields: 60 units around a linked group of plain doors
   FOR SELECT DISTINCT COALESCE(d.linked_id, d.id) FROM ents d
-       WHERE d.classname = 'func_door'
+       WHERE d.classname = 'func_door' AND BIN_AND(d.spawnflags, 4) = 0   -- (LinkDoors spawns no field for a DOOR_DONT_LINK door)
          AND d.x + d.maxx + 60 >= :px + :mnx AND d.x + d.minx - 60 <= :px + :mxx
          AND d.y + d.maxy + 60 >= :py + :mny AND d.y + d.miny - 60 <= :py + :mxy
          AND d.z + d.maxz + 8 >= :pz + :mnz AND d.z + d.minz - 8 <= :pz + :mxz
@@ -466,7 +469,7 @@ BEGIN
   SELECT g.tic FROM game g WHERE g.id = 1 INTO tst;
   IF (tst < 2) THEN EXIT;
   FOR SELECT DISTINCT COALESCE(d.linked_id, d.id) FROM ents d
-       WHERE d.classname = 'func_door'
+       WHERE d.classname = 'func_door' AND BIN_AND(d.spawnflags, 4) = 0   -- (LinkDoors spawns no field for a DOOR_DONT_LINK door)
          AND d.x + d.maxx + 60 >= :px + :mnx AND d.x + d.minx - 60 <= :px + :mxx
          AND d.y + d.maxy + 60 >= :py + :mny AND d.y + d.miny - 60 <= :py + :mxy
          AND d.z + d.maxz + 8 >= :pz + :mnz AND d.z + d.minz - 8 <= :pz + :mxz
@@ -590,7 +593,7 @@ CREATE OR ALTER PROCEDURE player_check_ammo (t DOUBLE PRECISION)
 AS
 BEGIN
   UPDATE player p SET p.weapon = best_weapon(), p.weaponframe = 0
-   WHERE p.id = 1 AND :t > p.attack_finished AND p.weapon <> 4096
+   WHERE p.id = 1 AND (SELECT g.sv_time FROM game g WHERE g.id = 1) > p.attack_finished AND p.weapon <> 4096
      AND (CASE p.weapon WHEN 1 THEN p.shells WHEN 2 THEN p.shells WHEN 4 THEN p.nails WHEN 8 THEN p.nails
                         WHEN 16 THEN p.rockets WHEN 32 THEN p.rockets WHEN 64 THEN p.cells ELSE 1 END) = 0;
   IF (ROW_COUNT > 0) THEN EXECUTE PROCEDURE player_current_ammo;
@@ -602,7 +605,7 @@ CREATE OR ALTER PROCEDURE player_impulse_due (t DOUBLE PRECISION)
 AS
 DECLARE imp SMALLINT;
 BEGIN
-  SELECT p.impulse FROM player p WHERE p.id = 1 AND p.attack_finished <= :t INTO imp;
+  SELECT p.impulse FROM player p WHERE p.id = 1 AND p.attack_finished <= (SELECT g.sv_time FROM game g WHERE g.id = 1) INTO imp;
   IF (imp IS NULL OR imp = 0) THEN EXIT;
   UPDATE player p SET p.impulse = 0 WHERE p.id = 1;
   EXECUTE PROCEDURE player_impulse(imp);
