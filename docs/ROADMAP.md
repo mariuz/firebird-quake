@@ -554,6 +554,32 @@ to the same behaviour, with a test of its own:
   - **QuakeC mode** had reused a freed edict at once; it keeps `ED_Alloc`'s half second now too (`qc_edicts.freetime`).
   - **The order**: one spawned below the edict whose think made it (`RUN_EDICT`) sits out this frame's move
     (`hold_tic`): a scrag's spike, a lava fireball.
+- ~~**Random play in both games**~~ done (`WALKS` in `npm run test:levelparity`: E1M1 1000 tics, E1M3, E1M5 and E1M6
+  600): the player driven by inputs drawn from a seed (an action held 10 to 29 tics: forward or back, a strafe, a turn,
+  the fire button and jumps at random), wandering, shooting, picking things up, opening doors and waking what it meets,
+  the player, every monster and the edicts compared every tic. Of 28 seeds over E1M1 to E1M6, 16 hold to the end. What
+  it found:
+  - **A shot exactly 0.5 s on**: the player's `attack_finished` counted from the frame's end, which rounds its own way;
+    it counts from the frame's start (`sv_time`) as QuakeC's `time` does.
+  - **The view's yaw** is not wrapped (`anglemod`): QuakeC mode's `v_angle` adds up, and `cos(339°)` is not `cos(-21°)`
+    to the last bit; a millionth a tic grew into a wall bumped one frame apart.
+  - **`monster_use`** (a trigger waking a monster) sets the enemy and has `FoundTarget` come 0.1 s on as its think,
+    only for the player, visible and not notarget; the PSQL game set it running at once.
+  - **The thinks** run in edict order, and each reads its `nextthink` when its turn comes (`SV_RunThink`): a grunt killed
+    by an ogre's chainsaw earlier in the frame thought again.
+  - **A body stays solid** until its death's frame that sets `SOLID_NOT` (`die_solid_frame`: `army_cdie3` and the
+    like, `demon1_die6`, the dog at once), at its full height: the player strafing into a grunt it had just killed was
+    held a frame longer.
+  - **A trigger_once** keeps its edict 0.1 s after it fires, **an item taken** keeps its own (backpacks and keys go),
+    **a zombie's gib that misses** stops and waits for its next touch, and **`ai_run`** keeps `show_hostile` a second
+    on every frame.
+  - **`ZombieFireGrenade`'s leftover vectors**: its origin uses `v_forward`, `v_right` and `v_up` before its own
+    `makevectors`, the frame's last one: a running monster's `infront`, an ogre's grenade, a teleport's, the player's
+    view. The PSQL game keeps that call's angles (`mv_set`) where QuakeC would make it.
+  Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
+  `OFS_PARM0` (3 in one run); the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2 to 4 part on it).
+  E1M4's four seeds, E1M6's seeds 2 to 4, E1M3's seed 4 (tic 252) and E1M1's seed 5 (tic 654) part on things not yet
+  found.
 
 ## Performance
 

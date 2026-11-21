@@ -826,6 +826,15 @@ BEGIN
 END^
 
 -- th_die
+-- the frame of a monster's regular death (0 its first) whose function sets SOLID_NOT: army_die3 and cdie3, ogre_die3 and
+-- bdie3, knight_die3 and dieb3, sham_death3, wiz_death3, hknight_die3, enf_die3, demon1_die6, f_death21; dog_die and
+-- shalrath_die at once. Until then the body blocks as it stood.
+CREATE OR ALTER FUNCTION die_solid_frame (mt VARCHAR(16)) RETURNS SMALLINT
+AS
+BEGIN
+  RETURN CASE mt WHEN 'demon1' THEN 5 WHEN 'fish' THEN 20 WHEN 'dog' THEN 0 WHEN 'shalrath' THEN 0 ELSE 2 END;
+END^
+
 CREATE OR ALTER PROCEDURE monster_die (eid INTEGER, attacker INTEGER)
 AS
 DECLARE hp INTEGER; DECLARE gh INTEGER; DECLARE hm VARCHAR(40); DECLARE ds VARCHAR(64); DECLARE anims VARCHAR(80); DECLARE drop_ VARCHAR(16);
@@ -901,9 +910,10 @@ BEGIN
     UPDATE ents e SET e.vx = -200 + 400 * rnd(), e.vy = -200 + 400 * rnd(), e.vz = 100 + 100 * rnd(), e.flags = BIN_AND(e.flags, BIN_NOT(512)) WHERE e.id = :eid;
   q = POSITION(',', pick);
   IF (q > 0) THEN pick = SUBSTRING(pick FROM 1 FOR q - 1);
-  -- (still MOVETYPE_STEP, as id leaves it: a body in the air falls by SV_Physics_Step and slides along what it hits)
-  UPDATE ents e SET e.st = 'die', e.solid = 0, e.nextthink = think_base() + 0.1e0, e.vx = IIF(:mt = 'wizard', e.vx, 0), e.vy = IIF(:mt = 'wizard', e.vy, 0), e.flags = BIN_AND(e.flags, BIN_NOT(1 + 2)),
-         e.minz = -24, e.maxz = -8 WHERE e.id = :eid;
+  -- (still MOVETYPE_STEP, as id leaves it: a body in the air falls by SV_Physics_Step and slides along what it hits;
+  -- solid until its death's frame that sets SOLID_NOT, die_solid_frame: the dog's and the vore's at once)
+  UPDATE ents e SET e.st = 'die', e.nextthink = think_base() + 0.1e0, e.vx = IIF(:mt = 'wizard', e.vx, 0), e.vy = IIF(:mt = 'wizard', e.vy, 0), e.flags = BIN_AND(e.flags, BIN_NOT(1 + 2)) WHERE e.id = :eid;
+  IF (die_solid_frame(mt) = 0) THEN UPDATE ents e SET e.solid = 0, e.minz = -24, e.maxz = -8 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, pick);
   EXECUTE PROCEDURE step_move(eid);
 END^
@@ -1498,6 +1508,7 @@ BEGIN
       EXIT;
     END
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    IF (af = die_solid_frame(mt)) THEN UPDATE ents e SET e.solid = 0, e.minz = -24, e.maxz = -8 WHERE e.id = :eid;
     IF (af = 2) THEN EXECUTE PROCEDURE drop_backpack(eid);
     EXECUTE PROCEDURE step_move(eid);
     EXIT;

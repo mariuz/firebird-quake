@@ -11,6 +11,10 @@
 // tic too (its place and health) for 400 tics: the waking, the chase, the shots both ways, pains, deaths, the
 // player's death or its weapon running dry.
 //
+// Then random play (WALKS, map:seed:tics): the player driven by inputs drawn from a seed (an action held 10 to 29 tics:
+// forward or back, a strafe, a turn of up to 8 degrees a tic, the fire button and jumps pressed at random), wandering,
+// shooting, picking things up, opening doors and waking what it meets, compared as a fight is.
+//
 //   node scripts/level-parity-test.mjs
 //   MAPS=e1m2,e1m6 TICS=600 FIGHTS= node scripts/level-parity-test.mjs
 
@@ -27,18 +31,30 @@ const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
 const TICS = +(process.env.TICS ?? 300);
 const MAPS = (process.env.MAPS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
 const FIGHTS = (process.env.FIGHTS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
+const WALKS = (process.env.WALKS ?? 'e1m1:2:1000,e1m3:1:600,e1m5:1:600,e1m6:1:600').split(',').filter(Boolean);
 
 if (!process.env.LEVEL) {
   let failed = 0;
-  for (const [map, fight] of [...MAPS.map((m) => [m, '']), ...FIGHTS.map((m) => [m, '1'])]) {
-    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { env: { ...process.env, LEVEL: map, FIGHT: fight }, stdio: 'inherit' });
+  for (const [map, fight, walk] of [...MAPS.map((m) => [m, '', '']), ...FIGHTS.map((m) => [m, '1', '']), ...WALKS.map((w) => [w.split(':')[0], '', w])]) {
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { env: { ...process.env, LEVEL: map, FIGHT: fight, WALK: walk }, stdio: 'inherit' });
     if (r.status !== 0) failed++;
   }
-  console.log(failed ? `${failed} level(s) parted` : `all ${MAPS.length} levels the same for ${TICS} tics, and ${FIGHTS.length} fights for 400`);
+  console.log(failed ? `${failed} level(s) parted` : `all ${MAPS.length} levels the same for ${TICS} tics, ${FIGHTS.length} fights for 400 and ${WALKS.length} random plays`);
   process.exit(failed ? 1 : 0);
 }
 
-const map = process.env.LEVEL, fight = process.env.FIGHT === '1';
+const map = process.env.LEVEL, fight = process.env.FIGHT === '1', walk = process.env.WALK || '';
+// the random play's inputs, from their own generator (rnd()'s formula, apart from the game's)
+let ws = +(walk.split(':')[1] ?? 1), act = null, held = 0;
+const r01 = () => { ws = (ws * 1103515245 + 12345) % 2147483648; return ws / 2147483648; };
+const wander = () => {
+  if (held <= 0) {
+    held = 10 + Math.floor(r01() * 20);
+    act = { f: [1, 1, 0, -1][Math.floor(r01() * 4)], s: [0, 0, 1, -1][Math.floor(r01() * 4)], yaw: Math.round((r01() - 0.5) * 16), fire: r01() < 0.4, jump: r01() < 0.15 };
+  }
+  held--;
+  return `1, ${act.f}, ${act.s}, ${act.yaw}, 0, ${act.fire && r01() < 0.5 ? 1 : 0}, ${act.jump && r01() < 0.2 ? 1 : 0}, 1, 0`;
+};
 const sql = Object.fromEntries(SQL_FILES.map((n) => [n, fs.readFileSync(path.join(root, `sql/${n}.sql`), 'utf8')]));
 const pak = new Pak(fs.readFileSync(pakPath).buffer);
 const open = async (name) => {
@@ -80,13 +96,13 @@ if (fight) {
   // (checkclient's PVS found afresh in both: the last was found where the player stood at the load)
   await P.db.exec('UPDATE game SET check_time = NULL'); await Q.db.exec('UPDATE qc_vm SET check_time = NULL');
 }
-const N = fight ? 400 : TICS;
+const N = fight ? 400 : walk ? +walk.split(':')[2] : TICS;
 
 let parted = null;
 if (pm.length !== qm.length) parted = `${pm.length} monsters in the PSQL game, ${qm.length} in QuakeC's`;
 else if ((await seed(P)) !== (await seed(Q))) parted = 'the generators differ after the load';
 for (let k = 0; k < N && !parted; k++) {
-  const args = fight ? `1, 0, 0, ${k === 0 ? face : 0}, 0, ${k > 0 && k % 12 === 0 ? 1 : 0}, 0, 1, 0` : '1, 0, 0, 0, 0, 0, 0, 1, 0';
+  const args = fight ? `1, 0, 0, ${k === 0 ? face : 0}, 0, ${k > 0 && k % 12 === 0 ? 1 : 0}, 0, 1, 0` : walk ? wander() : '1, 0, 0, 0, 0, 0, 0, 1, 0';
   const a = (await P.db.query(`SELECT health, px, py, pz FROM quake_tic(${args})`)).rows[0];
   const b = (await Q.db.query(`SELECT health, px, py, pz FROM qc_tic(${args})`)).rows[0];
   if (a.HEALTH !== b.HEALTH || Math.abs(a.PX - b.PX) > 0.01 || Math.abs(a.PY - b.PY) > 0.01 || Math.abs(a.PZ - b.PZ) > 0.01) {
@@ -103,7 +119,7 @@ for (let k = 0; k < N && !parted; k++) {
   if (sa !== sb || bad.length)
     parted = `tic ${k}: generators ${sa} ${sb}${bad.length ? ', ' : ''}${bad.slice(0, 4).map(([r, s]) => `PSQL ${fmt(r)} QuakeC ${fmt(s)}`).join(', ')}`;
 }
-const what = fight ? `${map} fight` : map;
+const what = fight ? `${map} fight` : walk ? `${map} random play (seed ${walk.split(':')[1]})` : map;
 if (parted) console.error(`FAIL: ${what} parts at ${parted}`);
-else console.log(`ok   ${what}: ${pm.length} monsters${fight ? ' and the player' : ''} the same in both games for ${N} tics`);
+else console.log(`ok   ${what}: ${pm.length} monsters${fight || walk ? ' and the player' : ''} the same in both games for ${N} tics`);
 process.exit(parted ? 1 : 0);

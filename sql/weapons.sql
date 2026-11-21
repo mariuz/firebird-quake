@@ -655,7 +655,7 @@ BEGIN
   END
 
   -- view angles
-  yaw = anglemod(yaw + yaw_d);
+  yaw = yaw + yaw_d;          -- (not wrapped: QuakeC mode's v_angle adds up as it comes, and cos(339°) is not cos(-21°) to the last bit)
   UPDATE player p SET p.pitch = MAXVALUE(-70, MINVALUE(80, p.pitch + :pitch_d)), p.punchangle = MINVALUE(0, p.punchangle + 10 * :dt) WHERE p.id = 1 RETURNING p.pitch INTO pitch;
   UPDATE ents e SET e.yaw = :yaw WHERE e.id = :pe;
   EXECUTE PROCEDURE mv_set(pitch, yaw);                    -- PlayerPreThink's makevectors(self.v_angle)
