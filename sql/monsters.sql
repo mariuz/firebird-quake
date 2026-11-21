@@ -1677,7 +1677,12 @@ CREATE OR ALTER PROCEDURE run_think (eid INTEGER, think VARCHAR(24))
 AS
 BEGIN
   IF (think IS NULL) THEN EXIT;
-  IF (think = 'door_go_down') THEN EXECUTE PROCEDURE door_go_down(eid);
+  IF (think = 'monster_found') THEN                       -- monster_use's FoundTarget
+  BEGIN
+    UPDATE ents e SET e.think = 'monster_think' WHERE e.id = :eid;
+    EXECUTE PROCEDURE found_target(eid, (SELECT e.enemy_id FROM ents e WHERE e.id = :eid));
+  END
+  ELSE IF (think = 'door_go_down') THEN EXECUTE PROCEDURE door_go_down(eid);
   ELSE IF (think = 'door_go_up') THEN EXECUTE PROCEDURE door_go_up(eid);
   ELSE IF (think = 'door_hit_top') THEN EXECUTE PROCEDURE door_hit_top(eid);
   ELSE IF (think = 'door_hit_bottom') THEN EXECUTE PROCEDURE door_hit_bottom(eid);
@@ -1770,7 +1775,8 @@ BEGIN
   -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
   -- (SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what
   -- it times from then, attack_finished, pain_finished, its next think, counts from there, as in QuakeC mode)
-  FOR SELECT e.id, e.think, e.nextthink FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY e.id INTO eid, think, nt DO
+  -- (in edict order, as SV_Physics runs them: what has none of QuakeC's after)
+  FOR SELECT e.id, e.think, e.nextthink FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY COALESCE(e.edict, 2147483647), e.id INTO eid, think, nt DO
   BEGIN
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
     IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;

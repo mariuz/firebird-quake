@@ -58,7 +58,12 @@ BEGIN
     ELSE IF (tcls = 'monster_boss') THEN EXECUTE PROCEDURE boss_awake(t);
     ELSE IF (tcls = 'event_lightning') THEN EXECUTE PROCEDURE event_lightning_fire(t);
     ELSE IF (tcls LIKE 'monster_%') THEN
-      UPDATE ents e SET e.enemy_id = player_ent(), e.st = 'run', e.anim = NULL WHERE e.id = :t AND e.st = 'stand' AND e.health > 0;
+      -- monster_use: a monster without an enemy, alive, used by the player (not invisible, not notarget) takes it for its
+      -- enemy, and FoundTarget comes 0.1 s on as its think (its sight sound, the hunt)
+      UPDATE ents e SET e.enemy_id = :activator, e.think = 'monster_found', e.nextthink = think_base() + 0.1e0
+       WHERE e.id = :t AND e.enemy_id IS NULL AND e.health > 0 AND :activator = player_ent()
+         AND BIN_AND((SELECT p.flags FROM ents p WHERE p.id = :activator), 128) = 0
+         AND (SELECT p.invisible_finished FROM player p WHERE p.id = 1) <= now_();
     ELSE IF (tcls = 'func_episodegate' OR tcls = 'func_bossgate') THEN DELETE FROM ents e WHERE e.id = :t;
     ELSE IF (tcls = 'misc_fireball') THEN BEGIN END
     ELSE IF (tcls = 'info_null' OR tcls = 'info_notnull' OR tcls = 'path_corner') THEN BEGIN END
@@ -94,7 +99,12 @@ BEGIN
   IF (wt > 0) THEN
     UPDATE ents e SET e.nextthink = now_() + :wt, e.think = 'multi_wait' WHERE e.id = :eid;
   ELSE
+  BEGIN
+    -- (QuakeC's edict goes 0.1 s on: a touch cannot remove itself, so SUB_Remove then)
+    EXECUTE PROCEDURE ed_free_later((SELECT e.edict FROM ents e WHERE e.id = :eid), 0.1e0);
+    UPDATE ents e SET e.edict = NULL WHERE e.id = :eid;
     DELETE FROM ents e WHERE e.id = :eid;
+  END
 END^
 
 CREATE OR ALTER PROCEDURE multi_wait (eid INTEGER)

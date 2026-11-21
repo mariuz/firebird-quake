@@ -168,6 +168,8 @@ BEGIN
   EXECUTE PROCEDURE snd(other, 3, snd_, 1, 1);
   UPDATE player p SET p.bonus_time = :t WHERE p.id = 1;
   EXECUTE PROCEDURE use_targets(item, other);
+  -- (an item taken stays in QuakeC, unseen and not solid, its edict kept; a backpack and a key are removed)
+  UPDATE ents e SET e.edict = NULL WHERE e.id = :item AND e.classname NOT IN ('backpack', 'item_key1', 'item_key2');
   DELETE FROM ents e WHERE e.id = :item;
 END^
 
