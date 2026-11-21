@@ -246,6 +246,7 @@ BEGIN
   IF (melee = 0 AND mt = 'wizard') THEN
   BEGIN
     SELECT e.yaw * 0.0174532925e0 FROM ents e WHERE e.id = :eid INTO r;
+    EXECUTE PROCEDURE mv_set(0, r / 0.0174532925e0);
     INSERT INTO ents (id, classname, x, y, z, owner_id, enemy_id, dstx, dsty, think, nextthink)
       SELECT NEXT VALUE FOR ent_seq, 'wiz_fastfire', e.x + COS(:r) * 14 + SIN(:r) * 14, e.y + SIN(:r) * 14 - COS(:r) * 14, e.z + 30, e.id, e.enemy_id,
              SIN(:r), -COS(:r), 'wiz_fastfire', now_() + 0.8e0 FROM ents e WHERE e.id = :eid;
@@ -436,6 +437,7 @@ BEGIN
     dx = x2 - x1; dy = y2 - y1; dz = z2 - z1; dl = vlen(dx, dy, dz);
     IF (dl = 0) THEN EXIT;
     -- OgreFireGrenade: normalize(enemy - origin) * 600 with velocity_z then set to 200, from the ogre's origin
+    EXECUTE PROCEDURE mv_set(0, yaw);                      -- (its makevectors(self.angles))
     EXECUTE PROCEDURE launch_grenade(eid, x1, y1, z1, dx / dl * 600, dy / dl * 600, 200, 40, 'progs/grenade.mdl', 2.5e0);
   END
   ELSE IF (mk = 'wspike') THEN
@@ -449,10 +451,15 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
     -- ZombieFireGrenade(st): from origin + st_x v_forward + st_y v_right + (st_z - 24) v_up (atta13 '-10 -22 30', attb14
     -- '-10 -24 29', attc12 '-12 -19 29'), normalize(enemy - org) * 600 with velocity_z then set to 200. Its makevectors
-    -- comes after the origin is worked out, so the vectors are the ones left over: PlayerPreThink's makevectors(v_angle),
-    -- the player's view (the zombie's attack frames call none)
+    -- comes after the origin is worked out, so the vectors are the ones left over: the frame's last makevectors (mv_set),
+    -- PlayerPreThink's of the player's view unless a monster's came after it
     SELECT IIF(e.anim = 'attc', -12, -10), DECODE(e.anim, 'attb', -24, 'attc', -19, -22), IIF(e.anim = 'atta', 6, 5) FROM ents e WHERE e.id = :eid INTO f, nx, nz;
     SELECT p.pitch * 0.0174532925e0, e.yaw * 0.0174532925e0 FROM player p CROSS JOIN ents e WHERE p.id = 1 AND e.id = player_ent() INTO ny, yaw;
+    IF (RDB$GET_CONTEXT('USER_TRANSACTION', 'MV_YAW') IS NOT NULL) THEN
+    BEGIN
+      ny = CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'MV_PITCH') AS DOUBLE PRECISION) * 0.0174532925e0;
+      yaw = CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'MV_YAW') AS DOUBLE PRECISION) * 0.0174532925e0;
+    END
     hx = x1 + COS(ny) * COS(yaw) * f + SIN(yaw) * nx + SIN(ny) * COS(yaw) * nz;
     hy = y1 + COS(ny) * SIN(yaw) * f - COS(yaw) * nx + SIN(ny) * SIN(yaw) * nz;
     hz = z1 - SIN(ny) * f + COS(ny) * nz;
@@ -462,6 +469,7 @@ BEGIN
     EXECUTE PROCEDURE set_model(g, 'progs/zom_gib.mdl');
     UPDATE ents e SET e.owner_id = :eid, e.movetype = 10, e.solid = 2, e.vx = :dx / :dl * 600, e.vy = :dy / :dl * 600, e.vz = 200,
            e.avel_yaw = 300, e.think = 'remove', e.nextthink = now_() + 2.5e0 WHERE e.id = :g;
+    EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :eid));     -- (its own makevectors(self.angles))
   END
   ELSE IF (mk = 'lavaball') THEN
   BEGIN
@@ -514,6 +522,7 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 2, asnd, 1, 1);
     -- dog_leap2, demon1_jump4: makevectors(self.angles), a unit up, velocity v_forward * speed + the upward part,
     -- off the ground; still MOVETYPE_STEP, so it flies in SV_Physics_Step's fall from the next frame
+    EXECUTE PROCEDURE mv_set(0, yaw);
     UPDATE ents e SET e.z = e.z + 1, e.vx = COS(:yaw * 0.0174532925e0) * :leap_spd, e.vy = SIN(:yaw * 0.0174532925e0) * :leap_spd, e.vz = :leap_up,
            e.flags = BIN_AND(e.flags, BIN_NOT(512)), e.attack_state = 5 WHERE e.id = :eid;
     EXECUTE PROCEDURE link_ent(eid);
@@ -637,7 +646,9 @@ BEGIN
   -- frames (swing6, swing10: one; smash10: crandom() and one), ShamClaw and Demon_Melee (one), sham_smash10 (two
   -- crandom()s and two)
   SELECT e.anim, e.anim_frame FROM ents e WHERE e.id = :eid INTO ms, k;
-  -- (each spray an edict of its own for a second: ed_ghost)
+  -- (each spray an edict of its own for a second: ed_ghost; and the side frames' makevectors(self.angles))
+  IF ((mt = 'ogre' AND ((ms = 'swing' AND k IN (5, 9)) OR (ms = 'smash' AND k = 9))) OR mt IN ('shambler', 'demon1')) THEN
+    EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :eid));
   IF (mt = 'ogre' AND ms = 'swing' AND k IN (5, 9)) THEN BEGIN r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
   ELSE IF (mt = 'ogre' AND ms = 'smash' AND k = 9) THEN BEGIN r = rnd(); r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
   ELSE IF ((mt = 'shambler' AND ms IN ('swingl', 'swingr')) OR mt = 'demon1') THEN BEGIN r = rnd(); EXECUTE PROCEDURE ed_ghost(1); END
@@ -659,6 +670,10 @@ BEGIN
   IF (EXISTS (SELECT 1 FROM ents o WHERE o.id = :own AND o.health > 0)) THEN
   BEGIN
     UPDATE ents o SET o.effects = BIN_OR(o.effects, 2) WHERE o.id = :own;
+    -- (makevectors(self.enemy.angles): the player's model angles, its pitch a third of the view's, turned)
+    IF (en = player_ent()) THEN
+      EXECUTE PROCEDURE mv_set((SELECT -(p.pitch + p.punchangle) / 3 FROM player p WHERE p.id = 1), (SELECT n.yaw FROM ents n WHERE n.id = :en));
+    ELSE EXECUTE PROCEDURE mv_set(0, (SELECT n.yaw FROM ents n WHERE n.id = :en));
     SELECT n.x - 13 * :mx, n.y - 13 * :my, n.z FROM ents n WHERE n.id = :en INTO ex, ey, ez;
     IF (ex IS NOT NULL) THEN
     BEGIN
@@ -1297,6 +1312,10 @@ BEGIN
       END
       LEAVE;
     END
+    -- ai_run on a live enemy: show_hostile a second on (others that see it through FindTarget's sight_entity wake),
+    -- and enemy_infront's makevectors(self.angles)
+    UPDATE ents e SET e.show_hostile = think_base() + 1 WHERE e.id = :eid;
+    EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :eid));
     -- enemy_yaw: the melee, missile and slide branches turn to it; movetogoal keeps the ideal_yaw it has (FoundTarget's
     -- or the chase's)
     SELECT vectoyaw(n.x - e.x, n.y - e.y) FROM ents e CROSS JOIN ents n WHERE e.id = :eid AND n.id = :enemy INTO ey;
@@ -1778,6 +1797,11 @@ BEGIN
   -- (in edict order, as SV_Physics runs them: what has none of QuakeC's after)
   FOR SELECT e.id, e.think, e.nextthink FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY COALESCE(e.edict, 2147483647), e.id INTO eid, think, nt DO
   BEGIN
+    -- (its nextthink as it is when its turn comes, as SV_RunThink reads it: a monster killed earlier in the frame has
+    -- its death's first frame 0.1 s on, and an entity removed thinks no more)
+    nt = NULL;
+    SELECT e.nextthink FROM ents e WHERE e.id = :eid AND e.think = :think AND e.nextthink <= :t + 1e-6 INTO nt;
+    IF (nt IS NULL) THEN CONTINUE;
     UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
     IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
     lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');

@@ -179,6 +179,7 @@ BEGIN
   SELECT FIRST 1 e.x, e.y, e.z, e.yaw FROM ents e WHERE e.targetname = :tgt AND e.classname = 'info_teleport_destination'
     INTO dx, dy, dz, dyaw;
   IF (dx IS NULL) THEN EXIT;
+  EXECUTE PROCEDURE mv_set(0, dyaw);                       -- (makevectors(t.mangle))
   -- spawn_tfog where it stood, and 32 ahead of the destination (its origin is raised 27 at spawn)
   EXECUTE PROCEDURE spawn_tfog((SELECT e.x FROM ents e WHERE e.id = :other), (SELECT e.y FROM ents e WHERE e.id = :other),
     (SELECT e.z FROM ents e WHERE e.id = :other));

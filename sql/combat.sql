@@ -487,13 +487,20 @@ BEGIN
   END
   ELSE IF (c1 = 'zombie_gib') THEN
   BEGIN
-    IF (td2 > 0 AND hp2 > 0) THEN
+    -- ZombieGrenadeTouch: on what takes damage, 10 and gone; else the miss's thud, the gib stopped, and its next touch
+    -- removes it (SUB_Remove), if its think does not first
+    IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.st = 'spent')) THEN DELETE FROM ents e WHERE e.id = :e1;
+    ELSE IF (td2 > 0 AND hp2 > 0) THEN
     BEGIN
       EXECUTE PROCEDURE t_damage(e2, e1, own, 10);
       EXECUTE PROCEDURE snd_at(x, y, z, 'zombie/z_hit.wav', 1, 1);
+      DELETE FROM ents e WHERE e.id = :e1;
     END
-    ELSE EXECUTE PROCEDURE snd_at(x, y, z, 'zombie/z_miss.wav', 1, 1);
-    DELETE FROM ents e WHERE e.id = :e1;
+    ELSE
+    BEGIN
+      EXECUTE PROCEDURE snd_at(x, y, z, 'zombie/z_miss.wav', 1, 1);
+      UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0, e.avel_yaw = 0, e.st = 'spent' WHERE e.id = :e1;
+    END
   END
   ELSE IF (c1 = 'player' AND c2 = 'func_door') THEN EXECUTE PROCEDURE door_touch(e2, e1);
   ELSE IF (c1 = 'player' AND c2 = 'func_door_secret') THEN

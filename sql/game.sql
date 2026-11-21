@@ -244,10 +244,23 @@ BEGIN
   RETURN IIF(f = 1, 1, 0);
 END^
 
+-- makevectors: QuakeC's v_forward, v_right and v_up are globals, and what reads them without calling it first
+-- (ZombieFireGrenade's origin) gets the last call's anywhere in the frame; the PSQL game keeps that call's angles
+-- (MV_PITCH, MV_YAW) where QuakeC would have made it
+CREATE OR ALTER PROCEDURE mv_set (pitch DOUBLE PRECISION, yaw DOUBLE PRECISION)
+AS
+DECLARE c INTEGER;
+BEGIN
+  c = RDB$SET_CONTEXT('USER_TRANSACTION', 'MV_PITCH', pitch);
+  c = RDB$SET_CONTEXT('USER_TRANSACTION', 'MV_YAW', yaw);
+END^
+
 CREATE OR ALTER FUNCTION infront (a INTEGER, b INTEGER) RETURNS SMALLINT
 AS
 DECLARE d DOUBLE PRECISION;
 BEGIN
+  -- (infront's makevectors(self.angles))
+  EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :a));
   SELECT (COS(e1.yaw * 0.0174532925e0) * (e2.x - e1.x) + SIN(e1.yaw * 0.0174532925e0) * (e2.y - e1.y))
          / MAXVALUE(1e-3, vlen(e2.x - e1.x, e2.y - e1.y, 0))
     FROM ents e1 CROSS JOIN ents e2 WHERE e1.id = :a AND e2.id = :b INTO d;

@@ -44,6 +44,7 @@ BEGIN
   vp = 0; vy = 0;
   IF (shooter = player_ent()) THEN
     SELECT p.pitch, e.yaw FROM player p CROSS JOIN ents e WHERE p.id = 1 AND e.id = :shooter INTO vp, vy;
+  EXECUTE PROCEDURE mv_set(vp, vy);
   vp = vp * 0.0174532925e0; vy = vy * 0.0174532925e0;
   fx_ = COS(vp) * COS(vy); fy = COS(vp) * SIN(vy);
   rx = SIN(vy); ry = -COS(vy); rz = 0;
@@ -657,6 +658,7 @@ BEGIN
   yaw = anglemod(yaw + yaw_d);
   UPDATE player p SET p.pitch = MAXVALUE(-70, MINVALUE(80, p.pitch + :pitch_d)), p.punchangle = MINVALUE(0, p.punchangle + 10 * :dt) WHERE p.id = 1 RETURNING p.pitch INTO pitch;
   UPDATE ents e SET e.yaw = :yaw WHERE e.id = :pe;
+  EXECUTE PROCEDURE mv_set(pitch, yaw);                    -- PlayerPreThink's makevectors(self.v_angle)
   IF (imp > 0) THEN UPDATE player p SET p.impulse = :imp WHERE p.id = 1;   -- kept for W_WeaponFrame (player_impulse_due)
 
   -- MOVETYPE_NOCLIP (the console's noclip): SV_AirMove's wish velocity along the whole view, pitch included,
