@@ -354,7 +354,13 @@ AS
 BEGIN
   IF (OLD.edict > 1 AND RDB$GET_CONTEXT('USER_TRANSACTION', 'EDICTS_OFF') IS NULL
       AND EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 0)) THEN
+  BEGIN
     EXECUTE PROCEDURE ed_free(OLD.edict);
+    -- a monster's goalentity is an edict: when what it went for goes (HuntTarget's enemy, a lava ball), it goes for
+    -- whatever takes that edict next (-edict: move_to_goal looks it up)
+    UPDATE ents e SET e.goal_id = -OLD.edict
+     WHERE e.mtype IS NOT NULL AND (e.goal_id = OLD.id OR (e.goal_id IS NULL AND e.enemy_id = OLD.id));
+  END
 END^
 
 CREATE OR ALTER PROCEDURE remove_ent (eid INTEGER)

@@ -105,14 +105,16 @@ BEGIN
   IF (check_bottom(eid) = 0) THEN UPDATE ents e SET e.flags = BIN_OR(e.flags, 1024) WHERE e.id = :eid;
 END^
 
--- SV_MoveToGoal
-CREATE OR ALTER PROCEDURE move_to_goal (eid INTEGER, dist DOUBLE PRECISION)
+-- SV_MoveToGoal (its steps touch no triggers: move_to_goal does, once, where the move ends)
+CREATE OR ALTER PROCEDURE move_to_goal_steps (eid INTEGER, dist DOUBLE PRECISION)
 AS
 DECLARE goal INTEGER; DECLARE flags INTEGER; DECLARE iy DOUBLE PRECISION; DECLARE close_ SMALLINT = 0; DECLARE enemy INTEGER;
 DECLARE m DOUBLE PRECISION;
 BEGIN
   SELECT COALESCE(e.goal_id, e.enemy_id), e.flags, e.ideal_yaw, e.enemy_id FROM ents e WHERE e.id = :eid INTO goal, flags, iy, enemy;
   IF (BIN_AND(flags, 512 + 1 + 2) = 0) THEN EXIT;              -- in the air
+  -- (a goal gone: the edict it had, whoever has it now; none, and the move steps on along ideal_yaw)
+  IF (goal < 0) THEN goal = COALESCE((SELECT FIRST 1 g.id FROM ents g WHERE g.edict = -:goal), goal);
   IF (goal IS NULL) THEN EXIT;
   -- SV_CloseEnough: the boxes within dist, each as SV_LinkEdict pads it (absmin/absmax: a unit, an item 15); with an
   -- enemy, any enemy, a goal that close ends the move
@@ -125,6 +127,19 @@ BEGIN
   IF (close_ = 1 AND COALESCE(enemy, 0) > 0) THEN EXIT;
   IF (FLOOR(rnd() * 4) = 1 OR step_direction(eid, iy, dist) = 0) THEN
     EXECUTE PROCEDURE new_chase_dir(eid, goal, dist);
+END^
+
+-- movetogoal(dist): SV_MoveToGoal, then the triggers where it ended (SV_StepDirection's SV_LinkEdict(ent, true) after
+-- the step it took or took back: not at a step tried and undone), as QuakeC mode does it
+CREATE OR ALTER PROCEDURE move_to_goal (eid INTEGER, dist DOUBLE PRECISION)
+AS
+DECLARE ctx INTEGER;
+BEGIN
+  IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512 + 1 + 2) <> 0)) THEN EXIT;
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'MTG', 1);
+  EXECUTE PROCEDURE move_to_goal_steps(eid, dist);
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'MTG', NULL);
+  EXECUTE PROCEDURE monster_touch_triggers(eid);
 END^
 
 -- FindTarget: can this monster see the player?
@@ -1233,7 +1248,7 @@ BEGIN
         -- touches its corner; else th_stand
         IF (tgt IS NOT NULL AND EXISTS (SELECT 1 FROM ents c WHERE c.targetname = :tgt)) THEN
         BEGIN
-          UPDATE ents e SET e.st = 'walk', e.goal_id = :ehp_id WHERE e.id = :eid;
+          UPDATE ents e SET e.st = 'walk', e.goal_id = IIF(e.goal_id < 0, e.goal_id, :ehp_id) WHERE e.id = :eid;
           EXECUTE PROCEDURE set_anim(eid, walk_a);
           UPDATE ents e SET e.anim_frame = IIF(:walk_a = 'hover', 7, COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :walk_a), 0)) WHERE e.id = :eid;
           EXECUTE PROCEDURE monster_think(eid);
@@ -1289,6 +1304,12 @@ BEGIN
         -- ai_walk: movetogoal along ideal_yaw; touching the corner (t_movetarget) turns it to the next, or, at the
         -- path's end, stands it for good
         EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + MOD(af + 1, fc), walk_spd));
+        -- (what the step touched may have hurt it: its pain's frame stands, the rest of the frame function draws on)
+        IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st = :st)) THEN
+        BEGIN
+          IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 0);
+          EXIT;
+        END
         IF (path_corner_touch(eid) = 1) THEN EXIT;
       END
     END
@@ -1315,6 +1336,8 @@ BEGIN
     -- others draw after it, which comes however ai_run ended
     af = MOD(af + 1, fc);
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+    -- zombie_run1 clears inpain, however the run was entered (FoundTarget's HuntTarget mid-pain too)
+    IF (mt = 'zombie' AND af = 0) THEN UPDATE ents e SET e.inpain = 0 WHERE e.id = :eid AND e.inpain <> 0;
     EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, af, idle_s, 1);
     k = 0;
     WHILE (k = 0) DO

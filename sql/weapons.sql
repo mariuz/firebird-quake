@@ -351,6 +351,12 @@ BEGIN
     END
     ELSE IF (tcls = 'trigger_teleport') THEN EXECUTE PROCEDURE teleport_touch(tid, pe);
     ELSE IF (tcls = 'trigger_changelevel') THEN EXECUTE PROCEDURE changelevel(tid);
+    ELSE IF (tcls = 'fireball') THEN
+    BEGIN
+      -- a lava ball the player walks into: fire_touch, 20 and gone
+      EXECUTE PROCEDURE t_damage(pe, tid, tid, 20);
+      DELETE FROM ents e WHERE e.id = :tid;
+    END
     ELSE IF (tcls = 'trigger_push') THEN
     BEGIN
       UPDATE ents e SET e.vx = (SELECT tr.p1x * tr.speed * 10 FROM ents tr WHERE tr.id = :tid), e.vy = (SELECT tr.p1y * tr.speed * 10 FROM ents tr WHERE tr.id = :tid),
@@ -428,6 +434,7 @@ DECLARE tid INTEGER; DECLARE tcls VARCHAR(40); DECLARE tst SMALLINT; DECLARE tn 
 DECLARE tdm INTEGER; DECLARE tlt DOUBLE PRECISION; DECLARE fl INTEGER; DECLARE t DOUBLE PRECISION;
 BEGIN
   IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN EXIT;
+  IF (RDB$GET_CONTEXT('USER_TRANSACTION', 'MTG') IS NOT NULL) THEN EXIT;          -- (a movetogoal's step: at its end)
   SELECT e.x, e.y, e.z, e.minx - 1, e.miny - 1, e.minz - 1, e.maxx + 1, e.maxy + 1, e.maxz + 1, e.flags FROM ents e
    WHERE e.id = :eid AND e.health > 0 INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, fl;
   IF (px IS NULL OR BIN_AND(fl, 32) = 0) THEN EXIT;
@@ -441,7 +448,7 @@ BEGIN
                 AND c.z + 9 >= :pz + :mnz AND c.z - 9 <= :pz + :mxz)) THEN EXECUTE PROCEDURE touch_clock;
   t = now_();
   FOR SELECT e.id, e.classname FROM ents e
-       WHERE e.solid = 1 AND e.id <> :eid AND e.classname IN ('trigger_teleport', 'trigger_monsterjump', 'trigger_push', 'trigger_hurt')
+       WHERE e.solid = 1 AND e.id <> :eid AND e.classname IN ('trigger_teleport', 'trigger_monsterjump', 'trigger_push', 'trigger_hurt', 'fireball')
          AND e.x + e.maxx + 1 >= :px + :mnx AND e.x + e.minx - 1 <= :px + :mxx
          AND e.y + e.maxy + 1 >= :py + :mny AND e.y + e.miny - 1 <= :py + :mxy
          AND e.z + e.maxz + 1 >= :pz + :mnz AND e.z + e.minz - 1 <= :pz + :mxz
@@ -450,6 +457,12 @@ BEGIN
   BEGIN
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.health > 0)) THEN LEAVE;
     IF (tcls = 'trigger_teleport') THEN EXECUTE PROCEDURE teleport_touch(tid, eid);
+    ELSE IF (tcls = 'fireball') THEN
+    BEGIN
+      -- a lava ball is a trigger too: fire_touch, 20 and gone
+      EXECUTE PROCEDURE t_damage(eid, tid, tid, 20);
+      DELETE FROM ents e WHERE e.id = :tid;
+    END
     ELSE IF (tcls = 'trigger_monsterjump') THEN
     BEGIN
       IF (BIN_AND(fl, 35) = 32) THEN
