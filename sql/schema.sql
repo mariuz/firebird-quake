@@ -349,6 +349,7 @@ CREATE TABLE player (
   attack_finished DOUBLE PRECISION DEFAULT 0 NOT NULL,
   pain_finished   DOUBLE PRECISION DEFAULT 0 NOT NULL,
   punchangle      DOUBLE PRECISION DEFAULT 0 NOT NULL,
+  dead_yaw        DOUBLE PRECISION,                 -- the view's yaw while dead (v_angle goes on with the input; the body lies still)
   view_ofs        DOUBLE PRECISION DEFAULT 22 NOT NULL,
   dmg_take        INTEGER DEFAULT 0 NOT NULL,
   dmg_save        INTEGER DEFAULT 0 NOT NULL,

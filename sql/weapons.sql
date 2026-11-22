@@ -647,7 +647,11 @@ BEGIN
 
   IF (dead <> 0) THEN                  -- dying (1) or dead after a gib (2: GibPlayer)
   BEGIN
-    -- PlayerDeathThink: lie there, then restart the level on any button
+    -- PlayerDeathThink: lie there, then restart the level on any button. The view still turns with the input
+    -- (SV_ReadClientMove sets v_angle whatever the health), and PlayerPreThink's makevectors(self.v_angle) takes it
+    UPDATE player p SET p.pitch = MAXVALUE(-70, MINVALUE(80, p.pitch + :pitch_d)), p.dead_yaw = COALESCE(p.dead_yaw, :yaw) + :yaw_d
+     WHERE p.id = 1 RETURNING p.pitch, p.dead_yaw INTO pitch, yaw;
+    EXECUTE PROCEDURE mv_set(pitch, yaw);
     EXECUTE PROCEDURE toss_move(pe, dt);
     IF (t > deadt + 1.5e0 AND (fire = 1 OR jump = 1)) THEN
       UPDATE game g SET g.exit_kind = 3 WHERE g.id = 1;
