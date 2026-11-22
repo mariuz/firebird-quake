@@ -58,15 +58,13 @@ jobs:
               npm run test:skill
               npm run test:infight
               npm run test:parity
-          # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode;
-          # whole levels played by both games side by side
+          # the QuakeC VM: the real progs.dat, compiled to PSQL, on the engine's physics, the page's mode
           - group: QuakeC
             run: |
               npm run test:qcjit
               npm run test:qcvm
               npm run test:qcplay
               npm run test:qctic
-              npm run test:levelparity
           # LibreQuake: its smoke test, levels, boss trap and progs.dat; deathmatch bots; BSP2 maps; mods
           - group: LibreQuake, mods and deathmatch
             run: |
@@ -94,7 +92,7 @@ jobs:
               npm run test:boss
               npm run test:e1m8
           # episode 1's set pieces: the drawbridge, the zombie pits, the underwater secret, the flooded moat,
-          # the gold key; progs.dat's monsters on the engine
+          # the gold key; progs.dat's monsters on the engine; whole levels played by both games side by side
           - group: episode 1
             run: |
               npm run test:e1m2
@@ -104,6 +102,7 @@ jobs:
               npm run test:e1m6
               npm run test:qcai
               npm run test:levels
+              npm run test:levelparity
     name: test (${{ matrix.group }})
     steps:
       - uses: actions/checkout@v4

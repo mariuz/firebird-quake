@@ -31,7 +31,7 @@ const pakPath = process.env.PAK ?? path.join(root, 'public/pak/pak0.pak');
 const TICS = +(process.env.TICS ?? 300);
 const MAPS = (process.env.MAPS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
 const FIGHTS = (process.env.FIGHTS ?? 'e1m1,e1m2,e1m3,e1m4,e1m5,e1m6').split(',').filter(Boolean);
-const WALKS = (process.env.WALKS ?? 'e1m1:2:1000,e1m3:1:600,e1m5:1:600,e1m6:1:600').split(',').filter(Boolean);
+const WALKS = (process.env.WALKS ?? 'e1m1:2:1000,e1m2:6:600,e1m3:1:600,e1m4:1:600,e1m5:1:600,e1m6:1:600').split(',').filter(Boolean);
 
 if (!process.env.LEVEL) {
   let failed = 0;
