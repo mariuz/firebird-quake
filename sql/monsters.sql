@@ -1239,6 +1239,8 @@ BEGIN
         -- (this think's frame function ran first: its frame is set when FoundTarget hands over to the run)
         UPDATE ents e SET e.anim_frame = MOD(:af + 1, :fc), e.frame = :ff + MOD(:af + 1, :fc) WHERE e.id = :eid;
         EXECUTE PROCEDURE found_target(eid, enemy);
+        -- (and the draw the frame's function makes after its ai_stand or ai_walk, which ran on: ogre_walk6's drag)
+        EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 0);
         EXIT;
       END
     END

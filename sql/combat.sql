@@ -390,7 +390,8 @@ END^
 
 -- ── touching ────────────────────────────────────────────────────────────
 -- SV_Impact: e1 moved into e2 (e2 = 0 is the world)
-CREATE OR ALTER PROCEDURE impact (e1 INTEGER, e2 INTEGER)
+-- e1's touch, with e2 for other
+CREATE OR ALTER PROCEDURE impact_one (e1 INTEGER, e2 INTEGER)
 AS
 DECLARE c1 VARCHAR(40); DECLARE c2 VARCHAR(40); DECLARE own INTEGER; DECLARE dmg INTEGER; DECLARE td2 SMALLINT;
 DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION; DECLARE vz DOUBLE PRECISION; DECLARE hp2 INTEGER; DECLARE dmg2 DOUBLE PRECISION;
@@ -519,6 +520,22 @@ BEGIN
     IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e2 AND e.max_health = 0)) THEN EXECUTE PROCEDURE button_fire(e2, e1);
   END
   ELSE IF (c1 = 'player' AND c2 = 'misc_explobox') THEN BEGIN END
+END^
+
+-- SV_Impact: both touches, the mover's with what it hit for other, then what it hit with the mover (an ogre's grenade
+-- walked into explodes, and the walk's retry from a step up then goes through), each while it is there and not
+-- SOLID_NOT
+CREATE OR ALTER PROCEDURE impact (e1 INTEGER, e2 INTEGER)
+AS
+BEGIN
+  IF (EXISTS (SELECT 1 FROM game g WHERE g.id = 1 AND g.qc_mode = 1)) THEN
+  BEGIN
+    EXECUTE PROCEDURE qc_impact(e1, e2);
+    EXIT;
+  END
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.solid <> 0)) THEN EXECUTE PROCEDURE impact_one(e1, e2);
+  IF (e2 > 0 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :e2 AND e.solid <> 0) AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1)) THEN
+    EXECUTE PROCEDURE impact_one(e2, e1);
 END^
 
 SET TERM ; ^
