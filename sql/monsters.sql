@@ -1764,33 +1764,10 @@ DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt 
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
 DECLARE tdm INTEGER;
 DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE hitsound SMALLINT; DECLARE ctx INTEGER; DECLARE lag VARCHAR(255);
+DECLARE ke INTEGER; DECLARE ki INTEGER;
 BEGIN
   t = now_();
   pe = player_ent();
-  -- SV_Physics_Step, its first half: a monster that is not on the ground falls, before its think (a leap set by a think
-  -- flies from the next frame); landing from a real fall (faster than a tenth of gravity) thuds. The physics run at
-  -- the frame's start (sv.time), so the clock is put back a tic for them: what they touch happens then (a dog's leap
-  -- bites at that time, and the bitten one's pain_finished counts from it)
-  UPDATE game g SET g.time_ = g.time_ - :dt WHERE g.id = 1 AND EXISTS (SELECT 1 FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0);
-  IF (ROW_COUNT > 0) THEN
-  BEGIN
-  lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
-  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);         -- (the clock reads the start already)
-  FOR SELECT e.id FROM ents e WHERE e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0 ORDER BY e.id INTO eid DO
-  BEGIN
-    hitsound = IIF((SELECT e.vz FROM ents e WHERE e.id = :eid) < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
-    UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;
-    EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid, fwx, fwy;
-    IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) <> 0)) THEN
-    BEGIN
-      UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0 WHERE e.id = :eid;
-      IF (hitsound = 1) THEN EXECUTE PROCEDURE snd(eid, 2, 'demon/dland2.wav', 1, 1);
-    END
-    EXECUTE PROCEDURE link_ent(eid);
-  END
-  UPDATE game g SET g.time_ = g.time_ + :dt WHERE g.id = 1;
-  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
-  END
   -- force_retouch: the player's spawn (spawn_tdeath) sets it, and in the next frame every edict is linked again with its
   -- touches, the still ones too: a monster standing in a door's trigger field (spawned that frame) opens the door
   IF ((SELECT g.tic FROM game g WHERE g.id = 1) = 2) THEN
@@ -1805,44 +1782,77 @@ BEGIN
     FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 32) <> 0 AND e.health > 0 ORDER BY e.id INTO eid DO
       EXECUTE PROCEDURE monster_touch_triggers(eid);
   END
-  -- thinks that are due (non-pushers)
-  -- (a hair of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late)
-  -- (SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what
-  -- it times from then, attack_finished, pain_finished, its next think, counts from there, as in QuakeC mode)
-  -- (in edict order, as SV_Physics runs them: what has none of QuakeC's after)
-  FOR SELECT e.id, e.think, e.nextthink FROM ents e WHERE e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.movetype <> 7 AND e.think IS NOT NULL ORDER BY COALESCE(e.edict, 2147483647), e.id INTO eid, think, nt DO
+  -- SV_Physics: each edict in turn, in edict order (what has none of QuakeC's after), its movetype's physics: a monster
+  -- not on the ground falls before its think (SV_Physics_Step), a missile and what tosses or bounces moves after it
+  -- (SV_Physics_Toss), a bubble drifts after it (SV_Physics_Noclip); so what one edict's think or move does is there for
+  -- the next ones (a spike that hits a knight before a scrag thinks draws the knight's pain before the scrag's chase),
+  -- and an entity spawned on the way takes its turn this frame if its edict comes later, the next frame if earlier
+  ke = -1; ki = -1;
+  WHILE (1 = 1) DO
   BEGIN
-    -- (its nextthink as it is when its turn comes, as SV_RunThink reads it: a monster killed earlier in the frame has
-    -- its death's first frame 0.1 s on, and an entity removed thinks no more)
-    nt = NULL;
-    SELECT e.nextthink FROM ents e WHERE e.id = :eid AND e.think = :think AND e.nextthink <= :t + 1e-6 INTO nt;
-    IF (nt IS NULL) THEN CONTINUE;
-    UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
-    IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
-    lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
-    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);
-    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', (SELECT e.edict FROM ents e WHERE e.id = :eid));
-    EXECUTE PROCEDURE run_think(eid, think);
-    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', NULL);
-    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
-    IF (nt <> t) THEN UPDATE game g SET g.time_ = :t WHERE g.id = 1;
-    -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
-    IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.movetype IN (4, 5) AND e.health > 0)) THEN
-      EXECUTE PROCEDURE water_transition(eid);
-  END
-  -- toss, bounce, fly, flymissile, and monsters in the air
-  FOR SELECT e.id, e.movetype, e.flags, e.classname FROM ents e WHERE e.movetype IN (6, 9, 10) AND e.id <> :pe   -- (the dead player tosses in its own think)
-           AND e.hold_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1)
-        INTO eid, mt, flags, cls DO
-  BEGIN
-    IF (BIN_AND(flags, 512) <> 0 AND mt <> 9) THEN CONTINUE;      -- resting
-    EXECUTE PROCEDURE toss_move(eid, dt);
-  END
-  -- SV_Physics_Noclip: the bubbles drift through everything
-  FOR SELECT e.id FROM ents e WHERE e.movetype = 8 AND e.id <> :pe AND e.hold_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1) INTO eid DO
-  BEGIN
-    UPDATE ents e SET e.x = e.x + e.vx * :dt, e.y = e.y + e.vy * :dt, e.z = e.z + e.vz * :dt WHERE e.id = :eid;
-    EXECUTE PROCEDURE link_ent(eid);
+    eid = NULL;
+    SELECT FIRST 1 e.id, COALESCE(e.edict, 2147483647), e.movetype, e.flags, e.think, e.nextthink FROM ents e
+     WHERE (COALESCE(e.edict, 2147483647) > :ke OR (COALESCE(e.edict, 2147483647) = :ke AND e.id > :ki)) AND e.movetype <> 7
+       AND ((e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.think IS NOT NULL)
+            OR (e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0)
+            OR (e.movetype IN (6, 9, 10) AND (BIN_AND(e.flags, 512) = 0 OR e.movetype = 9))
+            OR e.movetype = 8)
+     ORDER BY COALESCE(e.edict, 2147483647), e.id INTO eid, ke, mt, flags, think, nt;
+    IF (eid IS NULL) THEN LEAVE;
+    ki = eid;
+    -- SV_Physics_Step, its first half: a monster that is not on the ground falls, before its think (a leap set by a
+    -- think flies from the next frame); landing from a real fall (faster than a tenth of gravity) thuds. At the frame's
+    -- start (sv.time), so the clock is put back a tic for it: what it touches happens then (a dog's leap bites at that
+    -- time, and the bitten one's pain_finished counts from it)
+    IF (mt IN (4, 5) AND BIN_AND(flags, 512 + 1 + 2) = 0 AND eid <> pe) THEN
+    BEGIN
+      UPDATE game g SET g.time_ = :t - :dt WHERE g.id = 1;
+      lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);         -- (the clock reads the start already)
+      hitsound = IIF((SELECT e.vz FROM ents e WHERE e.id = :eid) < (SELECT g.gravity FROM game g WHERE g.id = 1) * -0.1e0, 1, 0);
+      UPDATE ents e SET e.vz = e.vz - (SELECT g.gravity FROM game g WHERE g.id = 1) * :dt WHERE e.id = :eid;
+      EXECUTE PROCEDURE fly_move(eid, dt) RETURNING_VALUES wl, tid, fwx, fwy;
+      IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) <> 0)) THEN
+      BEGIN
+        UPDATE ents e SET e.vx = 0, e.vy = 0, e.vz = 0 WHERE e.id = :eid;
+        IF (hitsound = 1) THEN EXECUTE PROCEDURE snd(eid, 2, 'demon/dland2.wav', 1, 1);
+      END
+      IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN EXECUTE PROCEDURE link_ent(eid);
+      UPDATE game g SET g.time_ = :t WHERE g.id = 1;
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
+    END
+    -- SV_RunThink: the think runs at its own time, the nextthink it was given, though not before the frame's start: what
+    -- it times from then, attack_finished, pain_finished, its next think, counts from there, as in QuakeC mode (a hair
+    -- of tolerance: tic time accumulates in floating point, and a think due exactly now must run now, not a tic late);
+    -- its nextthink read as it is now (a monster killed earlier in the frame has its death's first frame 0.1 s on)
+    nt = NULL; think = NULL;
+    SELECT e.nextthink, e.think FROM ents e WHERE e.id = :eid AND e.nextthink <= :t + 1e-6 AND e.think IS NOT NULL INTO nt, think;
+    IF (nt IS NOT NULL) THEN
+    BEGIN
+      UPDATE ents e SET e.nextthink = NULL WHERE e.id = :eid AND e.think = :think AND e.think <> 'monster_think';
+      IF (nt <> t) THEN UPDATE game g SET g.time_ = MAXVALUE(:nt, :t - :dt) WHERE g.id = 1;
+      lag = RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG');
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', NULL);
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', (SELECT e.edict FROM ents e WHERE e.id = :eid));
+      EXECUTE PROCEDURE run_think(eid, think);
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'RUN_EDICT', NULL);
+      ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', lag);
+      IF (nt <> t) THEN UPDATE game g SET g.time_ = :t WHERE g.id = 1;
+      -- SV_Physics_Step: after a monster's think, SV_CheckWaterTransition (the splash going into or out of water)
+      IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.movetype IN (4, 5) AND e.health > 0)) THEN
+        EXECUTE PROCEDURE water_transition(eid);
+    END
+    -- SV_Physics_Toss (toss, bounce, fly, flymissile) and SV_Physics_Noclip, after the think, as it left the entity (one
+    -- spawned below the edict being run has had its turn: hold_tic)
+    mt = NULL;
+    -- (the player moves in its own think, the dead one's toss too)
+    SELECT e.movetype, e.flags FROM ents e WHERE e.id = :eid AND e.id <> :pe AND e.hold_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1) INTO mt, flags;
+    IF (mt IN (6, 9, 10) AND (BIN_AND(flags, 512) = 0 OR mt = 9)) THEN EXECUTE PROCEDURE toss_move(eid, dt);
+    ELSE IF (mt = 8) THEN
+    BEGIN
+      UPDATE ents e SET e.x = e.x + e.vx * :dt, e.y = e.y + e.vy * :dt, e.z = e.z + e.vz * :dt WHERE e.id = :eid;
+      EXECUTE PROCEDURE link_ent(eid);
+    END
   END
   -- monsters touching teleporters / monster jumps
   FOR SELECT m.id, m.x, m.y, m.z FROM ents m WHERE BIN_AND(m.flags, 32) <> 0 AND m.health > 0 AND m.st IN ('run', 'walk') INTO eid, px, py, pz DO
