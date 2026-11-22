@@ -29,7 +29,7 @@ BEGIN
   EXECUTE PROCEDURE velocity_for_damage(-dmg) RETURNING_VALUES vx, vy, vz;
   r = rnd(); ay = rnd() * 600; r = rnd();
   UPDATE ents e SET e.movetype = 10, e.solid = 0, e.minx = 0, e.miny = 0, e.minz = 0, e.maxx = 0, e.maxy = 0, e.maxz = 0,
-         e.vx = :vx, e.vy = :vy, e.vz = :vz, e.avel_yaw = :ay, e.think = 'remove', e.nextthink = now_() + 10 + rnd() * 10, e.frame = 0
+         e.vx = :vx, e.vy = :vy, e.vz = :vz, e.avel_yaw = :ay, e.think = 'remove', e.nextthink = think_base() + 10 + rnd() * 10, e.frame = 0
    WHERE e.id = :g;
 END^
 
@@ -331,7 +331,7 @@ BEGIN
          e.vx = :dx / :dl * :spd, e.vy = :dy / :dl * :spd, e.vz = :dz / :dl * :spd,
          e.yaw = vectoyaw(:dx, :dy), e.pitch = ATAN2(:dz, vlen(:dx, :dy, 0)) * 57.29577951e0,
          e.dmg = CASE :kind WHEN 'superspike' THEN 18 ELSE 9 END,
-         e.think = 'remove', e.nextthink = now_() + 6 WHERE e.id = :s;
+         e.think = 'remove', e.nextthink = think_base() + 6 WHERE e.id = :s;
   EXECUTE PROCEDURE link_ent(s);
 END^
 
@@ -360,7 +360,7 @@ BEGIN
   UPDATE ents e SET e.owner_id = :owner, e.movetype = 9, e.solid = 2, e.effects = IIF(:model = 'progs/missile.mdl', 4, 8),
          e.vx = :dx / :dl * :spd, e.vy = :dy / :dl * :spd, e.vz = :dz / :dl * :spd,
          e.yaw = vectoyaw(:dx, :dy), e.pitch = ATAN2(:dz, vlen(:dx, :dy, 0)) * 57.29577951e0, e.dmg = :dmg,
-         e.think = 'remove', e.nextthink = now_() + 5 WHERE e.id = :s;
+         e.think = 'remove', e.nextthink = think_base() + 5 WHERE e.id = :s;
   EXECUTE PROCEDURE link_ent(s);
 END^
 

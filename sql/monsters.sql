@@ -484,7 +484,7 @@ BEGIN
     EXECUTE PROCEDURE spawn_ent('zombie_gib', hx, hy, hz) RETURNING_VALUES g;
     EXECUTE PROCEDURE set_model(g, 'progs/zom_gib.mdl');
     UPDATE ents e SET e.owner_id = :eid, e.movetype = 10, e.solid = 2, e.vx = :dx / :dl * 600, e.vy = :dy / :dl * 600, e.vz = 200,
-           e.avel_yaw = 300, e.think = 'remove', e.nextthink = now_() + 2.5e0 WHERE e.id = :g;
+           e.avel_yaw = 300, e.think = 'remove', e.nextthink = think_base() + 2.5e0 WHERE e.id = :g;
     EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :eid));     -- (its own makevectors(self.angles))
   END
   ELSE IF (mk = 'lavaball') THEN
@@ -530,7 +530,7 @@ BEGIN
     EXECUTE PROCEDURE snd(eid, 1, 'shalrath/attack2.wav', 1, 1);
     dx = x2 - x1; dy = y2 - y1; dz = z2 - z1;
     EXECUTE PROCEDURE launch_rocket(eid, x1, y1, z1 + 10, dx, dy, dz, 400, 40, 'progs/v_spike.mdl');
-    UPDATE ents e SET e.classname = 'voreball', e.effects = 0, e.think = 'vore_track', e.nextthink = now_() + 0.1e0, e.enemy_id = :enemy
+    UPDATE ents e SET e.classname = 'voreball', e.effects = 0, e.think = 'vore_track', e.nextthink = think_base() + 0.1e0, e.enemy_id = :enemy
      WHERE e.id = (SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid);
   END
   ELSE IF (mk = 'leap') THEN
@@ -727,7 +727,7 @@ BEGIN
   dl = vlen(dx, dy, dz);
   IF (dl = 0) THEN EXIT;
   UPDATE ents e SET e.vx = :dx / :dl * 350, e.vy = :dy / :dl * 350, e.vz = :dz / :dl * 350, e.yaw = vectoyaw(:dx, :dy),
-         e.nextthink = now_() + 0.1e0 WHERE e.id = :eid;
+         e.nextthink = think_base() + 0.1e0 WHERE e.id = :eid;
 END^
 
 -- the spawn (tarbaby) bursts: 120 radius damage, and it is gone
@@ -960,7 +960,7 @@ BEGIN
   UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56,
          e.ammo_shells = IIF(:drop_ = 'shells', 5, 0), e.ammo_rockets = IIF(:drop_ = 'rockets', 2, 0), e.ammo_cells = IIF(:drop_ = 'cells', 5, 0),
          e.vx = -100 + rnd() * 200, e.vy = -100 + rnd() * 200, e.vz = 300,
-         e.think = 'remove', e.nextthink = now_() + 120 WHERE e.id = :bp;
+         e.think = 'remove', e.nextthink = think_base() + 120 WHERE e.id = :bp;
   EXECUTE PROCEDURE link_ent(bp);
 END^
 
@@ -970,7 +970,7 @@ AS
 BEGIN
   IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.st <> 'asleep')) THEN EXIT;
   UPDATE ents e SET e.st = 'rise', e.solid = 3, e.takedamage = 0, e.model_id = model_by_name('progs/boss.mdl'), e.health = 3,
-         e.enemy_id = player_ent(), e.think = 'monster_think', e.nextthink = now_() + 0.1e0, e.yaw_speed = 5 WHERE e.id = :eid;
+         e.enemy_id = player_ent(), e.think = 'monster_think', e.nextthink = think_base() + 0.1e0, e.yaw_speed = 5 WHERE e.id = :eid;
   EXECUTE PROCEDURE set_anim(eid, 'rise');
   EXECUTE PROCEDURE snd(eid, 2, 'boss1/out1.wav', 1, 1);
   EXECUTE PROCEDURE snd(eid, 0, 'boss1/sight1.wav', 1, 1);
@@ -1581,12 +1581,12 @@ BEGIN
   IF (dl < 4) THEN
   BEGIN
     -- arrived: head for the next corner
-    UPDATE ents e SET e.noise1 = :ctarget, e.vx = 0, e.vy = 0, e.vz = 0, e.nextthink = now_() + 0.05e0 WHERE e.id = :eid;
+    UPDATE ents e SET e.noise1 = :ctarget, e.vx = 0, e.vy = 0, e.vz = 0, e.nextthink = think_base() + 0.05e0 WHERE e.id = :eid;
     EXIT;
   END
   UPDATE ents e SET e.noise1 = :tgt, e.x = e.x + (:cx - e.x) / :dl * MINVALUE(:dl, :spd * 0.05e0),
          e.y = e.y + (:cy - e.y) / :dl * MINVALUE(:dl, :spd * 0.05e0), e.z = e.z + (:cz - e.z) / :dl * MINVALUE(:dl, :spd * 0.05e0),
-         e.yaw = MOD(e.yaw + 5, 360), e.nextthink = now_() + 0.05e0 WHERE e.id = :eid;
+         e.yaw = MOD(e.yaw + 5, 360), e.nextthink = think_base() + 0.05e0 WHERE e.id = :eid;
   EXECUTE PROCEDURE link_ent(eid);
 END^
 
@@ -1608,7 +1608,7 @@ BEGIN
          e.minx = IIF(:mhull = 2, -32, -16), e.miny = IIF(:mhull = 2, -32, -16), e.minz = -24,
          e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
          e.st = 'stand', e.anim = :stand, e.ideal_yaw = e.yaw, e.spawn_x = e.x, e.spawn_y = e.y, e.spawn_z = e.z,
-         e.think = 'monster_think', e.nextthink = now_() + 0.1e0 WHERE e.id = :id;
+         e.think = 'monster_think', e.nextthink = think_base() + 0.1e0 WHERE e.id = :id;
   IF (mname = 'fish') THEN UPDATE ents e SET e.maxz = 24 WHERE e.id = :id;
   IF (mname = 'oldone') THEN UPDATE ents e SET e.minx = -160, e.miny = -128, e.maxx = 160, e.maxy = 128, e.maxz = 256, e.takedamage = 0, e.movetype = 0 WHERE e.id = :id;
   UPDATE game g SET g.total_monsters = g.total_monsters + 1 WHERE g.id = 1;

@@ -484,7 +484,7 @@ BEGIN
   EXECUTE PROCEDURE spawn_ent('bubble', x, y, z) RETURNING_VALUES b;
   EXECUTE PROCEDURE set_model(b, 'progs/s_bubble.spr');
   UPDATE ents e SET e.movetype = 8, e.solid = 0, e.vx = :vx, e.vy = :vy, e.vz = :vz, e.frame = :fr, e.count_ = :cnt,
-         e.minx = -8, e.miny = -8, e.minz = -8, e.maxx = 8, e.maxy = 8, e.maxz = 8, e.think = 'bubble_bob', e.nextthink = now_() + 0.5e0
+         e.minx = -8, e.miny = -8, e.minz = -8, e.maxx = 8, e.maxy = 8, e.maxz = 8, e.think = 'bubble_bob', e.nextthink = think_base() + 0.5e0
    WHERE e.id = :b;
   EXECUTE PROCEDURE link_ent(b);
 END^
@@ -516,7 +516,7 @@ BEGIN
   IF (r2 < -10) THEN r2 = -5;
   IF (r3 < 10) THEN r3 = 15;
   IF (r3 > 30) THEN r3 = 25;
-  UPDATE ents e SET e.vx = :r1, e.vy = :r2, e.vz = :r3, e.think = 'bubble_bob', e.nextthink = now_() + 0.5e0 WHERE e.id = :eid;
+  UPDATE ents e SET e.vx = :r1, e.vy = :r2, e.vz = :r3, e.think = 'bubble_bob', e.nextthink = think_base() + 0.5e0 WHERE e.id = :eid;
 END^
 
 -- make_bubbles (air_bubbles): a bubble rising at 15, the next 0.5 to 1.5 s later
@@ -525,7 +525,7 @@ AS
 BEGIN
   EXECUTE PROCEDURE spawn_bubble((SELECT e.x FROM ents e WHERE e.id = :eid), (SELECT e.y FROM ents e WHERE e.id = :eid),
     (SELECT e.z FROM ents e WHERE e.id = :eid), 0, 0, 15, 0, 0);
-  UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = now_() + rnd() + 0.5e0 WHERE e.id = :eid;
+  UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = think_base() + rnd() + 0.5e0 WHERE e.id = :eid;
 END^
 
 -- DeathBubbles(n): a spawner at the player that, every 0.1 s while the player is under water, lets out a bubble 24
@@ -547,7 +547,7 @@ BEGIN
   SELECT o.id, o.x, o.y, o.z FROM ents e JOIN ents o ON o.id = e.owner_id WHERE e.id = :eid AND o.waterlevel = 3 INTO own, x, y, z;
   IF (own IS NULL) THEN EXIT;
   EXECUTE PROCEDURE spawn_bubble(x, y, z + 24, 0, 0, 15, 0, 0);
-  UPDATE ents e SET e.think = 'death_bubbles', e.nextthink = now_() + 0.1e0, e.count_ = e.count_ + 1 WHERE e.id = :eid;
+  UPDATE ents e SET e.think = 'death_bubbles', e.nextthink = think_base() + 0.1e0, e.count_ = e.count_ + 1 WHERE e.id = :eid;
   DELETE FROM ents e WHERE e.id = :eid AND e.count_ >= e.dmg;
 END^
 

@@ -15,7 +15,7 @@ BEGIN
   BEGIN
     -- create a temporary object to fire at a later time
     EXECUTE PROCEDURE spawn_ent('DelayedUse', 0, 0, 0) RETURNING_VALUES tid;
-    UPDATE ents e SET e.target = :tgt, e.killtarget = :kt, e.message = :msg, e.think = 'delayed_use', e.nextthink = now_() + :dl,
+    UPDATE ents e SET e.target = :tgt, e.killtarget = :kt, e.message = :msg, e.think = 'delayed_use', e.nextthink = think_base() + :dl,
            e.enemy_id = :activator WHERE e.id = :tid;
     EXIT;
   END
@@ -47,12 +47,12 @@ BEGIN
       EXECUTE PROCEDURE trigger_fire(t, activator);
     ELSE IF (tcls = 'trigger_counter') THEN EXECUTE PROCEDURE counter_use(t, activator);
     ELSE IF (tcls = 'trigger_teleport') THEN
-      UPDATE ents e SET e.nextthink = now_() + 0.2e0 WHERE e.id = :t;   -- enabled for a moment
+      UPDATE ents e SET e.nextthink = think_base() + 0.2e0 WHERE e.id = :t;   -- enabled for a moment
     ELSE IF (tcls = 'light') THEN
       UPDATE lightstyles l SET l.pattern = IIF(l.pattern = 'a', 'm', 'a') WHERE l.style = (SELECT e.style FROM ents e WHERE e.id = :t);
     ELSE IF (tcls = 'trap_spikeshooter') THEN EXECUTE PROCEDURE spikeshooter_fire(t);
     ELSE IF (tcls = 'trap_shooter') THEN
-      UPDATE ents e SET e.think = 'shooter_think', e.nextthink = now_() + 0.1e0 WHERE e.id = :t;
+      UPDATE ents e SET e.think = 'shooter_think', e.nextthink = think_base() + 0.1e0 WHERE e.id = :t;
     ELSE IF (tcls = 'func_wall' OR tcls = 'func_illusionary') THEN
       UPDATE ents e SET e.frame = 1 - e.frame WHERE e.id = :t;              -- texture toggle
     ELSE IF (tcls = 'monster_boss') THEN EXECUTE PROCEDURE boss_awake(t);
@@ -97,7 +97,7 @@ BEGIN
   UPDATE ents e SET e.takedamage = 0 WHERE e.id = :eid;
   EXECUTE PROCEDURE use_targets(eid, activator);
   IF (wt > 0) THEN
-    UPDATE ents e SET e.nextthink = now_() + :wt, e.think = 'multi_wait' WHERE e.id = :eid;
+    UPDATE ents e SET e.nextthink = think_base() + :wt, e.think = 'multi_wait' WHERE e.id = :eid;
   ELSE
   BEGIN
     -- (QuakeC's edict goes 0.1 s on: a touch cannot remove itself, so SUB_Remove then)

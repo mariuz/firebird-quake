@@ -169,7 +169,8 @@ BEGIN
   t = now_();
   -- (attack_finished in QuakeC's time, the frame's start, sv.time: the same sum as QuakeC mode's, where the frame's end
   -- rounds its own way and a shot exactly 0.5 s on would go one frame early)
-  SELECT g.sv_time FROM game g WHERE g.id = 1 INTO qt;
+  -- (or the weapon's think's own time, for a nailgun's or the thunderbolt's next shot)
+  qt = think_base();
   SELECT e.waterlevel FROM ents e WHERE e.id = :pe INTO wl;
   IF (btn = 0) THEN
   BEGIN
@@ -499,8 +500,9 @@ BEGIN
        INTO tid
   DO
   BEGIN
-    EXECUTE PROCEDURE touch_clock;
     SELECT e.mv_state, e.targetname, e.items, e.max_health FROM ents e WHERE e.id = :tid INTO tst, tn, titems, thp;
+    -- (a field only round a door with no targetname, health or items: LinkDoors makes none for the others)
+    IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0) THEN EXECUTE PROCEDURE touch_clock;
     IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst IN (1, 3)) THEN EXECUTE PROCEDURE door_fire(tid, eid);
     ELSE IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst = 0) THEN
       UPDATE ents e SET e.nextthink = e.ltime + e.wait_ WHERE COALESCE(e.linked_id, e.id) = :tid AND e.think = 'door_go_down';
@@ -599,15 +601,21 @@ BEGIN
   SELECT p.weapon, p.weaponframe, p.lightning_time FROM player p WHERE p.id = 1 INTO w, wf, lt;
   IF (wf = 0) THEN EXIT;
   IF (FLOOR((t - lt + dt) * 10 + 0.001e0) = FLOOR((t - lt) * 10 + 0.001e0)) THEN EXIT;    -- no think due this tic
+  -- (the think runs at its own time, SV_RunThink's, a tenth of a second on from the last: what it times, a shot's
+  -- attack_finished, a monster's pain, counts from there; lightning_time is on this game's clock, the frame's end)
+  UPDATE game g SET g.time_ = :lt + 0.1e0 * FLOOR((:t - :lt + :dt) * 10 + 0.001e0) WHERE g.id = 1;
   IF (w IN (4, 8, 64) AND btn <> 0) THEN
   BEGIN
     UPDATE player p SET p.weaponframe = MOD(:wf, IIF(:w = 64, 4, 8)) + 1 WHERE p.id = 1;
     EXECUTE PROCEDURE player_fire(2);
-    EXIT;
   END
-  wf = IIF(w IN (4, 8, 64) OR (w = 4096 AND wf IN (4, 8)) OR (w <> 4096 AND wf + 1 > 6), 0, wf + 1);
-  UPDATE player p SET p.weaponframe = :wf WHERE p.id = 1;
-  IF (w = 4096 AND wf IN (3, 7)) THEN EXECUTE PROCEDURE player_axe_hit;
+  ELSE
+  BEGIN
+    wf = IIF(w IN (4, 8, 64) OR (w = 4096 AND wf IN (4, 8)) OR (w <> 4096 AND wf + 1 > 6), 0, wf + 1);
+    UPDATE player p SET p.weaponframe = :wf WHERE p.id = 1;
+    IF (w = 4096 AND wf IN (3, 7)) THEN EXECUTE PROCEDURE player_axe_hit;
+  END
+  UPDATE game g SET g.time_ = :t WHERE g.id = 1;
 END^
 
 -- PlayerPreThink's end: the weapon's ammo gone and its attack over, the best weapon left in hand (W_BestWeapon,

@@ -322,7 +322,7 @@ BEGIN
     END
     -- ── decorations and traps ──
     ELSE IF (cls = 'air_bubbles') THEN                 -- make_bubbles a second in, then every 0.5 to 1.5 s
-      UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = now_() + 1 WHERE e.id = :eid;
+      UPDATE ents e SET e.think = 'make_bubbles', e.nextthink = think_base() + 1 WHERE e.id = :eid;
     ELSE IF (cls = 'light_torch_small_walltorch') THEN
     BEGIN
       EXECUTE PROCEDURE set_model(eid, 'progs/flame.mdl');
@@ -351,12 +351,12 @@ BEGIN
     ELSE IF (cls = 'misc_fireball') THEN
       -- misc.qc's "if (!self.speed) self.speed == 1000;" compares instead of assigning: without a speed key a
       -- fireball rises only random() * 200
-      UPDATE ents e SET e.solid = 0, e.speed = COALESCE(:spd, 0), e.think = 'fireball_think', e.nextthink = now_() + rnd() * 5 WHERE e.id = :eid;
+      UPDATE ents e SET e.solid = 0, e.speed = COALESCE(:spd, 0), e.think = 'fireball_think', e.nextthink = think_base() + rnd() * 5 WHERE e.id = :eid;
     ELSE IF (cls = 'trap_spikeshooter' OR cls = 'trap_shooter') THEN
     BEGIN
       EXECUTE PROCEDURE movedir(COALESCE(ang, 0)) RETURNING_VALUES dx, dy, dz;
       UPDATE ents e SET e.solid = 0, e.p1x = :dx, e.p1y = :dy, e.p1z = :dz, e.wait_ = IIF(COALESCE(:wt, 0) = 0, 1, :wt) WHERE e.id = :eid;
-      IF (cls = 'trap_shooter') THEN UPDATE ents e SET e.think = 'shooter_think', e.nextthink = now_() + e.wait_ WHERE e.id = :eid;
+      IF (cls = 'trap_shooter') THEN UPDATE ents e SET e.think = 'shooter_think', e.nextthink = think_base() + e.wait_ WHERE e.id = :eid;
     END
     ELSE IF (cls = 'event_lightning') THEN UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
     ELSE IF (cls = 'misc_teleporttrain') THEN
@@ -425,8 +425,8 @@ BEGIN
     RETURNING_VALUES f;
   EXECUTE PROCEDURE set_model(f, 'progs/lavaball.mdl');
   UPDATE ents e SET e.solid = 1, e.movetype = 6, e.vx = rnd() * 100 - 50, e.vy = rnd() * 100 - 50, e.vz = :spd + rnd() * 200,
-         e.avel_yaw = 200, e.think = 'remove', e.nextthink = now_() + 5, e.effects = 4 WHERE e.id = :f;
-  UPDATE ents e SET e.nextthink = now_() + rnd() * 5 + 3 WHERE e.id = :eid;
+         e.avel_yaw = 200, e.think = 'remove', e.nextthink = think_base() + 5, e.effects = 4 WHERE e.id = :f;
+  UPDATE ents e SET e.nextthink = think_base() + rnd() * 5 + 3 WHERE e.id = :eid;
 END^
 
 CREATE OR ALTER PROCEDURE spikeshooter_fire (eid INTEGER)
@@ -443,7 +443,7 @@ CREATE OR ALTER PROCEDURE shooter_think (eid INTEGER)
 AS
 BEGIN
   EXECUTE PROCEDURE spikeshooter_fire(eid);
-  UPDATE ents e SET e.nextthink = now_() + e.wait_ WHERE e.id = :eid;
+  UPDATE ents e SET e.nextthink = think_base() + e.wait_ WHERE e.id = :eid;
 END^
 
 SET TERM ; ^
