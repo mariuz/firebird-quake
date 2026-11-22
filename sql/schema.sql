@@ -48,6 +48,10 @@ CREATE TABLE game (
   -- sv.time, which a freed edict's freetime is
   num_edicts     INTEGER DEFAULT 6 NOT NULL,
   sv_time        DOUBLE PRECISION DEFAULT 1 NOT NULL,
+  -- QuakeC's globals enemy_range and enemy_vis as the last ai_run left them, whichever monster's (WizardAttackFinished
+  -- reads them)
+  enemy_range    SMALLINT DEFAULT 0 NOT NULL,
+  enemy_vis      SMALLINT DEFAULT 0 NOT NULL,
   -- the server's rules (QuakeC mode): deathmatch and coop as the cvars, the clients (1 + the bots of
   -- sql/bots.sql, in edicts 1..maxclients), fraglimit and timelimit (minutes); kept across levels
   deathmatch     SMALLINT DEFAULT 0 NOT NULL,

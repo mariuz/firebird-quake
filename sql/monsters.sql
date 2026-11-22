@@ -243,6 +243,17 @@ BEGIN
   IF (ss IS NOT NULL) THEN EXECUTE PROCEDURE snd(eid, 1, ss, 1, 1);
   -- Wiz_StartFast (wiz_fast1): two shooters by its sides, 30 up and 14 ahead (makevectors(self.angles)), the left one
   -- firing in 0.3 s, the right one in 0.8 s (wiz_fastfire); each aims 13 units off the enemy, to its own side
+  -- the first frame's function runs now (th_melee calls it): its ai_charge, ai_face then the step
+  fr = (SELECT e.frame FROM ents e WHERE e.id = :eid);
+  fmv = frame_move(mid, fr, NULL);
+  IF (fmv IS NOT NULL OR frame_faces(mid, fr) = 1) THEN
+  BEGIN
+    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = e.enemy_id) - e.x, (SELECT n.y FROM ents n WHERE n.id = e.enemy_id) - e.y)
+     WHERE e.id = :eid AND e.enemy_id IS NOT NULL;
+    EXECUTE PROCEDURE change_yaw(eid);
+    IF (fmv IS NOT NULL) THEN EXECUTE PROCEDURE move_to_goal(eid, fmv);
+  END
+  -- (wiz_fast1: ai_face, then Wiz_StartFast with the yaw it turned to)
   IF (melee = 0 AND mt = 'wizard') THEN
   BEGIN
     SELECT e.yaw * 0.0174532925e0 FROM ents e WHERE e.id = :eid INTO r;
@@ -253,16 +264,6 @@ BEGIN
     INSERT INTO ents (id, classname, x, y, z, owner_id, enemy_id, dstx, dsty, think, nextthink)
       SELECT NEXT VALUE FOR ent_seq, 'wiz_fastfire', e.x + COS(:r) * 14 - SIN(:r) * 14, e.y + SIN(:r) * 14 + COS(:r) * 14, e.z + 30, e.id, e.enemy_id,
              -SIN(:r), COS(:r), 'wiz_fastfire', now_() + 0.3e0 FROM ents e WHERE e.id = :eid;
-  END
-  -- the first frame's function runs now (th_melee calls it): its ai_charge, ai_face then the step
-  fr = (SELECT e.frame FROM ents e WHERE e.id = :eid);
-  fmv = frame_move(mid, fr, NULL);
-  IF (fmv IS NOT NULL OR frame_faces(mid, fr) = 1) THEN
-  BEGIN
-    UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = e.enemy_id) - e.x, (SELECT n.y FROM ents n WHERE n.id = e.enemy_id) - e.y)
-     WHERE e.id = :eid AND e.enemy_id IS NOT NULL;
-    EXECUTE PROCEDURE change_yaw(eid);
-    IF (fmv IS NOT NULL) THEN EXECUTE PROCEDURE move_to_goal(eid, fmv);
   END
 END^
 
@@ -1328,6 +1329,8 @@ BEGIN
     -- and enemy_infront's makevectors(self.angles)
     UPDATE ents e SET e.show_hostile = think_base() + 1 WHERE e.id = :eid;
     EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :eid));
+    -- (and the globals enemy_vis and enemy_range, which outlive it: the next WizardAttackFinished, anyone's, reads them)
+    UPDATE game g SET g.enemy_vis = visible(:eid, :enemy), g.enemy_range = ent_range(:eid, :enemy) WHERE g.id = 1;
     -- enemy_yaw: the melee, missile and slide branches turn to it; movetogoal keeps the ideal_yaw it has (FoundTarget's
     -- or the chase's)
     SELECT vectoyaw(n.x - e.x, n.y - e.y) FROM ents e CROSS JOIN ents n WHERE e.id = :eid AND n.id = :enemy INTO ey;
@@ -1346,9 +1349,6 @@ BEGIN
       EXECUTE PROCEDURE change_yaw(eid);
       IF (facing_ideal(eid) = 1) THEN
       BEGIN
-        -- (the wizard's WizardAttackFinished, at the attack's end, reads enemy_range and enemy_vis as this ai_run left
-        -- them: near and in sight it will slide, else go straight; kept in count_)
-        IF (mt = 'wizard') THEN UPDATE ents e SET e.count_ = IIF(ent_range(:eid, :enemy) < 2 AND visible(:eid, :enemy) = 1, 2, 1) WHERE e.id = :eid;
         EXECUTE PROCEDURE start_attack(eid, 0);
       END
       LEAVE;
@@ -1401,6 +1401,8 @@ BEGIN
       UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;
       IF (mt = 'wizard') THEN
       BEGIN
+        -- WizardAttackFinished: near and in sight by the globals the last ai_run left (anyone's), slide; else straight
+        UPDATE ents e SET e.count_ = (SELECT IIF(g.enemy_range < 2 AND g.enemy_vis = 1, 2, 1) FROM game g WHERE g.id = 1) WHERE e.id = :eid;
         UPDATE ents e SET e.attack_state = e.count_ WHERE e.id = :eid;
         run_a = TRIM(IIF((SELECT e.count_ FROM ents e WHERE e.id = :eid) = 2, 'hover', 'fly'));
       END
@@ -1965,7 +1967,7 @@ BEGIN
   UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1 AND BIN_AND(p.items, p.weapon) = 0;
   EXECUTE PROCEDURE player_current_ammo;
   -- QuakeC's edicts: the world, the client and the four of InitBodyQue before the map's
-  UPDATE game g SET g.num_edicts = 6, g.sv_time = 1 WHERE g.id = 1;
+  UPDATE game g SET g.num_edicts = 6, g.sv_time = 1, g.enemy_range = 0, g.enemy_vis = 0 WHERE g.id = 1;
   DELETE FROM edict_free;
   EXECUTE PROCEDURE spawn_map_ents(skill);
   -- PutClientInServer's spawn_tdeath: an edict of its own, free again 0.2 s on
