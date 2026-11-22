@@ -1186,7 +1186,7 @@ BEGIN
 
   -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end,
   -- and a pain's, which look at no enemy: th_run's first frame sees it after)
-  IF (enemy IS NOT NULL AND st NOT IN ('melee', 'missile', 'pain')) THEN
+  IF ((enemy IS NOT NULL AND st NOT IN ('melee', 'missile', 'pain')) OR (enemy IS NULL AND st = 'run')) THEN
   BEGIN
     SELECT e.health FROM ents e WHERE e.id = :enemy INTO ehp;
     IF (ehp IS NULL OR ehp <= 0) THEN
@@ -1413,13 +1413,13 @@ BEGIN
     END
     -- ai_face on the attack frames whose function faces (not the think that goes on into the run, nor the fiend's
     -- frames in the air); act on the key frames
-    IF (enemy IS NOT NULL AND frame_faces(mid, IIF(aseq IS NULL, ff + af, seq_at(aseq, af))) = 1) THEN
+    afr = IIF(aseq IS NULL, ff + af, seq_at(aseq, af));
+    IF (mt = 'zombie' AND anim = 'attb' AND af = 13) THEN afr = afr - 1;    -- zombie_attb14 shows $attb13 again (zombie.qc), and faces
+    IF (enemy IS NOT NULL AND frame_faces(mid, afr) = 1) THEN
     BEGIN
       UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
       EXECUTE PROCEDURE change_yaw(eid);
     END
-    afr = IIF(aseq IS NULL, ff + af, seq_at(aseq, af));
-    IF (mt = 'zombie' AND anim = 'attb' AND af = 13) THEN afr = afr - 1;    -- zombie_attb14 shows $attb13 again (zombie.qc)
     UPDATE ents e SET e.anim_frame = :af, e.frame = :afr WHERE e.id = :eid;
     -- demon1_jump10: in the air, the next think 3 s off (stuck, it leaps again from demon1_jump1); landing comes first
     IF (st = 'missile' AND mt = 'demon1' AND anim = missile_a AND af = 9) THEN UPDATE ents e SET e.anim_frame = -1, e.nextthink = :t + 3 WHERE e.id = :eid;
@@ -1474,14 +1474,12 @@ BEGIN
         EXIT;
       END
       -- the last pain frame goes on into th_run (army_pain6 → army_run1): run1 comes now, with its think; the
-      -- zombie's run1 clears inpain
-      UPDATE ents e SET e.st = TRIM(IIF(e.enemy_id IS NULL, 'stand', 'run')), e.inpain = 0 WHERE e.id = :eid;   -- TRIM: IIF pads to the longer literal
-      EXECUTE PROCEDURE set_anim(eid, IIF(enemy IS NULL, stand_a, run_a));
-      IF (enemy IS NOT NULL) THEN
-      BEGIN
-        UPDATE ents e SET e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0) WHERE e.id = :eid;
-        EXECUTE PROCEDURE monster_think(eid);
-      END
+      -- zombie's run1 clears inpain. Without an enemy too (hurt by the world: lava, a trap): run1's ai_run finds
+      -- the world dead and goes to th_walk or th_stand, its frame's draws made all the same
+      UPDATE ents e SET e.st = 'run', e.inpain = 0 WHERE e.id = :eid;
+      EXECUTE PROCEDURE set_anim(eid, run_a);
+      UPDATE ents e SET e.anim_frame = COALESCE((SELECT a.frame_count - 1 FROM anims a WHERE a.model_id = e.model_id AND a.anim = :run_a), 0) WHERE e.id = :eid;
+      EXECUTE PROCEDURE monster_think(eid);
       EXIT;
     END
     UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
