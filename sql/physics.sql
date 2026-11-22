@@ -22,6 +22,17 @@ BEGIN
   RETURN s / 2147483648e0;
 END^
 
+-- A touch's clock: SV_Impact, and SV_TouchLinks when it touches a trigger, set QuakeC's time to the frame's start
+-- (sv.time) before the touch, and the frame function that moved goes on with it: so what a monster's think does after
+-- its step touched something (an ogre's meat spray after ai_charge) counts from there. The clock read the same way it
+-- reads where it is (the frame's end, or the think's time, with CLOCK_LAG); run_physics puts it back after the think.
+CREATE OR ALTER PROCEDURE touch_clock
+AS
+BEGIN
+  UPDATE game g SET g.time_ = g.sv_time + COALESCE(CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG') AS DOUBLE PRECISION), 0)
+   WHERE g.id = 1 AND g.qc_mode = 0 AND g.sv_time IS NOT NULL;
+END^
+
 -- A recording demo's next call: quake_tic and qc_tic hand over their arguments first (sql/demo.sql)
 CREATE OR ALTER PROCEDURE demo_note (tics INTEGER, fwd DOUBLE PRECISION, side DOUBLE PRECISION, yaw_d DOUBLE PRECISION,
   pitch_d DOUBLE PRECISION, fire SMALLINT, jump SMALLINT, run SMALLINT, imp SMALLINT)

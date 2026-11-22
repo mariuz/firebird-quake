@@ -56,8 +56,10 @@ BEGIN
   -- ClientObituary's random() (drawn first, whoever died; not for a pusher or a thing that does not move, whose
   -- th_die comes at once)
   IF (mt NOT IN (0, 7)) THEN r = rnd();
-  -- (a player dead in water, slime or lava: the obituary's two lines each, picked by random() < 0.5, whoever killed it)
-  IF (cls = 'player' AND (SELECT e.watertype FROM ents e WHERE e.id = :targ) IN (-3, -4, -5)) THEN r = rnd();
+  -- (a player dead in water, slime or lava: the obituary's two lines each, picked by random() < 0.5, whoever killed it;
+  -- in lava below -15 health only "burst into flames")
+  IF (cls = 'player' AND (SELECT e.watertype FROM ents e WHERE e.id = :targ) IN (-3, -4, -5)
+      AND NOT ((SELECT e.watertype FROM ents e WHERE e.id = :targ) = -5 AND hp < -15)) THEN r = rnd();
   IF (cls = 'player') THEN
   BEGIN
     -- PlayerDie: tossed up by random() × 300 unless already rising; below -40 GibPlayer (the head and three gibs,
@@ -533,6 +535,7 @@ BEGIN
     EXECUTE PROCEDURE qc_impact(e1, e2);
     EXIT;
   END
+  EXECUTE PROCEDURE touch_clock;
   IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1 AND e.solid <> 0)) THEN EXECUTE PROCEDURE impact_one(e1, e2);
   IF (e2 > 0 AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :e2 AND e.solid <> 0) AND EXISTS (SELECT 1 FROM ents e WHERE e.id = :e1)) THEN
     EXECUTE PROCEDURE impact_one(e2, e1);

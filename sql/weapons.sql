@@ -431,6 +431,14 @@ BEGIN
   SELECT e.x, e.y, e.z, e.minx - 1, e.miny - 1, e.minz - 1, e.maxx + 1, e.maxy + 1, e.maxz + 1, e.flags FROM ents e
    WHERE e.id = :eid AND e.health > 0 INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, fl;
   IF (px IS NULL OR BIN_AND(fl, 32) = 0) THEN EXIT;
+  -- (any trigger met, whatever its touch makes of a monster: its clock)
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.solid = 1 AND e.id <> :eid
+                AND e.x + e.maxx + 1 >= :px + :mnx AND e.x + e.minx - 1 <= :px + :mxx
+                AND e.y + e.maxy + 1 >= :py + :mny AND e.y + e.miny - 1 <= :py + :mxy
+                AND e.z + e.maxz + 1 >= :pz + :mnz AND e.z + e.minz - 1 <= :pz + :mxz)
+      OR EXISTS (SELECT 1 FROM ents c WHERE c.classname = 'path_corner'          -- (a corner: '-8 -8 -8' to '8 8 8', t_movetarget)
+                AND c.x + 9 >= :px + :mnx AND c.x - 9 <= :px + :mxx AND c.y + 9 >= :py + :mny AND c.y - 9 <= :py + :mxy
+                AND c.z + 9 >= :pz + :mnz AND c.z - 9 <= :pz + :mxz)) THEN EXECUTE PROCEDURE touch_clock;
   t = now_();
   FOR SELECT e.id, e.classname FROM ents e
        WHERE e.solid = 1 AND e.id <> :eid AND e.classname IN ('trigger_teleport', 'trigger_monsterjump', 'trigger_push', 'trigger_hurt')
@@ -478,6 +486,7 @@ BEGIN
        INTO tid
   DO
   BEGIN
+    EXECUTE PROCEDURE touch_clock;
     SELECT e.mv_state, e.targetname, e.items, e.max_health FROM ents e WHERE e.id = :tid INTO tst, tn, titems, thp;
     IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst IN (1, 3)) THEN EXECUTE PROCEDURE door_fire(tid, eid);
     ELSE IF ((tn IS NULL OR tn = '') AND titems = 0 AND thp = 0 AND tst = 0) THEN
