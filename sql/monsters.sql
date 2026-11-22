@@ -1399,14 +1399,6 @@ BEGIN
       END
       LEAVE;
     END
-    -- far from the player and out of its sight: think less often, stride further
-    SELECT vlen(a.x - b.x, a.y - b.y, a.z - b.z) FROM ents a CROSS JOIN ents b WHERE a.id = :eid AND b.id = :enemy INTO d;
-    IF (d > 1200 AND pvs_visible((SELECT l.pvs FROM leaves l WHERE l.id = (SELECT e.leaf FROM ents e WHERE e.id = :enemy)), lf) = 0) THEN
-    BEGIN
-      UPDATE ents e SET e.nextthink = :t + 0.3e0 WHERE e.id = :eid;
-      IF (run_spd > 0) THEN EXECUTE PROCEDURE move_to_goal(eid, frame_move(mid, ff + af, run_spd) * 3);
-      LEAVE;
-    END
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'MOVEDIST', NULL);
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'ENEMYYAW', NULL);
     IF (check_attack(eid) = 1) THEN LEAVE;
