@@ -230,6 +230,14 @@ A game's whole state is rows: `game`, `player`, `ents`, `lightstyles`, and in Qu
   the frame's start). A removal QuakeC makes later (an explosion's sprite) waits for its tic (`ed_free_later`), and an
   edict QuakeC spawns where the PSQL game only draws an effect is taken for its life (`ed_ghost`). An entity spawned in
   a think below the thinker's edict sits out the frame's move (`hold_tic`), as `SV_Physics` has passed it.
+  `run_physics` visits the edicts in order, each one's fall, think, then toss, and `run_pushers` the doors and buttons
+  in edict order before them. A monster's `goalentity` is an edict too: when its goal's row is deleted, `goal_id`
+  becomes `-edict` and `move_to_goal` goes for whatever holds that edict now.
+- **The clock**: `game.time_` is the frame's end where QuakeC's `time` is its start, `sv.time`; `think_base()` gives
+  QuakeC's time wherever the PSQL game runs (`CLOCK_LAG`: the client's frame, the pushers, the tosses), and inside a
+  think `run_physics` sets the clock to the think's own time, as `SV_RunThink` does (the player's weapon think too).
+  Everything a think schedules counts from `think_base()`. A touch puts it back at the frame's start for the rest of
+  the think that made it (`touch_clock`: `SV_Impact`, and `SV_TouchLinks` when the step met a trigger).
 - **Recording**: `demo_record` stores the level's map, skill, logic and `level_seed` in the `demo` row
   and turns recording on; after tic 0 it first saves the game into slot 13 and sets `from_save`, so a
   demo can start at any moment, as Quake's `record` does (the save holds `rng`, so the random choices
