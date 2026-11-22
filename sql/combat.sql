@@ -56,9 +56,10 @@ BEGIN
   -- ClientObituary's random() (drawn first, whoever died; not for a pusher or a thing that does not move, whose
   -- th_die comes at once)
   IF (mt NOT IN (0, 7)) THEN r = rnd();
-  -- (a player dead in water, slime or lava: the obituary's two lines each, picked by random() < 0.5, whoever killed it;
-  -- in lava below -15 health only "burst into flames")
+  -- (a player dead in water, slime or lava: the obituary's two lines each, picked by random() < 0.5, unless a monster
+  -- or a player killed it, whose lines come first; in lava below -15 health only "burst into flames")
   IF (cls = 'player' AND (SELECT e.watertype FROM ents e WHERE e.id = :targ) IN (-3, -4, -5)
+      AND NOT EXISTS (SELECT 1 FROM ents a WHERE a.id = :attacker AND (BIN_AND(a.flags, 32) <> 0 OR a.classname = 'player'))
       AND NOT ((SELECT e.watertype FROM ents e WHERE e.id = :targ) = -5 AND hp < -15)) THEN r = rnd();
   IF (cls = 'player') THEN
   BEGIN

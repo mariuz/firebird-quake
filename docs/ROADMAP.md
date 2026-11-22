@@ -558,7 +558,7 @@ to the same behaviour, with a test of its own:
   each): the player driven by inputs drawn from a seed (an action held 10 to 29 tics: forward or back, a strafe, a turn,
   the fire button and jumps at random), wandering, shooting, picking things up, opening doors and waking what it meets,
   the player, every monster and the edicts compared every tic. Of 48 seeds over E1M1 to E1M6 (eight a level, 1000
-  tics each), @@HOLD@@ hold to the end; every one that parts, parts on `ogre_smash12` (below). What it found:
+  tics each), 42 hold to the end; the six that part all part on `ogre_smash12` (below). What it found:
   - **A shot exactly 0.5 s on**: the player's `attack_finished` counted from the frame's end, which rounds its own way;
     it counts from the frame's start (`sv_time`) as QuakeC's `time` does.
   - **The view's yaw** is not wrapped (`anglemod`): QuakeC mode's `v_angle` adds up, and `cos(339°)` is not `cos(-21°)`
@@ -599,14 +599,15 @@ to the same behaviour, with a test of its own:
     monster whose walk step was hurt keeps the pain's frame, the rest of its frame function drawing on.
   - **A goal that goes**: a monster's `goalentity` is an edict, so when what it went for is removed (HuntTarget's
     enemy, a lava ball) it goes for whatever takes that edict next (`goal_id = -edict`).
-  - **Deaths**: a player burnt in lava below -15 health draws no obituary line ("burst into flames"); a body killed at
+  - **Deaths**: a player killed in water, slime or lava by a monster draws no water line (`ClientObituary` gives the
+    monster's line first); one burnt in lava below -15 health draws none either ("burst into flames"); a body killed at
     exactly 0 health still feels the water's drag (`WaterMove` leaves only below 0); the biosuit keeps the air full
     every frame (`CheckPowerups`), to the frame it runs out in.
   - **No PSQL shortcut**: a monster chasing from far off and out of sight thought every 0.3 s with a triple stride;
     it thinks every 0.1 s as QuakeC's does.
   Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
-  `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (most of E1M2's seeds, where the ogres smash
-  often, and E1M6's seed 8 part on it).
+  `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7 and 8, where the
+  ogres smash often, and E1M6's seed 8 part on it).
 
 ## Performance
 
