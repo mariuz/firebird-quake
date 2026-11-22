@@ -182,7 +182,7 @@ BEGIN
   IF (af > qt AND btn <> 2) THEN EXIT;
   EXECUTE PROCEDURE view_vectors RETURNING_VALUES ex, ey, ez, fx_, fy, fz, rx, ry, rz, ux, uy, uz;
   -- an attack starts the view weapon's frames at 1 (lightning_time doubles as their start); the cycle's shots go on
-  UPDATE player p SET p.show_hostile = :t + 1, p.lightning_time = IIF(:btn = 2, p.lightning_time, :t),
+  UPDATE player p SET p.show_hostile = :qt + 1, p.lightning_time = IIF(:btn = 2, p.lightning_time, :t),
     p.weaponframe = IIF(:btn = 2, p.weaponframe, 1) WHERE p.id = 1;
 
   IF (w = 4096) THEN                                                      -- axe

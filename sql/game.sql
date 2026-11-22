@@ -261,8 +261,9 @@ DECLARE d DOUBLE PRECISION;
 BEGIN
   -- (infront's makevectors(self.angles))
   EXECUTE PROCEDURE mv_set(0, (SELECT e.yaw FROM ents e WHERE e.id = :a));
+  -- (normalize(targ.origin - self.origin) is the whole vector's, height and all: one above or below is less in front)
   SELECT (COS(e1.yaw * 0.0174532925e0) * (e2.x - e1.x) + SIN(e1.yaw * 0.0174532925e0) * (e2.y - e1.y))
-         / MAXVALUE(1e-3, vlen(e2.x - e1.x, e2.y - e1.y, 0))
+         / MAXVALUE(1e-3, vlen(e2.x - e1.x, e2.y - e1.y, e2.z - e1.z))
     FROM ents e1 CROSS JOIN ents e2 WHERE e1.id = :a AND e2.id = :b INTO d;
   RETURN IIF(d > 0.3e0, 1, 0);
 END^
