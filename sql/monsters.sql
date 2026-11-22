@@ -1197,10 +1197,18 @@ BEGIN
       SELECT o.id FROM ents e JOIN ents o ON o.id = e.oldenemy_id WHERE e.id = :eid AND o.health > 0 INTO enemy;
       IF (enemy IS NOT NULL) THEN
       BEGIN
-        UPDATE ents e SET e.enemy_id = :enemy, e.oldenemy_id = NULL, e.goal_id = NULL, e.st = 'run', e.attack_finished = IIF(nightmare() = 1, e.attack_finished, :t + 1) WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, run_a);
-        EXIT;
+        -- (HuntTarget: the run toward it, its ideal_yaw, attack_finished a second on)
+        UPDATE ents e SET e.enemy_id = :enemy, e.oldenemy_id = NULL, e.goal_id = NULL, e.st = 'run', e.attack_finished = IIF(nightmare() = 1, e.attack_finished, :t + 1),
+               e.ideal_yaw = vectoyaw((SELECT n.x FROM ents n WHERE n.id = :enemy) - e.x, (SELECT n.y FROM ents n WHERE n.id = :enemy) - e.y) WHERE e.id = :eid;
+        -- in a run frame ai_run goes on with the new enemy (its sight, an attack, the move) in this frame
+        IF (st <> 'run') THEN
+        BEGIN
+          EXECUTE PROCEDURE set_anim(eid, run_a);
+          EXIT;
+        END
       END
+      ELSE
+      BEGIN
       UPDATE ents e SET e.enemy_id = NULL, e.oldenemy_id = NULL WHERE e.id = :eid;
       IF (st IN ('run', 'melee', 'missile')) THEN
       BEGIN
@@ -1224,6 +1232,7 @@ BEGIN
         -- (and the draw the run frame makes after its ai_run: ogre_run1's, the shambler's)
         IF (st = 'run') THEN EXECUTE PROCEDURE monster_idle_sound(eid, mt, st, MOD(af + 1, fc), idle_s, 0);
         EXIT;
+      END
       END
     END
   END
