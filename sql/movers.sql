@@ -169,16 +169,21 @@ BEGIN
   SELECT e.mv_state FROM ents e WHERE e.id = :eid INTO st;
   IF (st IN (2, 0)) THEN EXIT;
   EXECUTE PROCEDURE snd(eid, 0, (SELECT e.noise1 FROM ents e WHERE e.id = :eid), 1, 1);
-  EXECUTE PROCEDURE use_targets(eid, activator);
-  UPDATE ents e SET e.mv_state = 2, e.frame = 1 WHERE e.id = :eid;
+  -- (the one who pressed it kept, self.enemy, for button_wait's activator; even a button already in place moves
+  -- for 0.1 s, SUB_CalcMove's shortest)
+  UPDATE ents e SET e.mv_state = 2, e.enemy_id = :activator WHERE e.id = :eid;
   EXECUTE PROCEDURE calc_move(eid, (SELECT e.p2x FROM ents e WHERE e.id = :eid), (SELECT e.p2y FROM ents e WHERE e.id = :eid),
     (SELECT e.p2z FROM ents e WHERE e.id = :eid), (SELECT e.speed FROM ents e WHERE e.id = :eid), 'button_wait');
 END^
 
+-- button_wait: arrived, it uses its targets and shows its pressed texture
 CREATE OR ALTER PROCEDURE button_wait (eid INTEGER)
 AS
 BEGIN
   UPDATE ents e SET e.mv_state = 0, e.think = 'button_return', e.nextthink = e.ltime + e.wait_ WHERE e.id = :eid AND e.wait_ >= 0;
+  UPDATE ents e SET e.mv_state = 0 WHERE e.id = :eid;
+  EXECUTE PROCEDURE use_targets(eid, (SELECT e.enemy_id FROM ents e WHERE e.id = :eid));
+  UPDATE ents e SET e.frame = 1 WHERE e.id = :eid;
 END^
 
 CREATE OR ALTER PROCEDURE button_return (eid INTEGER)
