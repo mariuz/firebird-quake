@@ -215,11 +215,11 @@ BEGIN
       END
       ELSE IF (pwt = -4 OR pwt = -5) THEN
         EXECUTE PROCEDURE snd(targ, 2, TRIM(IIF(rnd() > 0.5e0, 'player/lburn1.wav', 'player/lburn2.wav')), 1, 1);
-      ELSE IF (pf > now_()) THEN
+      ELSE IF (pf > think_base()) THEN                      -- (pain_finished in QuakeC's time, as WaterMove reads it)
         UPDATE player p SET p.axhitme = 0 WHERE p.id = 1 AND p.axhitme <> 0;
       ELSE
       BEGIN
-        UPDATE player p SET p.pain_finished = now_() + 0.5e0 WHERE p.id = 1;
+        UPDATE player p SET p.pain_finished = think_base() + 0.5e0 WHERE p.id = 1;
         IF (paxe = 1) THEN
         BEGIN
           UPDATE player p SET p.axhitme = 0 WHERE p.id = 1;
@@ -229,7 +229,7 @@ BEGIN
       END
     END
     -- (T_Damage after th_pain: on nightmare the player's next pain waits 5 s too)
-    IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = now_() + 5 WHERE p.id = 1;
+    IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = think_base() + 5 WHERE p.id = 1;
     EXIT;
   END
   IF (BIN_AND(flags, 32) <> 0) THEN

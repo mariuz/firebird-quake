@@ -682,6 +682,9 @@ BEGIN
     UPDATE player p SET p.pitch = MAXVALUE(-70, MINVALUE(80, p.pitch + :pitch_d)), p.dead_yaw = COALESCE(p.dead_yaw, :yaw) + :yaw_d
      WHERE p.id = 1 RETURNING p.pitch, p.dead_yaw INTO pitch, yaw;
     EXECUTE PROCEDURE mv_set(pitch, yaw);
+    -- (WaterMove leaves only below 0 health: a body killed at exactly 0 still feels the water's drag)
+    IF (hp = 0 AND wl > 0 AND BIN_AND(flags, 2048) = 0) THEN
+      UPDATE ents e SET e.vx = e.vx - 0.8e0 * :wl * :dt * e.vx, e.vy = e.vy - 0.8e0 * :wl * :dt * e.vy, e.vz = e.vz - 0.8e0 * :wl * :dt * e.vz WHERE e.id = :pe;
     EXECUTE PROCEDURE toss_move(pe, dt);
     IF (t > deadt + 1.5e0 AND (fire = 1 OR jump = 1)) THEN
       UPDATE game g SET g.exit_kind = 3 WHERE g.id = 1;
@@ -815,11 +818,11 @@ BEGIN
     ELSE IF (afin < t + 9) THEN EXECUTE PROCEDURE snd(pe, 2, 'player/gasp1.wav', 1, 1);
     UPDATE player p SET p.air_finished = :t + 12, p.drown_dmg = 2 WHERE p.id = 1 AND (p.air_finished <> :t + 12 OR p.drown_dmg <> 2);
   END
-  ELSE IF (afin < t AND (SELECT p.pain_finished FROM player p WHERE p.id = 1) < t) THEN
+  ELSE IF (afin < t AND (SELECT p.pain_finished FROM player p WHERE p.id = 1) < think_base()) THEN
   BEGIN
     UPDATE player p SET p.drown_dmg = IIF(p.drown_dmg + 2 > 15, 10, p.drown_dmg + 2) WHERE p.id = 1;
     EXECUTE PROCEDURE t_damage(pe, 0, 0, (SELECT p.drown_dmg FROM player p WHERE p.id = 1));
-    UPDATE player p SET p.pain_finished = :t + 1 WHERE p.id = 1;
+    UPDATE player p SET p.pain_finished = think_base() + 1 WHERE p.id = 1;
   END
   -- lava burns 10 × waterlevel every 0.2 s (every second in the biosuit), slime 4 × waterlevel every second (not at
   -- all in the biosuit); a bite waits until time is past dmgtime
@@ -947,7 +950,9 @@ BEGIN
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(1048576)) WHERE p.id = 1 AND p.invincible_finished < :t AND BIN_AND(p.items, 1048576) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(524288)) WHERE p.id = 1 AND p.invisible_finished < :t AND BIN_AND(p.items, 524288) <> 0;
   UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(4194304)) WHERE p.id = 1 AND p.super_damage_finished < :t AND BIN_AND(p.items, 4194304) <> 0;
-  UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(2097152)) WHERE p.id = 1 AND p.radsuit_finished < :t AND BIN_AND(p.items, 2097152) <> 0;
+  -- (CheckPowerups: the biosuit keeps the air full, to the frame it runs out in, then it is gone)
+  UPDATE player p SET p.air_finished = :t + 12 WHERE p.id = 1 AND p.radsuit_finished > 0;
+  UPDATE player p SET p.items = BIN_AND(p.items, BIN_NOT(2097152)), p.radsuit_finished = 0 WHERE p.id = 1 AND p.radsuit_finished > 0 AND p.radsuit_finished < :t;
   -- item_megahealth_rot: from 5 s after a megahealth, a point of health a second while over 100, then IT_SUPERHEALTH
   -- off; the megahealth's own think, so run in the tic it falls in (due before the frame's end) and stepped from its
   -- due time (player.rot_time)
