@@ -91,6 +91,7 @@ jobs:
               npm run test:image
               npm run test:boss
               npm run test:e1m8
+              npm run test:levels
           # episode 1's set pieces: the drawbridge, the zombie pits, the underwater secret, the flooded moat,
           # the gold key; progs.dat's monsters on the engine; whole levels played by both games side by side
           - group: episode 1
@@ -101,7 +102,6 @@ jobs:
               npm run test:e1m5
               npm run test:e1m6
               npm run test:qcai
-              npm run test:levels
               npm run test:levelparity
     name: test (${{ matrix.group }})
     steps:

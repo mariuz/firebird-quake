@@ -440,9 +440,9 @@ BEGIN
    WHERE e.id = :eid AND e.health > 0 INTO px, py, pz, mnx, mny, mnz, mxx, mxy, mxz, fl;
   IF (px IS NULL OR BIN_AND(fl, 32) = 0) THEN EXIT;
   -- (any trigger met, whatever its touch makes of a monster: its clock)
-  IF (EXISTS (SELECT 1 FROM ents e WHERE e.solid = 1 AND e.id <> :eid
-                AND e.x + e.maxx + 1 >= :px + :mnx AND e.x + e.minx - 1 <= :px + :mxx
-                AND e.y + e.maxy + 1 >= :py + :mny AND e.y + e.miny - 1 <= :py + :mxy
+  IF (EXISTS (SELECT 1 FROM ents e WHERE e.solid = 1 AND e.id <> :eid                 -- (an item's box 15 wider across: FL_ITEM)
+                AND e.x + e.maxx + IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) >= :px + :mnx AND e.x + e.minx - IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) <= :px + :mxx
+                AND e.y + e.maxy + IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) >= :py + :mny AND e.y + e.miny - IIF(e.classname LIKE 'item%' OR e.classname LIKE 'weapon%' OR e.classname = 'backpack', 15, 1) <= :py + :mxy
                 AND e.z + e.maxz + 1 >= :pz + :mnz AND e.z + e.minz - 1 <= :pz + :mxz)
       OR EXISTS (SELECT 1 FROM ents c WHERE c.classname = 'path_corner'          -- (a corner: '-8 -8 -8' to '8 8 8', t_movetarget)
                 AND c.x + 9 >= :px + :mnx AND c.x - 9 <= :px + :mxx AND c.y + 9 >= :py + :mny AND c.y - 9 <= :py + :mxy

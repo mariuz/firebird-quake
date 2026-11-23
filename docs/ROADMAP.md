@@ -554,11 +554,12 @@ to the same behaviour, with a test of its own:
   - **QuakeC mode** had reused a freed edict at once; it keeps `ED_Alloc`'s half second now too (`qc_edicts.freetime`).
   - **The order**: one spawned below the edict whose think made it (`RUN_EDICT`) sits out this frame's move
     (`hold_tic`): a scrag's spike, a lava fireball.
-- ~~**Random play in both games**~~ done (`WALKS` in `npm run test:levelparity`: E1M1 1000 tics, E1M2 to E1M6 600
+- ~~**Random play in both games**~~ done (`WALKS` in `npm run test:levelparity`: E1M1 1000 tics, E1M2 to E1M8 600
   each): the player driven by inputs drawn from a seed (an action held 10 to 29 tics: forward or back, a strafe, a turn,
   the fire button and jumps at random), wandering, shooting, picking things up, opening doors and waking what it meets,
-  the player, every monster and the edicts compared every tic. Of 48 seeds over E1M1 to E1M6 (eight a level, 1000
-  tics each), 42 hold to the end; the six that part all part on `ogre_smash12` (below). What it found:
+  the player, every monster and the edicts compared every tic. Of 88 seeds over E1M1 to E1M8 (eight a level, four
+  more on E1M1 to E1M6; 1000 tics each), 77 hold to the end; the eleven that part all part on `ogre_smash12` (below).
+  What it found:
   - **A shot exactly 0.5 s on**: the player's `attack_finished` counted from the frame's end, which rounds its own way;
     it counts from the frame's start (`sv_time`) as QuakeC's `time` does.
   - **The view's yaw** is not wrapped (`anglemod`): QuakeC mode's `v_angle` adds up, and `cos(339°)` is not `cos(-21°)`
@@ -605,9 +606,23 @@ to the same behaviour, with a test of its own:
     every frame (`CheckPowerups`), to the frame it runs out in.
   - **No PSQL shortcut**: a monster chasing from far off and out of sight thought every 0.3 s with a triple stride;
     it thinks every 0.1 s as QuakeC's does.
+  - **The pushers in the edict loop**: a door moves in its turn among the edicts, so one a monster opens in its think
+    moves that frame if it comes after it (E1M8's floor that slides out from under an ogre); an idle pusher's ltime
+    runs on after the loop, or at once when something sets it moving after its turn has passed. The level's second
+    frame relinks each edict with its touches in its turn too (`force_retouch`), not all before the loop.
+  - **A monster is not there to hurt before its first think** (`walkmonster_start_go` gives `takedamage`), which
+    comes after the player's in the first frame: a shot then neither hits nor aims at it. Autoaim takes solid targets
+    in edict order.
+  - **A door's `lip` and `wait` of 0** mean 8 and 3 (`if (!self.lip)`), a map's explicit 0 too.
+  - **Chthon** loops his missile frames once risen and after a shock (`boss_missile1` to 23, `boss_face` on each,
+    which always draws; a lava ball on 9 and 20 from his side, `launch_spike`'s flying missile with the rocket's
+    touch), and idles once the player is dead; the PSQL game had walked him between attacks.
+  - **`army_fire`** faces the enemy again after `army_atk5` has (two turns that frame); a **drowned player** lets out
+    twenty bubbles (the pak's `DeathSound`); a body with a water level of -1 is dragged (`!self.waterlevel`); an
+    item met by a monster's step counts by its box 15 wider across, as `SV_LinkEdict` links it.
   Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
-  `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7 and 8, where the
-  ogres smash often, and E1M6's seed 8 part on it).
+  `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7, 8, 10 and 12,
+  where the ogres smash often, E1M3's 9 and 12, E1M6's 8 and 12).
 
 ## Performance
 
