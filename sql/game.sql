@@ -439,6 +439,11 @@ AS
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE lt DOUBLE PRECISION;
 DECLARE len DOUBLE PRECISION; DECLARE tt DOUBLE PRECISION;
 BEGIN
+  -- (set moving after its turn in this frame's SV_Physics has passed: its ltime ran on then, as an idle pusher's does)
+  IF (RDB$GET_CONTEXT('USER_TRANSACTION', 'PHYS_KE') IS NOT NULL) THEN
+    UPDATE ents e SET e.ltime = e.ltime + 0.05e0, e.phys_tic = (SELECT g.tic FROM game g WHERE g.id = 1)
+     WHERE e.id = :eid AND e.movetype = 7 AND COALESCE(e.edict, 2147483647) < CAST(RDB$GET_CONTEXT('USER_TRANSACTION', 'PHYS_KE') AS INTEGER)
+       AND e.phys_tic IS DISTINCT FROM (SELECT g.tic FROM game g WHERE g.id = 1);
   SELECT e.x, e.y, e.z, e.ltime FROM ents e WHERE e.id = :eid INTO px, py, pz, lt;
   len = vlen(tx - px, ty - py, tz - pz);
   IF (spd <= 0) THEN spd = 100;

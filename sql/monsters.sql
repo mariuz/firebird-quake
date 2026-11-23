@@ -1139,6 +1139,77 @@ BEGIN
   RETURN 0;
 END^
 
+-- boss_face: a new enemy if the one it has is dead, or one time in fifty (random() drawn either way: QCC evaluates
+-- both sides of the ||; in single player the find comes back to the player), then ai_face
+CREATE OR ALTER PROCEDURE boss_face (eid INTEGER)
+AS
+DECLARE r DOUBLE PRECISION; DECLARE en INTEGER;
+BEGIN
+  r = rnd();
+  SELECT e.enemy_id FROM ents e WHERE e.id = :eid INTO en;
+  IF (NOT EXISTS (SELECT 1 FROM ents p WHERE p.id = :en AND p.health > 0) OR r < 0.02e0) THEN
+  BEGIN
+    en = (SELECT FIRST 1 p.id FROM ents p WHERE p.classname = 'player');
+    UPDATE ents e SET e.enemy_id = :en WHERE e.id = :eid;
+  END
+  IF (en IS NULL) THEN EXIT;
+  UPDATE ents e SET e.ideal_yaw = vectoyaw((SELECT p.x FROM ents p WHERE p.id = :en) - e.x, (SELECT p.y FROM ents p WHERE p.id = :en) - e.y) WHERE e.id = :eid;
+  EXECUTE PROCEDURE change_yaw(eid);
+END^
+
+-- boss_missile(p): a lava ball from p (forward, right, up) of the line to the enemy (makevectors of vectoangles, its
+-- pitch the wrong way round as Quake's is), at the enemy (where it will be, leading it, above normal skill), 300 a
+-- second, launch_spike's flying missile with the rocket's touch, gone after 6 s; then, the enemy dead, boss_idle1
+CREATE OR ALTER PROCEDURE boss_missile (eid INTEGER, px DOUBLE PRECISION, py DOUBLE PRECISION, pz DOUBLE PRECISION)
+AS
+DECLARE en INTEGER; DECLARE x DOUBLE PRECISION; DECLARE y DOUBLE PRECISION; DECLARE z DOUBLE PRECISION;
+DECLARE ex DOUBLE PRECISION; DECLARE ey DOUBLE PRECISION; DECLARE ez DOUBLE PRECISION; DECLARE evx DOUBLE PRECISION; DECLARE evy DOUBLE PRECISION;
+DECLARE yw DOUBLE PRECISION; DECLARE pt DOUBLE PRECISION; DECLARE ox DOUBLE PRECISION; DECLARE oy DOUBLE PRECISION; DECLARE oz DOUBLE PRECISION;
+DECLARE dx DOUBLE PRECISION; DECLARE dy DOUBLE PRECISION; DECLARE dz DOUBLE PRECISION; DECLARE tl DOUBLE PRECISION; DECLARE s INTEGER;
+BEGIN
+  SELECT e.enemy_id, e.x, e.y, e.z FROM ents e WHERE e.id = :eid INTO en, x, y, z;
+  SELECT p.x, p.y, p.z, p.vx, p.vy FROM ents p WHERE p.id = :en INTO ex, ey, ez, evx, evy;
+  IF (ex IS NULL) THEN BEGIN ex = 0; ey = 0; ez = 0; evx = 0; evy = 0; END
+  yw = ATAN2(ey - y, ex - x);
+  pt = -ATAN2(ez - z, vlen(ex - x, ey - y, 0));                 -- (makevectors takes vectoangles' pitch as down)
+  ox = x + px * COS(pt) * COS(yw) + py * SIN(yw);
+  oy = y + px * COS(pt) * SIN(yw) - py * COS(yw);
+  oz = z - px * SIN(pt) + pz;
+  IF ((SELECT g.skill FROM game g WHERE g.id = 1) > 1) THEN
+  BEGIN
+    tl = vlen(ex - ox, ey - oy, ez - oz) / 300;
+    ex = ex + tl * evx; ey = ey + tl * evy;
+  END
+  dx = ex - ox; dy = ey - oy; dz = ez - oz;
+  IF (vlen(dx, dy, dz) > 0) THEN
+  BEGIN
+    EXECUTE PROCEDURE launch_rocket(eid, ox, oy, oz, dx, dy, dz, 300, 0, 'progs/lavaball.mdl');
+    SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid INTO s;
+    UPDATE ents e SET e.effects = 0, e.avel_yaw = 100, e.nextthink = think_base() + 6 WHERE e.id = :s;   -- (T_MissileTouch: a rocket's touch)
+  END
+  EXECUTE PROCEDURE snd(eid, 1, 'boss1/throw.wav', 1, 1);
+  IF (NOT EXISTS (SELECT 1 FROM ents p WHERE p.id = :en AND p.health > 0)) THEN
+  BEGIN
+    UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;
+    EXECUTE PROCEDURE set_anim(eid, 'walk');
+  END
+END^
+
+-- Chthon's frames once risen: boss_missile1..23 round and round (boss_face each, the throws on 9 and 20), and once
+-- the enemy is dead boss_idle1..31 (boss_face from idle2 on)
+CREATE OR ALTER PROCEDURE boss_frame (eid INTEGER)
+AS
+DECLARE st VARCHAR(12); DECLARE af INTEGER; DECLARE ff INTEGER; DECLARE fc INTEGER; DECLARE anim VARCHAR(16);
+BEGIN
+  SELECT e.st, e.anim, e.anim_frame FROM ents e WHERE e.id = :eid INTO st, anim, af;
+  SELECT a.first_frame, a.frame_count FROM anims a JOIN ents e ON e.model_id = a.model_id WHERE e.id = :eid AND a.anim = :anim INTO ff, fc;
+  af = MOD(af + 1, fc);
+  UPDATE ents e SET e.anim_frame = :af, e.frame = :ff + :af WHERE e.id = :eid;
+  IF (st = 'missile' AND af = 8) THEN EXECUTE PROCEDURE boss_missile(eid, 100, 100, 200);
+  ELSE IF (st = 'missile' AND af = 19) THEN EXECUTE PROCEDURE boss_missile(eid, 100, -100, 200);
+  ELSE IF (st = 'missile' OR af <> 0) THEN EXECUTE PROCEDURE boss_face(eid);
+END^
+
 CREATE OR ALTER PROCEDURE monster_think (eid INTEGER)
 AS
 DECLARE st VARCHAR(12); DECLARE anim VARCHAR(16); DECLARE af INTEGER; DECLARE mid INTEGER; DECLARE enemy INTEGER; DECLARE flags INTEGER;
@@ -1163,7 +1234,7 @@ BEGIN
   IF (EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid AND e.nextthink = 0 AND e.st <> 'cruc')) THEN   -- (zombie_cruc1 draws nothing)
   BEGIN
     -- (flymonster_start_go, swimmonster_start_go: FL_FLY or FL_SWIM from now)
-    UPDATE ents e SET e.nextthink = -1, e.flags = BIN_OR(e.flags, (SELECT BIN_AND(t.flags, 3) FROM monster_types t WHERE t.name = e.mtype)) WHERE e.id = :eid;
+    UPDATE ents e SET e.nextthink = -1, e.takedamage = 2, e.flags = BIN_OR(e.flags, (SELECT BIN_AND(t.flags, 3) FROM monster_types t WHERE t.name = e.mtype)) WHERE e.id = :eid;
     -- (walkmonster_start_go and flymonster_start_go try walkmove(0, 0), which settles a walker within a step of where
     -- it dropped: onto a ledge under part of its box; "in wall" when it fails, and nothing else)
     IF (BIN_AND((SELECT t.flags FROM monster_types t WHERE t.name = :mt), 2) = 0) THEN ctx = move_step(eid, 0, 0, 0);
@@ -1214,7 +1285,7 @@ BEGIN
 
   -- the enemy died? (seen by ai_run, ai_walk, ai_stand: an attack's frames, ai_face and ai_charge, play on to its end,
   -- and a pain's, which look at no enemy: th_run's first frame sees it after)
-  IF ((enemy IS NOT NULL AND st NOT IN ('melee', 'missile', 'pain')) OR (enemy IS NULL AND st = 'run')) THEN
+  IF (mt <> 'boss' AND ((enemy IS NOT NULL AND st NOT IN ('melee', 'missile', 'pain')) OR (enemy IS NULL AND st = 'run'))) THEN
   BEGIN
     SELECT e.health FROM ents e WHERE e.id = :enemy INTO ehp;
     IF (ehp IS NULL OR ehp <= 0) THEN
@@ -1320,8 +1391,10 @@ BEGIN
       af = 0;
       IF (st = 'rise') THEN
       BEGIN
-        UPDATE ents e SET e.st = 'run', e.takedamage = 0 WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, run_a);
+        -- boss_rise17's next think is boss_missile1: its frame now, with its boss_face
+        UPDATE ents e SET e.st = 'missile', e.takedamage = 0 WHERE e.id = :eid;
+        EXECUTE PROCEDURE set_anim(eid, 'attack');
+        EXECUTE PROCEDURE boss_face(eid);
         EXIT;
       END
     END
@@ -1330,6 +1403,11 @@ BEGIN
     EXIT;
   END
 
+  IF (mt = 'boss' AND st IN ('run', 'missile')) THEN
+  BEGIN
+    EXECUTE PROCEDURE boss_frame(eid);
+    EXIT;
+  END
   IF (st = 'run') THEN
   BEGIN
     -- the run frame's function: its frame first (OP_STATE), the idle sound some draw before ai_run, ai_run, and the one
@@ -1508,8 +1586,10 @@ BEGIN
     BEGIN
       IF (mt = 'boss') THEN
       BEGIN
-        UPDATE ents e SET e.st = 'run' WHERE e.id = :eid;
-        EXECUTE PROCEDURE set_anim(eid, 'walk');
+        -- boss_shocka10 (b, c) goes on to boss_missile1
+        UPDATE ents e SET e.st = 'missile' WHERE e.id = :eid;
+        EXECUTE PROCEDURE set_anim(eid, 'attack');
+        EXECUTE PROCEDURE boss_face(eid);
         EXIT;
       END
       -- the last pain frame goes on into th_run (army_pain6 → army_run1): run1 comes now, with its think; the
@@ -1709,39 +1789,45 @@ BEGIN
   END
 END^
 
-CREATE OR ALTER PROCEDURE run_pushers (dt DOUBLE PRECISION)
+-- SV_Physics_Pusher for one pusher: its move by ltime (to mv_time, then SUB_CalcMoveDone's think), or its think due
+-- by ltime; run in its turn in run_physics' edict order
+CREATE OR ALTER PROCEDURE push_one (eid INTEGER, dt DOUBLE PRECISION)
 AS
-DECLARE eid INTEGER; DECLARE lt DOUBLE PRECISION; DECLARE mvt DOUBLE PRECISION; DECLARE done VARCHAR(24); DECLARE movetime DOUBLE PRECISION;
+DECLARE lt DOUBLE PRECISION; DECLARE mvt DOUBLE PRECISION; DECLARE done VARCHAR(24); DECLARE movetime DOUBLE PRECISION;
 DECLARE tx DOUBLE PRECISION; DECLARE ty DOUBLE PRECISION; DECLARE tz DOUBLE PRECISION; DECLARE think VARCHAR(24); DECLARE nt DOUBLE PRECISION;
 BEGIN
-  -- (in edict order, as SV_Physics: a button that reaches its place uses a door it comes after the next frame)
-  FOR SELECT e.id FROM ents e WHERE e.movetype = 7 ORDER BY e.edict, e.id INTO eid DO
+  SELECT e.ltime, e.mv_time, e.mv_done, e.dstx, e.dsty, e.dstz, e.think, e.nextthink FROM ents e WHERE e.id = :eid INTO lt, mvt, done, tx, ty, tz, think, nt;
+  IF (mvt IS NOT NULL) THEN
   BEGIN
-    SELECT e.ltime, e.mv_time, e.mv_done, e.dstx, e.dsty, e.dstz, e.think, e.nextthink FROM ents e WHERE e.id = :eid INTO lt, mvt, done, tx, ty, tz, think, nt;
-    IF (mvt IS NOT NULL) THEN
+    movetime = MINVALUE(dt, MAXVALUE(0, mvt - lt));
+    IF (movetime > 0) THEN EXECUTE PROCEDURE push_move(eid, movetime);
+    ELSE UPDATE ents e SET e.ltime = e.ltime + :dt WHERE e.id = :eid;
+    SELECT e.ltime, e.mv_time FROM ents e WHERE e.id = :eid INTO lt, mvt;
+    IF (mvt IS NOT NULL AND lt >= mvt - 1e-6) THEN
     BEGIN
-      movetime = MINVALUE(dt, MAXVALUE(0, mvt - lt));
-      IF (movetime > 0) THEN EXECUTE PROCEDURE push_move(eid, movetime);
-      ELSE UPDATE ents e SET e.ltime = e.ltime + :dt WHERE e.id = :eid;
-      SELECT e.ltime, e.mv_time FROM ents e WHERE e.id = :eid INTO lt, mvt;
-      IF (mvt IS NOT NULL AND lt >= mvt - 1e-6) THEN
-      BEGIN
-        -- SUB_CalcMoveDone: snap to the destination and run the think
-        UPDATE ents e SET e.x = :tx, e.y = :ty, e.z = :tz, e.vx = 0, e.vy = 0, e.vz = 0, e.mv_time = NULL, e.mv_done = NULL WHERE e.id = :eid;
-        EXECUTE PROCEDURE link_ent(eid);
-        EXECUTE PROCEDURE run_think(eid, done);
-      END
-    END
-    ELSE
-    BEGIN
-      UPDATE ents e SET e.ltime = e.ltime + :dt WHERE e.id = :eid;
-      IF (think IS NOT NULL AND nt IS NOT NULL AND nt <= lt + dt + 1e-6) THEN
-      BEGIN
-        UPDATE ents e SET e.think = NULL, e.nextthink = NULL WHERE e.id = :eid;
-        EXECUTE PROCEDURE run_think(eid, think);
-      END
+      -- SUB_CalcMoveDone: snap to the destination and run the think
+      UPDATE ents e SET e.x = :tx, e.y = :ty, e.z = :tz, e.vx = 0, e.vy = 0, e.vz = 0, e.mv_time = NULL, e.mv_done = NULL WHERE e.id = :eid;
+      EXECUTE PROCEDURE link_ent(eid);
+      EXECUTE PROCEDURE run_think(eid, done);
     END
   END
+  ELSE
+  BEGIN
+    UPDATE ents e SET e.ltime = e.ltime + :dt WHERE e.id = :eid;
+    IF (think IS NOT NULL AND nt IS NOT NULL AND nt <= lt + dt + 1e-6) THEN
+    BEGIN
+      UPDATE ents e SET e.think = NULL, e.nextthink = NULL WHERE e.id = :eid;
+      EXECUTE PROCEDURE run_think(eid, think);
+    END
+  END
+END^
+
+CREATE OR ALTER PROCEDURE run_pushers (dt DOUBLE PRECISION)
+AS
+DECLARE eid INTEGER;
+BEGIN
+  FOR SELECT e.id FROM ents e WHERE e.movetype = 7 ORDER BY e.edict, e.id INTO eid DO
+    EXECUTE PROCEDURE push_one(eid, dt);
 END^
 
 -- dispatch a think by name
@@ -1802,7 +1888,7 @@ DECLARE flags INTEGER; DECLARE cls VARCHAR(40); DECLARE wl SMALLINT; DECLARE wt 
 DECLARE px DOUBLE PRECISION; DECLARE py DOUBLE PRECISION; DECLARE pz DOUBLE PRECISION; DECLARE tid INTEGER; DECLARE tcls VARCHAR(40);
 DECLARE tdm INTEGER;
 DECLARE fwx DOUBLE PRECISION; DECLARE fwy DOUBLE PRECISION; DECLARE hitsound SMALLINT; DECLARE ctx INTEGER; DECLARE lag VARCHAR(255);
-DECLARE ke INTEGER; DECLARE ki INTEGER;
+DECLARE ke INTEGER; DECLARE ki INTEGER; DECLARE tic INTEGER;
 BEGIN
   t = now_();
   pe = player_ent();
@@ -1817,27 +1903,46 @@ BEGIN
            AND (d.targetname IS NULL OR d.targetname = '') AND d.items = 0 AND d.max_health = 0
          ORDER BY d.edict INTO eid DO
       eid = ed_alloc();
-    FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 32) <> 0 AND e.health > 0 ORDER BY e.id INTO eid DO
-      EXECUTE PROCEDURE monster_touch_triggers(eid);
   END
   -- SV_Physics: each edict in turn, in edict order (what has none of QuakeC's after), its movetype's physics: a monster
   -- not on the ground falls before its think (SV_Physics_Step), a missile and what tosses or bounces moves after it
   -- (SV_Physics_Toss), a bubble drifts after it (SV_Physics_Noclip); so what one edict's think or move does is there for
   -- the next ones (a spike that hits a knight before a scrag thinks draws the knight's pain before the scrag's chase),
   -- and an entity spawned on the way takes its turn this frame if its edict comes later, the next frame if earlier
+  -- (the pushers among them, SV_Physics_Pusher: those moving or with a think coming; an idle one's ltime runs on after
+  -- the loop, or when something sets it moving after its turn has passed: calc_move, by PHYS_KE)
+  SELECT g.tic FROM game g WHERE g.id = 1 INTO tic;
   ke = -1; ki = -1;
   WHILE (1 = 1) DO
   BEGIN
     eid = NULL;
     SELECT FIRST 1 e.id, COALESCE(e.edict, 2147483647), e.movetype, e.flags, e.think, e.nextthink FROM ents e
-     WHERE (COALESCE(e.edict, 2147483647) > :ke OR (COALESCE(e.edict, 2147483647) = :ke AND e.id > :ki)) AND e.movetype <> 7
+     WHERE (COALESCE(e.edict, 2147483647) > :ke OR (COALESCE(e.edict, 2147483647) = :ke AND e.id > :ki))
+       AND ((e.movetype <> 7
        AND ((e.nextthink IS NOT NULL AND e.nextthink <= :t + 1e-6 AND e.think IS NOT NULL)
             OR (e.movetype IN (4, 5) AND BIN_AND(e.flags, 512 + 1 + 2) = 0)
             OR (e.movetype IN (6, 9, 10) AND (BIN_AND(e.flags, 512) = 0 OR e.movetype = 9))
-            OR e.movetype = 8)
+            OR e.movetype = 8))
+        OR (e.movetype = 7 AND e.phys_tic IS DISTINCT FROM :tic AND (e.mv_time IS NOT NULL OR (e.think IS NOT NULL AND e.nextthink IS NOT NULL)))
+        OR (:tic = 2 AND BIN_AND(e.flags, 32) <> 0 AND e.health > 0))
      ORDER BY COALESCE(e.edict, 2147483647), e.id INTO eid, ke, mt, flags, think, nt;
     IF (eid IS NULL) THEN LEAVE;
     ki = eid;
+    ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'PHYS_KE', ke);
+    -- (force_retouch, the level's second frame: each edict linked again with its touches in its turn, before its
+    -- physics: a monster standing in a door's trigger field opens the door, which moves this frame if it comes after)
+    IF (tic = 2 AND BIN_AND(flags, 32) <> 0) THEN
+    BEGIN
+      EXECUTE PROCEDURE monster_touch_triggers(eid);
+      IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN CONTINUE;
+      SELECT e.flags, e.think, e.nextthink FROM ents e WHERE e.id = :eid INTO flags, think, nt;
+    END
+    IF (mt = 7) THEN
+    BEGIN
+      EXECUTE PROCEDURE push_one(eid, dt);
+      UPDATE ents e SET e.phys_tic = :tic WHERE e.id = :eid;
+      CONTINUE;
+    END
     -- SV_Physics_Step, its first half: a monster that is not on the ground falls, before its think (a leap set by a
     -- think flies from the next frame); landing from a real fall (faster than a tenth of gravity) thuds. At the frame's
     -- start (sv.time), so the clock is put back a tic for it: what it touches happens then (a dog's leap bites at that
@@ -1892,6 +1997,9 @@ BEGIN
       EXECUTE PROCEDURE link_ent(eid);
     END
   END
+  ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'PHYS_KE', NULL);
+  -- the idle pushers' ltime, as SV_Physics_Pusher runs it on each frame
+  UPDATE ents e SET e.ltime = e.ltime + :dt, e.phys_tic = :tic WHERE e.movetype = 7 AND e.phys_tic IS DISTINCT FROM :tic;
   -- monsters touching teleporters / monster jumps
   FOR SELECT m.id, m.x, m.y, m.z FROM ents m WHERE BIN_AND(m.flags, 32) <> 0 AND m.health > 0 AND m.st IN ('run', 'walk') INTO eid, px, py, pz DO
   BEGIN
@@ -1958,7 +2066,6 @@ BEGIN
     -- scheduled for another entity's think counts from QuakeC's time, think_base())
     ctx = RDB$SET_CONTEXT('USER_TRANSACTION', 'CLOCK_LAG', 0.05e0);
     EXECUTE PROCEDURE player_think(0.05e0, fwd, side, yaw_d / tics, pitch_d / tics, fire, jump, run, IIF(i = 0, imp, 0));
-    EXECUTE PROCEDURE run_pushers(0.05e0);
     EXECUTE PROCEDURE run_physics(0.05e0);
     i = i + 1;
   END

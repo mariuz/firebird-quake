@@ -129,7 +129,7 @@ BEGIN
   IF (hit > 0 AND EXISTS (SELECT 1 FROM ents d WHERE d.id = :hit AND d.takedamage = 2)) THEN BEGIN SUSPEND; EXIT; END
   best = 0.93e0; bent = 0;
   FOR SELECT d.id, d.x + (d.minx + d.maxx) * 0.5e0, d.y + (d.miny + d.maxy) * 0.5e0, d.z + (d.minz + d.maxz) * 0.5e0 FROM ents d
-       WHERE d.id <> :e AND d.takedamage = 2 ORDER BY d.id INTO c, bx, by_, bz DO
+       WHERE d.id <> :e AND d.takedamage = 2 AND d.solid <> 0 ORDER BY d.edict, d.id INTO c, bx, by_, bz DO
   BEGIN
     mv = SQRT((bx - x) * (bx - x) + (by_ - y) * (by_ - y) + (bz - z) * (bz - z));
     IF (mv = 0) THEN CONTINUE;

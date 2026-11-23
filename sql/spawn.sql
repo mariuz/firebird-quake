@@ -121,8 +121,8 @@ BEGIN
       ELSE BEGIN n1 = 'doors/ddoor2.wav'; n2 = 'doors/ddoor1.wav'; END
       EXECUTE PROCEDURE movedir(COALESCE(ang, 0)) RETURNING_VALUES dx, dy, dz;
       IF (spd IS NULL OR spd = 0) THEN spd = 100;
-      IF (wt IS NULL) THEN wt = 3;
-      IF (lip IS NULL) THEN lip = 8;
+      IF (wt IS NULL OR wt = 0) THEN wt = 3;
+      IF (lip IS NULL OR lip = 0) THEN lip = 8;                 -- (func_door: if (!self.lip) self.lip = 8, a map's lip 0 too)
       IF (dmg IS NULL OR dmg = 0) THEN dmg = 2;
       dist = ABS(dx * sx + dy * sy + dz * sz) - lip;
       items = IIF(BIN_AND(sf, 16) <> 0, 131072, 0) + IIF(BIN_AND(sf, 8) <> 0, 262144, 0);
@@ -277,7 +277,9 @@ BEGIN
         INTO mmodel, mhp, mhull, mmaxz, mflags, mys, stand;
       IF (mmodel IS NULL) THEN BEGIN DELETE FROM ents e WHERE e.id = :eid; CONTINUE; END
       EXECUTE PROCEDURE set_model(eid, mmodel);
-      UPDATE ents e SET e.mtype = :mname, e.health = :mhp, e.max_health = :mhp, e.solid = 3, e.takedamage = 2,
+      -- (takedamage only from walkmonster_start_go, the first think: a shot in the first frame, the player's think
+      -- coming before the monster's, neither aims at it nor hurts it)
+      UPDATE ents e SET e.mtype = :mname, e.health = :mhp, e.max_health = :mhp, e.solid = 3, e.takedamage = 0,
              e.movetype = IIF(BIN_AND(:mflags, 3) <> 0, 5, 4), e.flags = BIN_OR(32, :mflags), e.yaw_speed = :mys,
              e.minx = IIF(:mhull = 2, -32, -16), e.miny = IIF(:mhull = 2, -32, -16), e.minz = -24,
              e.maxx = IIF(:mhull = 2, 32, 16), e.maxy = IIF(:mhull = 2, 32, 16), e.maxz = :mmaxz,
