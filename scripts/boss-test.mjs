@@ -67,6 +67,8 @@ assert(b.ST === 'rise' && b.MODEL_ID !== null, 'the rune wakes Chthon: he rises'
 assert((await sounds('boss1/sight1.wav')) > 0 && (await sounds('boss1/out1.wav')) > 0, 'his roar and the lava splash were heard');
 
 // ── 3. he throws lava at the player ─────────────────────────────────────
+// (in god mode: a lava ball is a rocket's blast, 100 and more, and the staging needs the player standing)
+await db.query("SELECT msg FROM host_cmd('god', '', '')");
 await teleport(-300, 64, 56, 0);    // the far side of the room, facing him
 s = await run(45);
 b = await boss();
@@ -74,14 +76,14 @@ assert(b.ST !== 'rise' && b.ST !== 'asleep', `after rising he fights (state ${b.
 let lava = 0;
 for (let i = 0; i < 160 && lava === 0; i++) {
   s = await tic();
-  lava = (await q1("SELECT COUNT(*) n FROM ents WHERE classname = 'lavaball'")).N;
+  lava = (await q1("SELECT COUNT(*) n FROM ents e JOIN models m ON m.id = e.model_id WHERE m.name = 'progs/lavaball.mdl'")).N;
 }
 assert(lava > 0, 'Chthon threw a lava ball');
 assert((await sounds('boss1/throw.wav')) > 0, 'the throw was heard');
 assert((await q1(`SELECT takedamage t FROM ents WHERE classname = 'monster_boss'`)).T === 0, 'weapons cannot hurt him');
-// the lava ball must eventually explode (fx 7) and vanish; events are kept for two seconds, so look each tic
+// the lava ball must eventually explode (a rocket's blast, fx 2) and vanish; events are kept for two seconds, so look each tic
 let burst = false;
-for (let i = 0; i < 160 && !burst; i++) { s = await tic(); burst = (await q1('SELECT COUNT(*) n FROM fx_events WHERE kind = 7')).N > 0; }
+for (let i = 0; i < 160 && !burst; i++) { s = await tic(); burst = (await q1('SELECT COUNT(*) n FROM fx_events WHERE kind IN (2, 7)')).N > 0; }
 assert(burst, 'a lava ball exploded');
 
 // ── 4. raise both terminals with their floor buttons ────────────────────
