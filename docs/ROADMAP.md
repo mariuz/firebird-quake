@@ -471,7 +471,7 @@ to the same behaviour, with a test of its own:
   touches its corner, else stands.
 - ~~**Air bubbles**~~ done: the PSQL game had none (`air_bubbles` was skipped at spawn, no `DeathBubbles`), where
   QuakeC's `bubble_bob` draws three randoms a bubble every 0.5 s. Now `air_bubbles` lets out a bubble every 0.5 to
-  1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water five; a bubble
+  1.5 s (`make_bubbles`), a pain under water one (`DeathBubbles(1)`), a death under water twenty (`DeathSound`); a bubble
   (`s_bubble.spr`, `MOVETYPE_NOCLIP`) bobs up, splits on its fourth bob (the first then gone: nothing works out a
   noclip thing's water level) and ends on its twentieth, as `misc.qc` has it. The monster duels play in the water
   again (the zombie's, in E1M3's flooded hall), and a new one sets E1M4's two bubble makers going on the same tic in

@@ -64,7 +64,7 @@ BEGIN
   IF (cls = 'player') THEN
   BEGIN
     -- PlayerDie: tossed up by random() × 300 unless already rising; below -40 GibPlayer (the head and three gibs,
-    -- gib or udeath on random() < 0.5); else DeathSound (under water five bubbles and h2odeath, else death1 to death5
+    -- gib or udeath on random() < 0.5); else DeathSound (under water twenty bubbles and h2odeath, else death1 to death5
     -- by rint(random() × 4 + 1)), then the death: axdeth with the axe in hand, else 1 + floor(random() × 6) picks
     -- deatha to deathd, or deathe for 5 and 6
     SELECT e.vz, e.waterlevel, p.weapon FROM ents e CROSS JOIN player p WHERE e.id = :targ AND p.id = 1 INTO vz, wl, w;
@@ -84,7 +84,7 @@ BEGIN
     END
     IF (wl = 3) THEN
     BEGIN
-      EXECUTE PROCEDURE death_bubbles(targ, 5);
+      EXECUTE PROCEDURE death_bubbles(targ, 20);
       EXECUTE PROCEDURE snd(targ, 2, 'player/h2odeath.wav', 1, 0);
     END
     ELSE EXECUTE PROCEDURE snd(targ, 2, 'player/death' || CAST(ROUND(rnd() * 4 + 1) AS INTEGER) || '.wav', 1, 1);

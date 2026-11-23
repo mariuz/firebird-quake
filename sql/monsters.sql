@@ -441,6 +441,9 @@ BEGIN
   IF (x2 IS NULL) THEN EXIT;
   IF (mk = 'shotgun') THEN
   BEGIN
+    -- army_fire's own ai_face first (army_atk5 has faced once already)
+    UPDATE ents e SET e.ideal_yaw = vectoyaw(:x2 - e.x, :y2 - e.y) WHERE e.id = :eid;
+    EXECUTE PROCEDURE change_yaw(eid);
     EXECUTE PROCEDURE snd(eid, 1, asnd, 1, 1);
     -- army_fire: at the enemy's origin less 0.2 s of its velocity (harder to hit dodging), from the grunt's origin
     dx = x2 - evx * 0.2e0 - x1; dy = y2 - evy * 0.2e0 - y1; dz = z2 - evz * 0.2e0 - z1; dl = vlen(dx, dy, dz);

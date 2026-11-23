@@ -683,7 +683,7 @@ BEGIN
      WHERE p.id = 1 RETURNING p.pitch, p.dead_yaw INTO pitch, yaw;
     EXECUTE PROCEDURE mv_set(pitch, yaw);
     -- (WaterMove leaves only below 0 health: a body killed at exactly 0 still feels the water's drag)
-    IF (hp = 0 AND wl > 0 AND BIN_AND(flags, 2048) = 0) THEN
+    IF (hp = 0 AND wl <> 0 AND BIN_AND(flags, 2048) = 0) THEN            -- (!self.waterlevel: -1 too)
       UPDATE ents e SET e.vx = e.vx - 0.8e0 * :wl * :dt * e.vx, e.vy = e.vy - 0.8e0 * :wl * :dt * e.vy, e.vz = e.vz - 0.8e0 * :wl * :dt * e.vz WHERE e.id = :pe;
     EXECUTE PROCEDURE toss_move(pe, dt);
     IF (t > deadt + 1.5e0 AND (fire = 1 OR jump = 1)) THEN
