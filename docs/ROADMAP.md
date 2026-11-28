@@ -630,8 +630,8 @@ to the same behaviour, with a test of its own:
     of the level; **the player's walk** touches triggers at each push (`SV_PushEntity`: the step up reaches a health
     pack the move ends below); **a body** keeps the player's box (`PlayerDie` sets no size); **a trigger** waiting
     out its `wait` is checked against QuakeC's time, not the frame's end; **ammo picked up** changes weapon only when
-    the one in hand was the best (`ammo_touch`), not from the axe. Of 42 armed seeds over E1M1 and E1M3 to E1M8,
-    every one that parts after these does so on `ogre_smash12`. Not yet compared: the level's monsters fighting each
+    the one in hand was the best (`ammo_touch`), not from the axe. Of 42 armed seeds over E1M1 and E1M3 to E1M8
+    (1000 tics each), 37 hold to the end; the five that part do so on `ogre_smash12`. Not yet compared: the level's monsters fighting each
     other at length, and the thunderbolt under water.
   Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
   `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7, 8, 10 and 12,
