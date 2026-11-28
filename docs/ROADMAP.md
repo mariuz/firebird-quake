@@ -622,7 +622,10 @@ to the same behaviour, with a test of its own:
     item met by a monster's step counts by its box 15 wider across, as `SV_LinkEdict` links it.
   Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
   `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7, 8, 10 and 12,
-  where the ogres smash often, E1M3's 9 and 12, E1M6's 8 and 12).
+  where the ogres smash often, E1M3's 9 and 12, E1M6's 8 and 12). Logged in QuakeC mode, it was 2, 3 or 5 in those
+  runs: the first argument of whatever call ran last before the ogre's think, mostly another monster's step
+  (`movetogoal(dist)` at the end of `ai_walk`), else an entity (an edict number in this VM). Mirroring it would mean
+  following every call's first argument through the PSQL game's imitation of the frame, so it stays a known gap.
 
 ## Performance
 
