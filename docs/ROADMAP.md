@@ -620,6 +620,19 @@ to the same behaviour, with a test of its own:
   - **`army_fire`** faces the enemy again after `army_atk5` has (two turns that frame); a **drowned player** lets out
     twenty bubbles (the pak's `DeathSound`); a body with a water level of -1 is dragged (`!self.waterlevel`); an
     item met by a monster's step counts by its box 15 wider across, as `SV_LinkEdict` links it.
+  - **Armed** (`ARMED=1` in the sweeps: impulse 9 at the start, a random weapon impulse with three new actions in
+    ten): nails, grenades, rockets and the thunderbolt in play. It found: **impulse 9** is `CheatCommand`'s (every
+    weapon and both keys, 100 shells, 200 nails, 100 rockets, 200 cells, the rocket launcher in hand; no health, no
+    armour, no message); **a shootable secret door** opens through its pain (`fd_secret_use` as `th_pain`: its
+    10000 health never runs out, so the PSQL game never opened it), and cannot be shot while it moves; **nails**
+    leave from the origin 16 up and to the side (`W_FireSpikes`), not 8 forward as rockets do; **items** are placed
+    by `PlaceItem`'s think 0.2 s in, in their turn, not as the level loads, so a rocket in the way then drops one out
+    of the level; **the player's walk** touches triggers at each push (`SV_PushEntity`: the step up reaches a health
+    pack the move ends below); **a body** keeps the player's box (`PlayerDie` sets no size); **a trigger** waiting
+    out its `wait` is checked against QuakeC's time, not the frame's end; **ammo picked up** changes weapon only when
+    the one in hand was the best (`ammo_touch`), not from the axe. Of 42 armed seeds over E1M1 and E1M3 to E1M8,
+    every one that parts after these does so on `ogre_smash12`. Not yet compared: the level's monsters fighting each
+    other at length, and the thunderbolt under water.
   Left: **`ogre_smash12`** calls `ai_charge()` with no argument, so its step is whatever the last call left in
   `OFS_PARM0`; the PSQL game cannot know it without QuakeC's globals (E1M2's seeds 2, 3, 4, 7, 8, 10 and 12,
   where the ogres smash often, E1M3's 9 and 12, E1M6's 8 and 12). Logged in QuakeC mode, it was 2, 3 or 5 in those
