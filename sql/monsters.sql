@@ -1173,8 +1173,9 @@ BEGIN
   SELECT e.enemy_id, e.x, e.y, e.z FROM ents e WHERE e.id = :eid INTO en, x, y, z;
   SELECT p.x, p.y, p.z, p.vx, p.vy FROM ents p WHERE p.id = :en INTO ex, ey, ez, evx, evy;
   IF (ex IS NULL) THEN BEGIN ex = 0; ey = 0; ez = 0; evx = 0; evy = 0; END
-  yw = ATAN2(ey - y, ex - x);
-  pt = -ATAN2(ez - z, vlen(ex - x, ey - y, 0));                 -- (makevectors takes vectoangles' pitch as down)
+  -- vectoangles in whole degrees (PF_vectoangles casts them), its pitch up, which makevectors takes as down
+  yw = TRUNC(ATAN2(ey - y, ex - x) * 180 / PI()) * PI() / 180;
+  pt = TRUNC(ATAN2(ez - z, vlen(ex - x, ey - y, 0)) * 180 / PI()) * PI() / 180;
   ox = x + px * COS(pt) * COS(yw) + py * SIN(yw);
   oy = y + px * COS(pt) * SIN(yw) - py * COS(yw);
   oz = z - px * SIN(pt) + pz;
@@ -1186,7 +1187,7 @@ BEGIN
   dx = ex - ox; dy = ey - oy; dz = ez - oz;
   IF (vlen(dx, dy, dz) > 0) THEN
   BEGIN
-    EXECUTE PROCEDURE launch_rocket(eid, ox, oy, oz, dx, dy, dz, 300, 0, 'progs/lavaball.mdl');
+    EXECUTE PROCEDURE launch_rocket(eid, ox, oy, oz, dx, dy, dz, 300, 100, 'progs/lavaball.mdl');   -- (T_MissileTouch's 100 + 20 random())
     SELECT MAX(r.id) FROM ents r WHERE r.classname = 'rocket' AND r.owner_id = :eid INTO s;
     UPDATE ents e SET e.effects = 0, e.avel_yaw = 100, e.nextthink = think_base() + 6 WHERE e.id = :s;   -- (T_MissileTouch: a rocket's touch)
   END

@@ -29,7 +29,7 @@ AS
 DECLARE cls VARCHAR(40); DECLARE sf INTEGER; DECLARE items INTEGER; DECLARE hp INTEGER; DECLARE mhp INTEGER;
 DECLARE snd_ VARCHAR(64); DECLARE msg VARCHAR(200); DECLARE pitems INTEGER; DECLARE newit INTEGER = 0;
 DECLARE sh INTEGER; DECLARE na INTEGER; DECLARE ro INTEGER; DECLARE ce INTEGER; DECLARE av INTEGER; DECLARE atype DOUBLE PRECISION;
-DECLARE big SMALLINT; DECLARE w INTEGER; DECLARE t DOUBLE PRECISION; DECLARE wt SMALLINT;
+DECLARE big SMALLINT; DECLARE w INTEGER; DECLARE t DOUBLE PRECISION; DECLARE wt SMALLINT; DECLARE onbest SMALLINT;
 BEGIN
   IF (other <> player_ent()) THEN EXIT;
   SELECT e.classname, e.spawnflags, e.ammo_shells, e.ammo_nails, e.ammo_rockets, e.ammo_cells FROM ents e WHERE e.id = :item
@@ -76,6 +76,8 @@ BEGIN
   END
   ELSE IF (cls IN ('item_shells', 'item_spikes', 'item_rockets', 'item_cells')) THEN
   BEGIN
+    -- (ammo_touch: was the player using its best weapon before this?)
+    SELECT IIF(p.weapon = best_weapon(), 1, 0) FROM player p WHERE p.id = 1 INTO onbest;
     IF (cls = 'item_shells') THEN
     BEGIN
       SELECT p.shells FROM player p WHERE p.id = 1 INTO av;
@@ -101,10 +103,12 @@ BEGIN
       UPDATE player p SET p.cells = p.cells + IIF(:big = 1, 12, 6) WHERE p.id = 1; msg = 'You got the cells';
     END
     EXECUTE PROCEDURE bound_ammo;
-    -- switch to a better weapon if the current one is empty
-    SELECT p.weapon FROM player p WHERE p.id = 1 INTO w;
-    IF (w = 4096 OR (w = 1 AND (SELECT p.shells FROM player p WHERE p.id = 1) = 0)) THEN
+    -- the best weapon in hand before stays the best after (a better one now has ammo: up to it), as ammo_touch does
+    IF (onbest = 1) THEN
+    BEGIN
       UPDATE player p SET p.weapon = best_weapon() WHERE p.id = 1;
+      EXECUTE PROCEDURE player_current_ammo;
+    END
   END
   ELSE IF (cls LIKE 'weapon_%') THEN
   BEGIN
