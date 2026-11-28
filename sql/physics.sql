@@ -818,6 +818,9 @@ END^
 CREATE OR ALTER PROCEDURE qc_touch_triggers (e INTEGER) AS BEGIN END^
 
 -- SV_PushEntity: move by a vector, stopping at the first thing hit.
+-- forward declaration (body in weapons.sql): the triggers the player's box is in
+CREATE OR ALTER PROCEDURE player_touch_triggers (pe INTEGER, t DOUBLE PRECISION) AS BEGIN END^
+
 CREATE OR ALTER PROCEDURE push_entity (eid INTEGER, dx DOUBLE PRECISION, dy DOUBLE PRECISION, dz DOUBLE PRECISION)
 RETURNS (fraction DOUBLE PRECISION, nx DOUBLE PRECISION, ny DOUBLE PRECISION, nz DOUBLE PRECISION,
          allsolid SMALLINT, startsolid SMALLINT, hit_ent INTEGER)
@@ -841,6 +844,14 @@ BEGIN
   BEGIN
     EXECUTE PROCEDURE link_ent(eid);
     EXECUTE PROCEDURE qc_touch_triggers(eid);
+    IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN BEGIN SUSPEND; EXIT; END
+  END
+  -- the PSQL game: the player's touches at each push (SV_WalkMove's step up and down too: a health pack within the
+  -- step's reach is taken though the move ends below it)
+  ELSE IF (eid = (SELECT p.ent_id FROM player p WHERE p.id = 1)) THEN
+  BEGIN
+    EXECUTE PROCEDURE link_ent(eid);
+    EXECUTE PROCEDURE player_touch_triggers(eid, (SELECT g.time_ FROM game g WHERE g.id = 1));   -- (now_())
     IF (NOT EXISTS (SELECT 1 FROM ents e WHERE e.id = :eid)) THEN BEGIN SUSPEND; EXIT; END
   END
   IF (fraction < 1) THEN EXECUTE PROCEDURE impact(eid, hit_ent);

@@ -87,7 +87,7 @@ AS
 DECLARE wt DOUBLE PRECISION; DECLARE nt DOUBLE PRECISION; DECLARE cls VARCHAR(40); DECLARE n1 VARCHAR(64);
 BEGIN
   SELECT e.wait_, e.nextthink, e.classname, e.noise1 FROM ents e WHERE e.id = :eid INTO wt, nt, cls, n1;
-  IF (nt IS NOT NULL AND nt > now_()) THEN EXIT;                   -- already been triggered
+  IF (nt IS NOT NULL AND nt > think_base()) THEN EXIT;             -- already been triggered (QuakeC's time)
   IF (cls = 'trigger_secret') THEN
   BEGIN
     UPDATE game g SET g.found_secrets = g.found_secrets + 1 WHERE g.id = 1;

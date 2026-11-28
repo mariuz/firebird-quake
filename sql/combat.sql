@@ -69,7 +69,8 @@ BEGIN
     -- deatha to deathd, or deathe for 5 and 6
     SELECT e.vz, e.waterlevel, p.weapon FROM ents e CROSS JOIN player p WHERE e.id = :targ AND p.id = 1 INTO vz, wl, w;
     IF (vz < 10) THEN vz = vz + rnd() * 300;
-    UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.minz = -24, e.maxz = -8, e.takedamage = 0, e.vz = :vz,
+    -- (the body keeps the player's box: PlayerDie sets no size)
+    UPDATE ents e SET e.deadflag = 1, e.solid = 0, e.movetype = 6, e.takedamage = 0, e.vz = :vz,
            e.flags = BIN_AND(e.flags, BIN_NOT(512)), e.anim_frame = 0 WHERE e.id = :targ;
     UPDATE player p SET p.dead_time = now_(), p.view_ofs = -8, p.weapon = 0, p.items = BIN_AND(p.items, BIN_NOT(1048576 + 524288 + 4194304 + 2097152)) WHERE p.id = 1;
     IF (hp < -40) THEN
