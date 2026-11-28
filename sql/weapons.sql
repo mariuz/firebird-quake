@@ -220,12 +220,12 @@ BEGIN
     IF (w = 8) THEN
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/spike2.wav', 1, 1);
-      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8, ey + fy * 8, ez - 6 + fz * 8, ax, ay, az, 1000, 'superspike');
+      EXECUTE PROCEDURE launch_spike(pe, ex, ey, ez - 6, ax, ay, az, 1000, 'superspike');          -- (origin + '0 0 16')
     END
     ELSE
     BEGIN
       EXECUTE PROCEDURE snd(pe, 1, 'weapons/rocket1i.wav', 1, 1);
-      EXECUTE PROCEDURE launch_spike(pe, ex + fx_ * 8 + rx * IIF(lefty = 1, -4, 4), ey + fy * 8 + ry * IIF(lefty = 1, -4, 4), ez - 6 + fz * 8, ax, ay, az, 1000, 'spike');
+      EXECUTE PROCEDURE launch_spike(pe, ex + rx * IIF(lefty = 1, -4, 4), ey + ry * IIF(lefty = 1, -4, 4), ez - 6, ax, ay, az, 1000, 'spike');   -- (+ v_right * ox)
     END
     UPDATE player p SET p.punchangle = -2 WHERE p.id = 1;
   END

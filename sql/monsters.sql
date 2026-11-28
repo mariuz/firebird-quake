@@ -1852,6 +1852,7 @@ BEGIN
   ELSE IF (think = 'plat_hit_top') THEN EXECUTE PROCEDURE plat_hit_top(eid);
   ELSE IF (think = 'plat_hit_bottom') THEN EXECUTE PROCEDURE plat_hit_bottom(eid);
   ELSE IF (think = 'button_wait') THEN EXECUTE PROCEDURE button_wait(eid);
+  ELSE IF (think = 'place_item') THEN EXECUTE PROCEDURE place_item(eid);
   ELSE IF (think = 'button_return') THEN EXECUTE PROCEDURE button_return(eid);
   ELSE IF (think = 'button_done') THEN EXECUTE PROCEDURE button_done(eid);
   ELSE IF (think = 'train_next') THEN EXECUTE PROCEDURE train_next(eid);

@@ -432,6 +432,17 @@ BEGIN
   EXECUTE PROCEDURE link_ent(eid);
 END^
 
+-- PlaceItem, an item's think 0.2 s in, in its turn: FL_ITEM (wide), a trigger, tossed, 6 units up and dropped to the
+-- floor, monsters and missiles in the way too; one that cannot ("Bonus item fell out of level": no floor, or starting
+-- inside something) is removed
+CREATE OR ALTER PROCEDURE place_item (eid INTEGER)
+AS
+BEGIN
+  UPDATE ents e SET e.flags = 256, e.solid = 1, e.movetype = 6, e.vx = 0, e.vy = 0, e.vz = 0, e.z = e.z + 6 WHERE e.id = :eid;
+  EXECUTE PROCEDURE drop_to_floor(eid);
+  DELETE FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
+END^
+
 -- SUB_CalcMove: start moving a pusher toward a destination
 CREATE OR ALTER PROCEDURE calc_move (eid INTEGER, tx DOUBLE PRECISION, ty DOUBLE PRECISION, tz DOUBLE PRECISION,
   spd DOUBLE PRECISION, done VARCHAR(24))

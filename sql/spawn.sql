@@ -260,14 +260,13 @@ BEGIN
         IF (model_by_name(mdl) IS NULL) THEN mdl = IIF(cls = 'item_key1', 'progs/w_s_key.mdl', 'progs/w_g_key.mdl');
       END
       EXECUTE PROCEDURE set_model(eid, mdl);
-      UPDATE ents e SET e.solid = 1, e.movetype = 6, e.flags = 256, e.yaw = 0,
+      -- (StartItem: nothing yet, not solid, not moving, until PlaceItem's think 0.2 s in)
+      UPDATE ents e SET e.solid = 0, e.movetype = 0, e.flags = 0, e.yaw = 0, e.think = 'place_item', e.nextthink = think_base() + 0.2e0,
              e.skin = CASE :cls WHEN 'item_armor2' THEN 1 WHEN 'item_armorInv' THEN 2 ELSE 0 END WHERE e.id = :eid;
       IF (mdl IS NULL OR mdl NOT STARTING WITH 'maps/') THEN
         UPDATE ents e SET e.minx = -16, e.miny = -16, e.minz = 0, e.maxx = 16, e.maxy = 16, e.maxz = 56 WHERE e.id = :eid;
       ELSE
         UPDATE ents e SET e.minx = 0, e.miny = 0, e.minz = 0, e.maxx = 32, e.maxy = 32, e.maxz = 56 WHERE e.id = :eid;   -- (items.qc: health too, '0 0 0' '32 32 56')
-      -- items start 6 units above the floor and drop (PlaceItem, below, once everything has spawned)
-      UPDATE ents e SET e.z = e.z + 6 WHERE e.id = :eid;
     END
     -- ── monsters ──
     ELSE IF (cls LIKE 'monster_%') THEN
@@ -372,16 +371,6 @@ BEGIN
       UPDATE ents e SET e.solid = 0 WHERE e.id = :eid;
   END
 
-  -- PlaceItem (0.2 s in, after everything has spawned): each item (FL_ITEM) drops to the floor, monsters in the way
-  -- too; one that cannot ("Bonus item fell out of level": no floor, or starting inside something) is removed
-  FOR SELECT e.id FROM ents e WHERE BIN_AND(e.flags, 256) <> 0 ORDER BY e.id INTO eid DO
-  BEGIN
-    EXECUTE PROCEDURE drop_to_floor(eid);
-    -- (its edict free from PlaceItem's think, 0.2 s in: in the frame from 1.15)
-    INSERT INTO edict_free (edict, freetime, free_tic) SELECT e.edict, 0, 4 FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0 AND e.edict IS NOT NULL;
-    UPDATE ents e SET e.edict = NULL WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
-    DELETE FROM ents e WHERE e.id = :eid AND BIN_AND(e.flags, 512) = 0;
-  END
 
   -- LinkDoors: doors whose boxes touch open together (unless DOOR_DONT_LINK)
   FOR SELECT e.id FROM ents e WHERE e.classname = 'func_door' AND BIN_AND(e.spawnflags, 4) = 0 ORDER BY e.id INTO eid DO
