@@ -40,7 +40,7 @@ const boss = () => q1("SELECT id, st, health, model_id, anim, takedamage, solid 
 // ── 1. the house, before the fight ──────────────────────────────────────
 let b = await boss();
 assert(b && b.ST === 'asleep' && b.MODEL_ID === null, 'Chthon sleeps in the lava, invisible');
-const sigil = await q1("SELECT id, x, y, z, target FROM ents WHERE classname = 'item_sigil'");   // z: where it dropped to
+const sigil = await q1("SELECT id, x, y, z, target FROM ents WHERE classname = 'item_sigil'");
 assert(sigil && sigil.TARGET === 't4', 'the rune targets Chthon');
 const terms = await qa("SELECT id, targetname, mv_state, CAST(z AS INTEGER) z FROM ents WHERE classname = 'func_door' AND target = 'lightning' ORDER BY id");
 assert(terms.length === 2 && terms.every((t) => t.MV_STATE === 1), 'both lightning terminals start down');
@@ -58,8 +58,10 @@ assert((await q1('SELECT COUNT(*) n FROM fx_events WHERE kind = 4')).N === 0, 'n
 // restart cleanly: the real wake-up is the rune
 await loadMap(db, pak, res, 'e1m7', { skill: 1, seed: 1 });
 pe = (await q1('SELECT ent_id e FROM player')).E;   // a new player entity
+await run(4);                                        // (PlaceItem drops the items 0.2 s in)
 b = await boss();
-await teleport(sigil.X, sigil.Y, sigil.Z + 48, 0);   // feet above the floor it dropped onto
+const rune = await q1("SELECT x, y, z FROM ents WHERE classname = 'item_sigil'");
+await teleport(rune.X, rune.Y, rune.Z + 48, 0);     // feet above the floor it dropped onto
 let s = await run(5);
 assert((s.ITEMS & (1 << 28)) !== 0, `picking up the rune gives the sigil (msg "${s.MSG}")`);
 b = await boss();

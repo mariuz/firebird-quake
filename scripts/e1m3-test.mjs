@@ -43,6 +43,7 @@ const all = (await q1("SELECT COUNT(*) n FROM ents WHERE mtype = 'zombie'")).N;
 assert(all >= 30, `forty zombies are placed, ${all} of them on this skill`);
 const pit = await qa("SELECT id, st, CAST(x AS INTEGER) x, CAST(y AS INTEGER) y, CAST(z AS INTEGER) z FROM ents WHERE mtype = 'zombie' AND targetname = 't83' ORDER BY id");
 assert(pit.length === 5 && pit.every((z) => z.ST === 'stand'), 'five of them wait in the pits, standing (targetname t83)');
+await run(4);                                        // (PlaceItem drops the items 0.2 s in)
 const key = await q1("SELECT id, x, y, z FROM ents WHERE classname = 'item_key2'");
 const rl = await q1("SELECT spawnflags FROM map_ents WHERE classname = 'weapon_rocketlauncher'");
 assert(rl && rl.SPAWNFLAGS === 1792 && !(await q1("SELECT id FROM ents WHERE classname = 'weapon_rocketlauncher'")), 'the rocket launcher beside it is deathmatch-only (absent on every skill)');
