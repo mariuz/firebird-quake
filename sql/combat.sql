@@ -233,6 +233,13 @@ BEGIN
     IF (nightmare() = 1) THEN UPDATE player p SET p.pain_finished = think_base() + 5 WHERE p.id = 1;
     EXIT;
   END
+  -- a shootable secret door's th_pain: fd_secret_use (its health put back to 10000; it opens from closed)
+  IF (cls = 'func_door_secret') THEN
+  BEGIN
+    UPDATE ents e SET e.health = 10000 WHERE e.id = :targ;
+    EXECUTE PROCEDURE secret_use(targ);
+    EXIT;
+  END
   IF (BIN_AND(flags, 32) <> 0) THEN
   BEGIN
     -- T_Damage: get mad at whoever hurt us (not the world, not ourselves, not the enemy we have), unless

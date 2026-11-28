@@ -33,9 +33,10 @@ const row = (db, qc, args) => db.query(`SELECT * FROM ${qc ? 'qc_tic' : 'quake_t
 const line = (r) => [r.PX, r.PY, r.PZ, r.YAW, r.PITCH, r.HEALTH, r.ARMORVALUE, r.SHELLS, r.WEAPON, r.KILLED].join(',');
 const entsOf = async (db) => JSON.stringify((await db.query('SELECT id, classname, x, y, z, health, frame, nextthink FROM ents ORDER BY id')).rows);
 // a player's input, as varied as the page's: walking, strafing, mouse turns (fractional degrees),
-// looking, firing, jumping, all weapons (impulse 9), a weapon change, 1 to 3 tics a call
+// looking, firing, jumping, all weapons (impulse 9, which hands it the rocket launcher: a few rockets at the walls hurt
+// it, then back to the shotgun, impulse 2, before they end it), a weapon change, 1 to 3 tics a call
 const input = (i) => [1 + (i % 5 === 0 ? 1 : 0) + (i % 11 === 0 ? 1 : 0), i % 90 < 60 ? 1 : 0, i % 40 < 10 ? -1 : 0, i % 30 < 5 ? 6.37 + i / 1000 : -0.25,
-  i % 60 < 3 ? 1.5 : 0, i % 7 === 0 ? 1 : 0, i % 50 === 0 ? 1 : 0, 1, i === 3 ? 9 : i === 200 ? 7 : 0];
+  i % 60 < 3 ? 1.5 : 0, i % 7 === 0 ? 1 : 0, i % 50 === 0 ? 1 : 0, 1, i === 3 ? 9 : i === 20 ? 2 : i === 200 ? 7 : 0];
 
 async function startLevel(env, qc, seed) {
   await loadMap(env.db, pak, env.res, 'e1m1', { skill: 2, seed });

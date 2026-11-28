@@ -147,7 +147,6 @@ for (const mode of ['psql', 'qc']) {
   // and noclip still touches what it ends up in (SV_LinkEdict(ent, true) for every movetype): an item is picked up
   const item = await q1(`SELECT FIRST 1 e.id, e.x + (e.minx + e.maxx) / 2 x, e.y + (e.miny + e.maxy) / 2 y, e.z + e.minz z FROM ents e
     WHERE e.solid = 1 AND e.model_id IS NOT NULL AND (e.classname LIKE 'item_%' OR e.classname LIKE 'weapon_%' OR BIN_AND(e.flags, 256) <> 0) ORDER BY e.id`);
-  if (!qc) await db.exec('UPDATE player SET armorvalue = 0, armortype = 0');   // (impulse 9 above gave red armor, which green does not replace)
   await host('noclip');
   await db.exec(`UPDATE ents SET x = ${item.X}, y = ${item.Y}, z = ${item.Z + 24}, vx = 0, vy = 0, vz = 0 WHERE id = ${pe}`);
   await tic();

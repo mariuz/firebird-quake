@@ -238,7 +238,8 @@ BEGIN
   SELECT e.mv_state, e.spawnflags, e.ideal_yaw, e.x, e.y, e.z, e.maxx - e.minx, e.maxy - e.miny, e.maxz - e.minz
     FROM ents e WHERE e.id = :eid INTO st, sf, yaw, px, py, pz, sx, sy, sz;
   IF (st <> 1) THEN EXIT;                                       -- only from the closed position
-  UPDATE ents e SET e.message = NULL WHERE e.id = :eid;
+  -- (fd_secret_use: not to be shot while it moves, unless SECRET_NO_SHOOT; fd_secret_done gives it back)
+  UPDATE ents e SET e.message = NULL, e.takedamage = IIF(BIN_AND(e.spawnflags, 8) <> 0, e.takedamage, 0) WHERE e.id = :eid;
   EXECUTE PROCEDURE snd(eid, 0, 'doors/latch2.wav', 1, 1);
   fx_ = COS(yaw * 0.0174532925e0); fy = SIN(yaw * 0.0174532925e0);
   rx = fy; ry = -fx_;                                           -- v_right

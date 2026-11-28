@@ -287,12 +287,13 @@ AS
 DECLARE it INTEGER; DECLARE w INTEGER; DECLARE sh INTEGER; DECLARE na INTEGER; DECLARE ro INTEGER; DECLARE ce INTEGER; DECLARE ok SMALLINT = 1;
 BEGIN
   SELECT p.items, p.shells, p.nails, p.rockets, p.cells FROM player p WHERE p.id = 1 INTO it, sh, na, ro, ce;
-  IF (imp = 9) THEN                                                      -- give all
+  IF (imp = 9) THEN
   BEGIN
-    UPDATE player p SET p.items = BIN_OR(p.items, 4096 + 1 + 2 + 4 + 8 + 16 + 32 + 64 + 131072 + 262144), p.shells = 100, p.nails = 200, p.rockets = 100, p.cells = 100 WHERE p.id = 1;
-    UPDATE ents e SET e.health = 100 WHERE e.id = player_ent();
-    UPDATE player p SET p.armorvalue = 200, p.armortype = 0.8e0, p.items = BIN_OR(BIN_AND(p.items, BIN_NOT(8192 + 16384)), 32768) WHERE p.id = 1;
-    EXECUTE PROCEDURE sprint('Very impressive');
+    -- CheatCommand: every weapon and both keys, 100 shells, 200 nails, 100 rockets, 200 cells, the rocket launcher in
+    -- hand (W_SetCurrentAmmo: player_run, the view weapon at rest); no health, no armour, no message
+    UPDATE player p SET p.items = BIN_OR(p.items, 4096 + 1 + 2 + 4 + 8 + 16 + 32 + 64 + 131072 + 262144), p.shells = 100, p.nails = 200,
+           p.rockets = 100, p.cells = 200, p.weapon = 32, p.weaponframe = 0 WHERE p.id = 1;
+    EXECUTE PROCEDURE player_current_ammo;
     EXIT;
   END
   IF (imp = 10) THEN                                                      -- cycle
